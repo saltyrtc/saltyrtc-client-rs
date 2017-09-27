@@ -1,0 +1,11 @@
+[package]
+name = "saltyrtc-client"
+version = "0.1.0"
+authors = ["Danilo Bargen <danilo.bargen@threema.ch>"]
+
+[dependencies]
+websocket = "0.20.2"
+native-tls = "0.1.4"
+tokio-core = "0.1.9"
+futures = "0.1.0"
+error-chain = "0.11.0"
