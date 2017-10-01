@@ -11,6 +11,9 @@ use std::path::Path;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
 use websocket::futures::{Future, Stream, Sink};
+use websocket::Message;
+
+use saltyrtc_client::errors::{Error as SaltyrtcError, ErrorKind};
 
 
 fn main() {
@@ -45,7 +48,16 @@ fn main() {
             &core.handle()
         ).unwrap();
 
-    match core.run(client) {
+    let answer = client
+        .and_then(|client| client.send(Message::text("hallo").into()))
+        .and_then(|s| s.into_future().map_err(|e| e.0))
+        .map(|(m, _)| {
+            println!("Received answer: {:?}", m);
+            assert_eq!(m, Some(Message::text("hallo").into()))
+        })
+        .map_err(|e| SaltyrtcError::from_kind(format!("Error while processing server answer: {}", e).into()));
+
+    match core.run(answer) {
         Ok(x) => println!("Success: {:?}", x),
         Err(e) => {
             println!("Error: {}", e);
