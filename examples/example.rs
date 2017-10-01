@@ -43,7 +43,7 @@ fn main() {
             "wss://localhost:8765",
             Some(tls_connector),
             &core.handle()
-        );
+        ).unwrap();
 
     match core.run(client) {
         Ok(x) => println!("Success: {:?}", x),
