@@ -4,9 +4,13 @@ version = "0.1.0"
 authors = ["Danilo Bargen <danilo.bargen@threema.ch>"]
 
 [dependencies]
+log = "0.3"
 websocket = "0.20.2"
 native-tls = "0.1.4"
 tokio-core = "0.1.9"
 futures = "0.1.0"
 error-chain = "0.11.0"
 sodiumoxide = { version = "0.0.15", features = ["std", "serde"] }
+
+[dev-dependencies]
+env_logger = "0.3"

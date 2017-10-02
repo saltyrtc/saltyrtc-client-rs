@@ -1,3 +1,4 @@
+extern crate env_logger;
 extern crate native_tls;
 extern crate saltyrtc_client;
 extern crate tokio_core;
@@ -10,13 +11,11 @@ use std::path::Path;
 
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
-use websocket::futures::{Future, Stream, Sink};
-use websocket::Message;
-
-use saltyrtc_client::errors::{Error as SaltyrtcError, ErrorKind};
 
 
 fn main() {
+    env_logger::init();
+
     let mut core = Core::new().unwrap();
 
     // Read server certificate bytes
@@ -42,22 +41,14 @@ fn main() {
     let tls_connector = tls_builder.build()
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e));
 
-    let client = saltyrtc_client::connect(
-            "wss://localhost:8765",
+    let path = "0123456789012345678901234567890101234567890123456789012345678901";
+    let task = saltyrtc_client::connect(
+            &format!("wss://localhost:8765/{}", path),
             Some(tls_connector),
             &core.handle()
         ).unwrap();
 
-    let answer = client
-        .and_then(|client| client.send(Message::text("hallo").into()))
-        .and_then(|s| s.into_future().map_err(|e| e.0))
-        .map(|(m, _)| {
-            println!("Received answer: {:?}", m);
-            assert_eq!(m, Some(Message::text("hallo").into()))
-        })
-        .map_err(|e| SaltyrtcError::from_kind(format!("Error while processing server answer: {}", e).into()));
-
-    match core.run(answer) {
+    match core.run(task) {
         Ok(x) => println!("Success: {:?}", x),
         Err(e) => {
             println!("Error: {}", e);
