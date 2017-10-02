@@ -17,7 +17,7 @@ pub mod errors;
 
 use futures::future;
 use native_tls::TlsConnector;
-use tokio_core::reactor::Handle;
+use tokio_core::reactor::{Handle, Timeout};
 use websocket::Message;
 use websocket::WebSocketError;
 use websocket::client::ClientBuilder;
@@ -64,7 +64,31 @@ pub fn connect(
         });
 
     // Send message to server
-    let future = client.map(|x| ());
+    let future = client
+        .and_then(|client| {
+            info!("Connected to server!");
+            let (sink, stream) = client.split();
+            stream
+                .filter_map(|msg| {
+                    //debug!("Received message: {:?}", msg);
+                    debug!("Received message");
+                    match msg {
+                        OwnedMessage::Binary(bytes) => {
+                            debug!("Matched binary");
+                            Some(bytes)
+                        },
+                        _ => {
+                            debug!("Matched other");
+                            None
+                        }
+                    }
+                })
+                .take(1)
+                .into_future()
+                .map(|x| x.0)
+                .map_err(|e| "Could not receive message from server".into())
+        })
+        .map(|x| { debug!("Future resolved: {:?}", x); });
 
     Ok(Box::new(future))
 }
