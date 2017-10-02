@@ -9,7 +9,7 @@ extern crate futures;
 #[macro_use]
 extern crate log;
 extern crate native_tls;
-extern crate rmp_serde as rmps;
+extern crate rmp_serde;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -20,19 +20,17 @@ extern crate websocket;
 pub mod errors;
 pub mod messages;
 
-use futures::future;
 use native_tls::TlsConnector;
-use tokio_core::reactor::{Handle, Timeout};
-use websocket::Message;
+use tokio_core::reactor::{Handle};
 use websocket::WebSocketError;
 use websocket::client::ClientBuilder;
-use websocket::client::async::{Client, TlsStream, TcpStream};
 use websocket::client::builder::Url;
 use websocket::header::WebSocketProtocol;
 use websocket::message::OwnedMessage;
 use websocket::futures::{Future, Stream, Sink};
 
 use errors::{Result, Error};
+use messages::MsgPacked;
 
 
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
@@ -63,8 +61,14 @@ pub fn connect(
                 Some(proto) if proto.len() == 1 && proto[0] == SUBPROTOCOL => {
                     Ok(client)
                 },
-                Some(proto) => Err("More than one websocket subprotocol chosen by server".into()),
-                None => Err("Websocket subprotocol not accepted by server".into()),
+                Some(proto) => {
+                    error!("More than one chosen protocol: {:?}", proto);
+                    Err("More than one websocket subprotocol chosen by server".into())
+                },
+                None => {
+                    error!("No protocol chosen by server");
+                    Err("Websocket subprotocol not accepted by server".into())
+                },
             }
         });
 
@@ -91,13 +95,13 @@ pub fn connect(
                 .take(1)
                 .into_future()
                 .map(|x| x.0)
-                .map_err(|e| "Could not receive message from server".into())
+                .map_err(|_| "Could not receive message from server".into())
         })
         .map(|bytes| {
             let bytes = bytes.unwrap();
             trace!("Future resolved. Bytes: {:?}", bytes);
             // TODO: Parse nonce
-            match rmps::from_slice::<messages::ServerHello>(&bytes[24..]) {
+            match messages::ServerHello::from_msgpack(&bytes[24..]) {
                 Ok(val) => info!("Server hello: {:?}", val),
                 Err(e) => error!("Could not deserialize server-hello message: {}", e),
             };

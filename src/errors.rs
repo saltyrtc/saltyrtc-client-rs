@@ -4,6 +4,8 @@
 //! [`error-chain`](https://github.com/rust-lang-nursery/error-chain/)
 //! crate.
 
+use rmp_serde::decode::Error as DecodeError;
+
 error_chain!{
     // The type defined for this error.
     types {
@@ -21,5 +23,6 @@ error_chain!{
     // These will be wrapped in a new error.
     foreign_links {
         Io(::std::io::Error) #[cfg(unix)];
+        MsgpackDecode(DecodeError);
     }
 }

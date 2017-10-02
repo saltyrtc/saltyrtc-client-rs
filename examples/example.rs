@@ -14,7 +14,7 @@ use tokio_core::reactor::Core;
 
 
 fn main() {
-    env_logger::init();
+    env_logger::init().expect("Could not initialize env_logger");
 
     let mut core = Core::new().unwrap();
 
