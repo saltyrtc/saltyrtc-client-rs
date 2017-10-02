@@ -9,11 +9,16 @@ extern crate futures;
 #[macro_use]
 extern crate log;
 extern crate native_tls;
+extern crate rmp_serde as rmps;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate sodiumoxide;
 extern crate tokio_core;
 extern crate websocket;
 
 pub mod errors;
+pub mod messages;
 
 use futures::future;
 use native_tls::TlsConnector;
@@ -88,7 +93,15 @@ pub fn connect(
                 .map(|x| x.0)
                 .map_err(|e| "Could not receive message from server".into())
         })
-        .map(|x| { debug!("Future resolved: {:?}", x); });
+        .map(|bytes| {
+            let bytes = bytes.unwrap();
+            trace!("Future resolved. Bytes: {:?}", bytes);
+            // TODO: Parse nonce
+            match rmps::from_slice::<messages::ServerHello>(&bytes[24..]) {
+                Ok(val) => info!("Server hello: {:?}", val),
+                Err(e) => error!("Could not deserialize server-hello message: {}", e),
+            };
+        });
 
     Ok(Box::new(future))
 }

@@ -2,12 +2,16 @@
 
 use sodiumoxide::crypto::box_::PublicKey;
 
-struct ClientHello {
-    type_: String,
-    key: PublicKey,
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+pub struct ClientHello {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub key: PublicKey,
 }
 
-struct ServerHello {
-    type_: String,
-    key: PublicKey,
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+pub struct ServerHello {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub key: PublicKey,
 }
