@@ -25,7 +25,7 @@ pub struct Nonce {
 }
 
 impl Nonce {
-    fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         ensure!(bytes.len() == 24, "Nonce must be exactly 24 bytes long");
         Ok(Self {
             cookie: [
