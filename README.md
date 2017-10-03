@@ -1,5 +1,7 @@
 # saltyrtc-client-rs
 
+[![CircleCI][circle-ci-badge]][circle-ci]
+
 ## Testing
 
 ### Unit Tests
@@ -19,3 +21,8 @@ Then run the fuzzer against a target:
     cargo fuzz run <target>
 
 You can list all targets with `cargo fuzz list`.
+
+
+<!-- Badges -->
+[circle-ci]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/develop
+[circle-ci-badge]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/develop.svg?style=shield
