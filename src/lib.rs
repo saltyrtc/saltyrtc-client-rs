@@ -18,6 +18,7 @@ extern crate websocket;
 
 pub mod errors;
 pub mod messages;
+pub mod nonce;
 
 use native_tls::TlsConnector;
 use tokio_core::reactor::{Handle};
