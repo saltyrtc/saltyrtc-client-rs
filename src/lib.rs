@@ -3,6 +3,7 @@
 //! Early prototype.
 #![recursion_limit = "1024"]
 
+extern crate byteorder;
 #[macro_use]
 extern crate error_chain;
 #[macro_use]

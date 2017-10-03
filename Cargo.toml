@@ -14,6 +14,7 @@ rmp-serde = "0.13"
 serde = "1.0"
 serde_derive = "1.0"
 sodiumoxide = { version = "0.0.15", features = ["std", "serde"] }
+byteorder = "1.1"
 
 [dev-dependencies]
 env_logger = "0.3"
