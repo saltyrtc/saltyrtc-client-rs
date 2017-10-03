@@ -2,7 +2,6 @@ extern crate env_logger;
 extern crate native_tls;
 extern crate saltyrtc_client;
 extern crate tokio_core;
-extern crate websocket;
 
 use std::error::Error;
 use std::fs::File;

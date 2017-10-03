@@ -5,7 +5,6 @@
 
 #[macro_use]
 extern crate error_chain;
-extern crate futures;
 #[macro_use]
 extern crate log;
 extern crate native_tls;
@@ -27,7 +26,7 @@ use websocket::client::ClientBuilder;
 use websocket::client::builder::Url;
 use websocket::header::WebSocketProtocol;
 use websocket::message::OwnedMessage;
-use websocket::futures::{Future, Stream, Sink};
+use websocket::futures::{Future, Stream};
 
 use errors::{Result, Error};
 use messages::MsgPacked;
@@ -76,35 +75,47 @@ pub fn connect(
     let future = client
         .and_then(|client| {
             info!("Connected to server!");
-            let (sink, stream) = client.split();
-            stream
+
+            // We're connected to the SaltyRTC server.
+            // Filter the incoming message stream. We're only interested in the binary ones.
+            let messages = client
                 .filter_map(|msg| {
-                    //debug!("Received message: {:?}", msg);
-                    debug!("Received message");
                     match msg {
                         OwnedMessage::Binary(bytes) => {
-                            debug!("Matched binary");
+                            debug!("Received binary message");
                             Some(bytes)
                         },
-                        _ => {
-                            debug!("Matched other");
+                        m => {
+                            warn!("Skipping non-binary message: {:?}", m);
                             None
-                        }
+                        },
                     }
-                })
-                .take(1)
+                });
+
+            // Process the stream of binary messages
+            messages
+
+                // Get the first message from the message stream
                 .into_future()
-                .map(|x| x.0)
-                .map_err(|_| "Could not receive message from server".into())
-        })
-        .map(|bytes| {
-            let bytes = bytes.unwrap();
-            trace!("Future resolved. Bytes: {:?}", bytes);
-            // TODO: Parse nonce
-            match messages::ServerHello::from_msgpack(&bytes[24..]) {
-                Ok(val) => info!("Server hello: {:?}", val),
-                Err(e) => error!("Could not deserialize server-hello message: {}", e),
-            };
+
+                // Handle errors
+                // TODO: What type of errors can happen here?
+                .map_err(|(e, _)| format!("Could not receive message from server: {}", e).into())
+
+                // The first message must be the server-hello message
+                .and_then(|(bytes_option, messages)| {
+                    let bytes = bytes_option.ok_or(format!("Server message stream ended"))?;
+                    // TODO: Parse nonce
+                    match messages::ServerHello::from_msgpack(&bytes[24..]) {
+                        Ok(val) => info!("Server hello: {:?}", val),
+                        Err(e) => error!("Could not deserialize server-hello message: {}", e),
+                    };
+                    Ok(messages)
+                })
+
+                // For now, stop processing here.
+                .map(|_| ())
+
         });
 
     Ok(Box::new(future))
