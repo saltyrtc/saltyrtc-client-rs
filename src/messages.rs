@@ -29,6 +29,22 @@ impl ClientHello {
     }
 }
 
+impl<'de> MsgPacked<'de> for ClientHello {
+    const TYPE: &'static str = "client-hello";
+
+    fn from_msgpack(bytes: &[u8]) -> Result<Self> {
+        let decoded: Self = rmps::from_slice::<Self>(&bytes)?;
+        if decoded.type_ != Self::TYPE {
+            bail!(format!("Invalid type for ClientHello message: {}", decoded.type_));
+        }
+        Ok(decoded)
+    }
+
+    fn to_msgpack(&self) -> Vec<u8> {
+        rmps::to_vec_named(&self).expect("Serialization failed")
+    }
+}
+
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub struct ServerHello {
     #[serde(rename = "type")]

@@ -10,11 +10,23 @@ use errors::Error;
 
 /// Newtype for the sender address.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-struct Sender(u8);
+pub struct Sender(u8);
+
+impl Sender {
+    pub fn new(id: u8) -> Self {
+        Sender(id)
+    }
+}
 
 /// Newtype for the receiver address.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-struct Receiver(u8);
+pub struct Receiver(u8);
+
+impl Receiver {
+    pub fn new(id: u8) -> Self {
+        Receiver(id)
+    }
+}
 
 /// The SaltyRTC nonce.
 ///
@@ -30,6 +42,15 @@ pub struct Nonce {
 }
 
 impl Nonce {
+    pub fn new(cookie: [u8; 16], source: Sender, destination: Receiver, overflow: u16, sequence: u32) -> Self {
+        Nonce {
+            cookie: cookie,
+            source: source,
+            destination: destination,
+            overflow: overflow,
+            sequence: sequence,
+        }
+    }
     /// Parse bytes, return a Nonce.
     ///
     /// This will fail if the byte slice does not contain exactly 24 bytes of

@@ -22,13 +22,14 @@ pub mod messages;
 pub mod nonce;
 
 use native_tls::TlsConnector;
+use rust_sodium::crypto::box_ as cryptobox;
 use tokio_core::reactor::{Handle};
 use websocket::WebSocketError;
 use websocket::client::ClientBuilder;
 use websocket::client::builder::Url;
 use websocket::header::WebSocketProtocol;
 use websocket::message::OwnedMessage;
-use websocket::futures::{Future, Stream};
+use websocket::futures::{Future, Stream, Sink};
 
 use errors::{Result, Error};
 use messages::MsgPacked;
@@ -107,12 +108,36 @@ pub fn connect(
                 // The first message must be the server-hello message
                 .and_then(|(bytes_option, messages)| {
                     let bytes = bytes_option.ok_or(format!("Server message stream ended"))?;
-                    // TODO: Parse nonce
-                    match messages::ServerHello::from_msgpack(&bytes[24..]) {
-                        Ok(val) => info!("Server hello: {:?}", val),
-                        Err(e) => error!("Could not deserialize server-hello message: {}", e),
+                    let nonce = match nonce::Nonce::from_bytes(&bytes[..24]) {
+                        Ok(val) => val,
+                        Err(e) => bail!("Could not parse nonce: {}", e),
                     };
-                    Ok(messages)
+                    trace!("Nonce: {:?}", nonce);
+                    let server_hello = match messages::ServerHello::from_msgpack(&bytes[24..]) {
+                        Ok(val) => val,
+                        Err(e) => bail!("Could not deserialize server-hello message: {}", e),
+                    };
+                    info!("Received server-hello");
+                    trace!("Server hello: {:?}", server_hello);
+
+                    // Generate keypair
+                    let (ourpk, oursk) = cryptobox::gen_keypair();
+
+                    // Reply with client-hello message
+                    let client_hello = messages::ClientHello::new(ourpk.clone());
+                    let client_nonce = nonce::Nonce::new(
+                        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                        nonce::Sender::new(0),
+                        nonce::Receiver::new(0),
+                        0,
+                        123,
+                    );
+                    let mut client_hello_bytes: Vec<u8> = vec![];
+                    client_hello_bytes.extend(client_nonce.into_bytes().iter());
+                    client_hello_bytes.extend(client_hello.to_msgpack().iter());
+                    trace!("Sending {:?}", client_hello);
+
+                    Ok(messages.send(OwnedMessage::Binary(client_hello_bytes)))
                 })
 
                 // For now, stop processing here.
