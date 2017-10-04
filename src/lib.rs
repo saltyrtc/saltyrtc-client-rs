@@ -10,10 +10,10 @@ extern crate error_chain;
 extern crate log;
 extern crate native_tls;
 extern crate rmp_serde;
+extern crate rust_sodium;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate sodiumoxide;
 extern crate tokio_core;
 extern crate websocket;
 

@@ -2,7 +2,7 @@
 
 use rmp_serde as rmps;
 use serde::{Serialize, Deserialize};
-use sodiumoxide::crypto::box_::PublicKey;
+use rust_sodium::crypto::box_::PublicKey;
 
 use errors::{Result};
 
