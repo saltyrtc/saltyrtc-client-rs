@@ -4,6 +4,7 @@
 #![recursion_limit = "1024"]
 
 extern crate byteorder;
+extern crate data_encoding;
 #[macro_use]
 extern crate error_chain;
 #[macro_use]
@@ -11,17 +12,21 @@ extern crate log;
 extern crate native_tls;
 extern crate rmp_serde;
 extern crate rust_sodium;
+extern crate rust_sodium_sys;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate tokio_core;
 extern crate websocket;
 
+// Modules
 pub mod errors;
 mod helpers;
+mod keystore;
 pub mod messages;
 pub mod nonce;
 
+// Third party imports
 use native_tls::TlsConnector;
 use rust_sodium::crypto::box_ as cryptobox;
 use tokio_core::reactor::{Handle};
@@ -32,7 +37,12 @@ use websocket::header::WebSocketProtocol;
 use websocket::message::OwnedMessage;
 use websocket::futures::{Future, Stream, Sink};
 
+// Re-exports
+pub use keystore::KeyStore;
+
+// Internal imports
 use errors::{Result, Error};
+use helpers::libsodium_init;
 use messages::MsgPacked;
 
 
@@ -46,7 +56,7 @@ pub fn connect(
     handle: &Handle,
 ) -> Result<Box<Future<Item = (), Error = Error>>> {
     // Initialize libsodium
-    helpers::libsodium_init()?;
+    libsodium_init()?;
 
     // Parse URL
     let ws_url = match Url::parse(url) {
