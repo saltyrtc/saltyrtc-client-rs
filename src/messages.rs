@@ -2,9 +2,9 @@
 
 use rmp_serde as rmps;
 use serde::{Serialize, Deserialize};
-use rust_sodium::crypto::box_::PublicKey;
 
 use errors::{Result};
+use keystore::PublicKey;
 
 /// A trait to convert types from/to msgpack representation.
 pub trait MsgPacked<'de>: Sized + Serialize + Deserialize<'de> {

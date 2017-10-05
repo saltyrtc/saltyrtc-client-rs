@@ -38,7 +38,7 @@ use websocket::message::OwnedMessage;
 use websocket::futures::{Future, Stream, Sink};
 
 // Re-exports
-pub use keystore::KeyStore;
+pub use keystore::{KeyStore, PublicKey, PrivateKey};
 
 // Internal imports
 use errors::{Result, Error};
