@@ -27,6 +27,17 @@ Then run the fuzzer against a target:
 
 You can list all targets with `cargo fuzz list`.
 
+### Linting
+
+To run clippy lints, compile the library with `--features clippy` on a nightly
+compiler:
+
+    $ cargo build --features clippy
+
+If `nightly` is not your default compiler:
+
+    $ rustup run nightly cargo build --features clippy
+
 
 ## Logging
 
