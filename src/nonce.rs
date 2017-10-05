@@ -2,9 +2,11 @@
 //!
 //! This includes serialization and deserialization.
 
+use std::convert::Into;
 use std::io::Write;
 
 use byteorder::{BigEndian, ByteOrder};
+use rust_sodium::crypto::box_;
 
 use errors::Error;
 
@@ -30,8 +32,9 @@ impl Receiver {
 
 /// The SaltyRTC nonce.
 ///
-/// The type is intentionally non-cloneable, to prevent accidental re-use. This
-/// is also known as an affine type.
+/// The type is intentionally non-cloneable, to prevent accidental re-use. All
+/// transformations into other formats consume the instance. This is also known
+/// as an affine type.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Nonce {
     cookie: [u8; 16],
@@ -84,13 +87,29 @@ impl Nonce {
     }
 }
 
+impl Into<box_::Nonce> for Nonce {
+    fn into(self) -> box_::Nonce {
+        let bytes = self.into_bytes();
+        box_::Nonce(bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn parse_nonce() {
-        let bytes = [
+    fn create_test_nonce() -> Nonce {
+        Nonce {
+            cookie: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            source: Sender(17),
+            destination: Receiver(18),
+            overflow: 258,
+            sequence: 50595078,
+        }
+    }
+
+    fn create_test_nonce_bytes() -> [u8; 24] {
+        [
             // Cookie
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
             // Source: 17
@@ -101,40 +120,27 @@ mod tests {
             1, 2,
             // Sequence number: 50595078 big endian
             3, 4, 5, 6,
-        ];
-        assert_eq!(Nonce::from_bytes(&bytes).unwrap(), Nonce {
-            cookie: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            source: Sender(17),
-            destination: Receiver(18),
-            overflow: 258,
-            sequence: 50595078,
-        });
+        ]
+    }
+
+    #[test]
+    fn parse_nonce() {
+        let bytes = create_test_nonce_bytes();
+        assert_eq!(Nonce::from_bytes(&bytes).unwrap(), create_test_nonce());
     }
 
     #[test]
     fn serialize_nonce() {
-        let nonce = Nonce {
-            cookie: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            source: Sender(17),
-            destination: Receiver(18),
-            overflow: 258,
-            sequence: 50595078,
-        };
-        let bytes = nonce.into_bytes();
-        assert_eq!(
-            bytes,
-            [
-                // Cookie
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-                // Source: 17
-                17,
-                // Destination: 18
-                18,
-                // Overflow: 258 big endian
-                1, 2,
-                // Sequence number: 50595078 big endian
-                3, 4, 5, 6,
-            ]
-        );
+        let nonce = create_test_nonce();
+        assert_eq!(nonce.into_bytes(), create_test_nonce_bytes());
+    }
+
+    /// Test conversion from a saltyrtc `Nonce` to a rust_sodium `Nonce`.
+    #[test]
+    fn nonce_into_nonce() {
+        let nonce: Nonce = create_test_nonce();
+        let nonce_bytes: [u8; 24] = create_test_nonce_bytes();
+        let rust_sodium_nonce: box_::Nonce = nonce.into();
+        assert_eq!(rust_sodium_nonce.0, nonce_bytes);
     }
 }
