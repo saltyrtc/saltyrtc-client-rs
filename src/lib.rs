@@ -18,6 +18,7 @@ extern crate tokio_core;
 extern crate websocket;
 
 pub mod errors;
+mod helpers;
 pub mod messages;
 pub mod nonce;
 
@@ -44,6 +45,8 @@ pub fn connect(
     tls_config: Option<TlsConnector>,
     handle: &Handle,
 ) -> Result<Box<Future<Item = (), Error = Error>>> {
+    // Initialize libsodium
+    helpers::libsodium_init()?;
 
     // Parse URL
     let ws_url = match Url::parse(url) {
