@@ -2,6 +2,10 @@
 
 [![CircleCI][circle-ci-badge]][circle-ci]
 
+**Note:** This library is in early development stage. During this phase,
+force-pushes may happen to the `develop` branch. Once the codebase stabilizes a
+bit, we'll switch to `master`.
+
 ## Testing
 
 ### Unit Tests
