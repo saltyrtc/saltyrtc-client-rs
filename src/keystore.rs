@@ -6,6 +6,7 @@ use rust_sodium_sys::crypto_scalarmult_base;
 
 use errors::Result;
 use helpers::libsodium_init;
+use nonce::Nonce;
 
 /// A public key used for decrypting data.
 ///
@@ -87,6 +88,12 @@ impl KeyStore {
     pub fn private_key(&self) -> &PrivateKey {
         &self.private_key
     }
+
+    /// Encrypt data for the specified public key with the private key.
+    pub fn encrypt(&self, data: &[u8], nonce: Nonce, other_key: &PublicKey) -> Vec<u8> {
+        let rust_sodium_nonce: box_::Nonce = nonce.into();
+        box_::seal(data, &rust_sodium_nonce, other_key, &self.private_key)
+    }
 }
 
 #[cfg(test)]
@@ -137,5 +144,30 @@ mod tests {
             ks.public_key_hex(),
             "133798235bc42d37ce009b4b202cfe08bfd133c8e6eea75037fabb88f01fd959"
         );
+    }
+
+    /// Test the `KeyStore::encrypt` method against a precomputed
+    /// value. The value of the encrypted bytes was computed using
+    /// tweetnacl-js.
+    #[test]
+    fn encrypt_precomputed() {
+        let sk_hex = b"8bb6b6ae1497bf0288e6f82923e8875f2fdeab2ab6833e770182b35936232af9";
+        let sk_bytes = HEXLOWER.decode(sk_hex).unwrap();
+        let sk = PrivateKey::from_slice(&sk_bytes).unwrap();
+
+        let other_key_hex = b"424291495954d3fa8ffbcecc99b208f49016096ef84dffe33355cbc1f0348b20";
+        let other_key_bytes = HEXLOWER.decode(other_key_hex).unwrap();
+        let other_key = PublicKey::from_slice(&other_key_bytes).unwrap();
+
+        let nonce_hex = b"fe381c4bdb8bfc2a27d2c9a6485113e7638613ffb02b3747";
+        let nonce_bytes = HEXLOWER.decode(nonce_hex).unwrap();
+        let nonce = Nonce::from_bytes(&nonce_bytes).unwrap();
+
+        let ks = KeyStore::from_private_key(sk);
+
+        let msg = b"hello";
+        let encrypted = ks.encrypt(msg, nonce, &other_key);
+        let encrypted_hex = HEXLOWER.encode(&encrypted);
+        assert_eq!(encrypted_hex, "687f2cb605d80a0660bacb2c6ce6e076591b58f9c9");
     }
 }
