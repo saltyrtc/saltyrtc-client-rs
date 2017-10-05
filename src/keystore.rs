@@ -4,7 +4,7 @@ use data_encoding::HEXLOWER;
 use rust_sodium::crypto::box_;
 use rust_sodium_sys::crypto_scalarmult_base;
 
-use errors::Result;
+use errors::{Result, Error, ErrorKind};
 use helpers::libsodium_init;
 use nonce::Nonce;
 
@@ -94,6 +94,16 @@ impl KeyStore {
         let rust_sodium_nonce: box_::Nonce = nonce.into();
         box_::seal(data, &rust_sodium_nonce, other_key, &self.private_key)
     }
+
+    /// Decrypt data using the specified public key with the own private key.
+    ///
+    /// If decryption succeeds, the decrypted bytes are returned. Otherwise, an
+    /// error with error kind `Crypto` is returned.
+    pub fn decrypt(&self, data: &[u8], nonce: Nonce, other_key: &PublicKey) -> Result<Vec<u8>> {
+        let rust_sodium_nonce: box_::Nonce = nonce.into();
+        box_::open(data, &rust_sodium_nonce, other_key, &self.private_key)
+            .map_err(|_| Error::from_kind(ErrorKind::Crypto("Could not decrypt data".to_string())))
+    }
 }
 
 #[cfg(test)]
@@ -165,9 +175,44 @@ mod tests {
 
         let ks = KeyStore::from_private_key(sk);
 
-        let msg = b"hello";
-        let encrypted = ks.encrypt(msg, nonce, &other_key);
+        let plaintext = b"hello";
+        let encrypted = ks.encrypt(plaintext, nonce, &other_key);
         let encrypted_hex = HEXLOWER.encode(&encrypted);
         assert_eq!(encrypted_hex, "687f2cb605d80a0660bacb2c6ce6e076591b58f9c9");
     }
+
+    /// Test the `KeyStore::decrypt` method.
+    #[test]
+    fn decrypt_precomputed() {
+        let sk_hex = b"717284c21d52489ddd8afa1adda32fa332cb0410b72ef83b415314cb12521bfe";
+        let sk_bytes = HEXLOWER.decode(sk_hex).unwrap();
+        let sk = PrivateKey::from_slice(&sk_bytes).unwrap();
+
+        let other_key_hex = b"133798235bc42d37ce009b4b202cfe08bfd133c8e6eea75037fabb88f01fd959";
+        let other_key_bytes = HEXLOWER.decode(other_key_hex).unwrap();
+        let other_key = PublicKey::from_slice(&other_key_bytes).unwrap();
+
+        let nonce_hex = b"fe381c4bdb8bfc2a27d2c9a6485113e7638613ffb02b3747";
+        let nonce_bytes = HEXLOWER.decode(nonce_hex).unwrap();
+        let nonce = Nonce::from_bytes(&nonce_bytes).unwrap();
+
+        let ks = KeyStore::from_private_key(sk);
+
+        // This should succeed
+        let good_ciphertext_hex = b"687f2cb605d80a0660bacb2c6ce6e076591b58f9c9";
+        let good_ciphertext_bytes = HEXLOWER.decode(good_ciphertext_hex).unwrap();
+        let decrypted_good = ks.decrypt(&good_ciphertext_bytes, nonce, &other_key);
+        assert!(decrypted_good.is_ok());
+        assert_eq!(decrypted_good.unwrap(), b"hello".to_vec());
+
+        // This should fail
+        let mut bad_ciphertext_bytes = good_ciphertext_bytes.clone();
+        bad_ciphertext_bytes[0] += 1;
+        let nonce = Nonce::from_bytes(&nonce_bytes).unwrap();
+        let decrypted_bad = ks.decrypt(&bad_ciphertext_bytes, nonce, &other_key);
+        assert!(decrypted_bad.is_err());
+        let error = decrypted_bad.unwrap_err();
+        assert_eq!(format!("{}", error), "crypto error: Could not decrypt data");
+    }
+
 }
