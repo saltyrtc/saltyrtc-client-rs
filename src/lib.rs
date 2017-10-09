@@ -26,6 +26,11 @@ mod keystore;
 pub mod messages;
 pub mod nonce;
 
+// Rust imports
+use std::cell::RefCell;
+use std::ops::Deref;
+use std::rc::Rc;
+
 // Third party imports
 use native_tls::TlsConnector;
 use rust_sodium::crypto::box_ as cryptobox;
@@ -51,11 +56,26 @@ use nonce::{Nonce, Sender, Receiver};
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
 
 
+pub struct SaltyClient { }
+
+impl SaltyClient {
+    pub fn new() -> Self {
+        SaltyClient { }
+    }
+
+    //fn handle_message(msg: Message, nonce: Nonce) {
+    fn handle_message(&self) {
+        info!("SaltyClient::handle_message");
+    }
+}
+
+
 /// Connect to the specified SaltyRTC server.
 pub fn connect(
     url: &str,
     tls_config: Option<TlsConnector>,
     handle: &Handle,
+    salty: Rc<RefCell<SaltyClient>>,
 ) -> Result<Box<Future<Item = (), Error = Error>>> {
     // Initialize libsodium
     libsodium_init()?;
@@ -112,7 +132,9 @@ pub fn connect(
                 });
 
             // Main loop
-            future::loop_fn(messages, |stream| {
+            future::loop_fn(messages, move |stream| {
+
+                let salty = salty.clone();
 
                 // Take the next incoming message
                 stream.into_future()
@@ -143,8 +165,17 @@ pub fn connect(
                     })
 
                     // Process received message
-                    .and_then(|(_nonce, msg, stream)| {
+                    .and_then(move |(_nonce, msg, stream)| {
                         info!("Received {} message", msg.get_type());
+
+                        match salty.deref().try_borrow_mut() {
+                            Ok(s) => s.handle_message(),
+                            Err(e) => {
+                                return Box::new(
+                                    future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
+                                ) as Box<Future<Item = _, Error = _>>;
+                            },
+                        };
 
                         // Handle depending on type
                         match msg {

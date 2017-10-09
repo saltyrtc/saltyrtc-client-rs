@@ -3,10 +3,12 @@ extern crate native_tls;
 extern crate saltyrtc_client;
 extern crate tokio_core;
 
+use std::cell::RefCell;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::rc::Rc;
 
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
@@ -41,10 +43,12 @@ fn main() {
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e));
 
     let path = "0123456789012345678901234567890101234567890123456789012345678901";
+    let salty = Rc::new(RefCell::new(saltyrtc_client::SaltyClient::new()));
     let task = saltyrtc_client::connect(
             &format!("wss://localhost:8765/{}", path),
             Some(tls_connector),
-            &core.handle()
+            &core.handle(),
+            salty,
         ).unwrap();
 
     match core.run(task) {
