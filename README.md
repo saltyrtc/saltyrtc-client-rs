@@ -6,6 +6,7 @@
 force-pushes may happen to the `develop` branch. Once the codebase stabilizes a
 bit, we'll switch to `master`.
 
+
 ## Testing
 
 ### Unit Tests
@@ -25,6 +26,14 @@ Then run the fuzzer against a target:
     cargo fuzz run <target>
 
 You can list all targets with `cargo fuzz list`.
+
+
+## Logging
+
+The examples use [`env_logger`](https://doc.rust-lang.org/log/env_logger/index.html).
+To see the logs, export an env variable:
+
+    export RUST_LOG=saltyrtc_client=TRACE
 
 
 <!-- Badges -->
