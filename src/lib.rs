@@ -43,7 +43,7 @@ pub use keystore::{KeyStore, PublicKey, PrivateKey};
 // Internal imports
 use errors::{Result, Error};
 use helpers::libsodium_init;
-use messages::MsgPacked;
+use messages::{Message, ClientHello};
 
 
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
@@ -126,8 +126,9 @@ pub fn connect(
                         Err(e) => bail!("Could not parse nonce: {}", e),
                     };
                     trace!("Nonce: {:?}", nonce);
-                    let server_hello = match messages::ServerHello::from_msgpack(&bytes[24..]) {
-                        Ok(val) => val,
+                    let server_hello = match Message::from_msgpack(&bytes[24..]) {
+                        Ok(Message::ServerHello(hello)) => hello,
+                        Ok(msg) => bail!("Received wrong message type: Expected server-hello, got {}", msg.get_type()),
                         Err(e) => bail!("Could not deserialize server-hello message: {}", e),
                     };
                     info!("Received server-hello");
@@ -137,7 +138,7 @@ pub fn connect(
                     let (ourpk, oursk) = cryptobox::gen_keypair();
 
                     // Reply with client-hello message
-                    let client_hello = messages::ClientHello::new(ourpk.clone());
+                    let client_hello = Message::ClientHello(ClientHello::new(ourpk.clone()));
                     let client_nonce = nonce::Nonce::new(
                         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                         nonce::Sender::new(0),
