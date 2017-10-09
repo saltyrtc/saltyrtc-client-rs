@@ -111,9 +111,16 @@ pub fn connect(
                     }
                 });
 
+            // Main loop
             future::loop_fn(messages, |stream| {
+
+                // Take the next incoming message
                 stream.into_future()
+
+                    // Map errors to our custom error type
                     .map_err(|(e, _)| format!("Could not receive message from server: {}", e).into())
+
+                    // Decode nonce and message from the incoming bytes
                     .and_then(|(bytes_option, stream)| {
                         // Unwrap bytes
                         let bytes = bytes_option.ok_or(format!("Server message stream ended"))?;
@@ -134,10 +141,14 @@ pub fn connect(
 
                         Ok((nonce, msg, stream))
                     })
+
+                    // Process received message
                     .and_then(|(_nonce, msg, stream)| {
                         info!("Received {} message", msg.get_type());
 
+                        // Handle depending on type
                         match msg {
+
                             Message::ServerHello(server_hello) => {
                                 info!("Hello from server");
 
@@ -166,10 +177,12 @@ pub fn connect(
                                     .map_err(|e| format!("Could not send client-hello message: {}", e).into()))
                                     as Box<Future<Item = _, Error = _>>
                             },
+
                             Message::ClientHello(_) => {
                                 error!("Received invalid message: {}", msg.get_type());
                                 Box::new(future::ok(Loop::Break("hoo".to_string())))
                             },
+
                         }
                     })
             })
