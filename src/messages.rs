@@ -1,5 +1,7 @@
 //! Message types used in the SaltyRTC protocol.
 
+use std::convert::From;
+
 use rmp_serde as rmps;
 
 use errors::{Result};
@@ -52,6 +54,16 @@ impl ClientHello {
     pub fn new(key: PublicKey) -> Self {
         Self { key: key }
     }
+
+    pub fn into_message(self) -> Message {
+        self.into()
+    }
+}
+
+impl From<ClientHello> for Message {
+    fn from(val: ClientHello) -> Self {
+        Message::ClientHello(val)
+    }
 }
 
 
@@ -64,6 +76,16 @@ pub struct ServerHello {
 impl ServerHello {
     pub fn new(key: PublicKey) -> Self {
         Self { key: key }
+    }
+
+    pub fn into_message(self) -> Message {
+        self.into()
+    }
+}
+
+impl From<ServerHello> for Message {
+    fn from(val: ServerHello) -> Self {
+        Message::ServerHello(val)
     }
 }
 
@@ -143,7 +165,7 @@ mod tests {
                                                              1, 2, 3, 4, 5, 6, 7, 8, 9, 0,
                                                              1, 2, 3, 4, 5, 6, 7, 8, 9, 0,
                                                              1, 2]).unwrap());
-        let msg = Message::ClientHello(hello);
+        let msg: Message = hello.into();
         let bytes = msg.to_msgpack();
         let decoded = Message::from_msgpack(&bytes).unwrap();
         assert_eq!(msg, decoded);

@@ -138,7 +138,7 @@ pub fn connect(
                     let (ourpk, oursk) = cryptobox::gen_keypair();
 
                     // Reply with client-hello message
-                    let client_hello = Message::ClientHello(ClientHello::new(ourpk.clone()));
+                    let client_hello = ClientHello::new(ourpk.clone()).into_message();
                     let client_nonce = nonce::Nonce::new(
                         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                         nonce::Sender::new(0),
