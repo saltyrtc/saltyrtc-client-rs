@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: quay.io/saltyrtc/circleci-image-rs:master
+      - image: saltyrtc/circleci-image-rs:latest
     steps:
       - checkout
       # Load cargo target from cache if possible.
