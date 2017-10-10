@@ -3,57 +3,40 @@
 use messages::Message;
 
 #[derive(Debug, PartialEq, Eq)]
-enum InitiatorState {
-    /// Initial state
-    New,
-    /// The server-hello message has been received and processed.
-    ServerHello,
-    /// The client-auth message has been received and processed.
-    ClientAuth,
-    /// The server-auth message has been received and processed.
-    ServerAuth,
-    /// A final error state.
-    Failure(String),
-}
-
-impl InitiatorState {
-    pub fn new() -> Self {
-        InitiatorState::New
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum ResponderState {
+enum ServerHandshakeState {
     /// Initial state
     New,
     /// The server-hello message has been received and processed.
     ServerHello,
     /// The client-hello message has been received and processed.
+    /// Only valid if we are a responder.
     ClientHello,
     /// The client-auth message has been received and processed.
     ClientAuth,
     /// The server-auth message has been received and processed.
     ServerAuth,
+    /// Something went wrong. This is a terminal state.
+    Failure(String),
 }
 
-impl ResponderState {
+impl ServerHandshakeState {
     pub fn new() -> Self {
-        ResponderState::New
+        ServerHandshakeState::New
     }
 }
 
-impl InitiatorState {
-    fn next(self, event: Message) -> InitiatorState {
+impl ServerHandshakeState {
+    fn next(self, event: Message) -> ServerHandshakeState {
         match (self, event) {
             // Valid state transitions
-            (InitiatorState::New, Message::ServerHello(_msg)) => InitiatorState::ServerHello,
+            (ServerHandshakeState::New, Message::ServerHello(_msg)) => ServerHandshakeState::ServerHello,
 
             // A failure transition is terminal and does not change
-            (f @ InitiatorState::Failure(_), _) => f,
+            (f @ ServerHandshakeState::Failure(_), _) => f,
 
             // Any undefined state transition changes to Failure
             (s, msg) => {
-                InitiatorState::Failure(format!("Invalid event transition: {:?} <- {}", s, msg.get_type()))
+                ServerHandshakeState::Failure(format!("Invalid event transition: {:?} <- {}", s, msg.get_type()))
             }
         }
     }
@@ -67,29 +50,29 @@ mod tests {
     #[test]
     fn transition_server_hello() {
         // Create a new initial state.
-        let state = InitiatorState::new();
-        assert_eq!(state, InitiatorState::New);
+        let state = ServerHandshakeState::new();
+        assert_eq!(state, ServerHandshakeState::New);
 
         // Transition to server-hello state.
         let msg = Message::ServerHello(ServerHello::random());
         let state = state.next(msg);
-        assert_eq!(state, InitiatorState::ServerHello);
+        assert_eq!(state, ServerHandshakeState::ServerHello);
     }
 
     #[test]
     fn transition_failure() {
         // Create a new initial state.
-        let state = InitiatorState::new();
-        assert_eq!(state, InitiatorState::New);
+        let state = ServerHandshakeState::new();
+        assert_eq!(state, ServerHandshakeState::New);
 
         // Invalid transition to client-hello state.
         let msg = Message::ClientHello(ClientHello::random());
         let state = state.next(msg);
-        assert_eq!(state, InitiatorState::Failure("Invalid event transition: New <- client-hello".into()));
+        assert_eq!(state, ServerHandshakeState::Failure("Invalid event transition: New <- client-hello".into()));
 
         // Another invalid transition won't change the message
         let msg = Message::ServerHello(ServerHello::random());
         let state = state.next(msg);
-        assert_eq!(state, InitiatorState::Failure("Invalid event transition: New <- client-hello".into()));
+        assert_eq!(state, ServerHandshakeState::Failure("Invalid event transition: New <- client-hello".into()));
     }
 }
