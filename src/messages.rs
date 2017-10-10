@@ -26,7 +26,7 @@ pub enum Message {
 impl Message {
     /// Decode a message from msgpack bytes.
     pub fn from_msgpack(bytes: &[u8]) -> Result<Self> {
-        Ok(rmps::from_slice(&bytes)?)
+        Ok(rmps::from_slice(bytes)?)
     }
 
     /// Convert this message to msgpack bytes.

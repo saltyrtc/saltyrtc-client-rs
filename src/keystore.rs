@@ -19,7 +19,7 @@ pub type PublicKey = box_::PublicKey;
 pub type PrivateKey = box_::SecretKey;
 
 
-/// A KeyStore contains a keypair and handles encrypting / decrypting messages.
+/// Wrapper for holding a keypair and encrypting / decrypting messages.
 #[derive(Debug, PartialEq, Eq)]
 pub struct KeyStore {
     public_key: PublicKey,

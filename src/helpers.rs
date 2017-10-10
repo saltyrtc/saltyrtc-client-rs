@@ -4,8 +4,8 @@ use errors::{Result, ErrorKind};
 ///
 /// It is safe to call this function multiple times.
 ///
-/// See https://docs.rs/rust_sodium/0.5.0/rust_sodium/fn.init.html for more
-/// information.
+/// See [`rust_sodium::init` docs](https://docs.rs/rust_sodium/0.5.0/rust_sodium/fn.init.html)
+/// for more information.
 pub fn libsodium_init() -> Result<()> {
     let success = ::rust_sodium::init();
     if !success {

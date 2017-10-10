@@ -136,7 +136,7 @@ pub fn connect(
             // Main loop
             future::loop_fn(messages, move |stream| {
 
-                let salty = salty.clone();
+                let salty = Rc::clone(&salty);
 
                 // Take the next incoming message
                 stream.into_future()
@@ -147,7 +147,7 @@ pub fn connect(
                     // Decode nonce and message from the incoming bytes
                     .and_then(|(bytes_option, stream)| {
                         // Unwrap bytes
-                        let bytes = bytes_option.ok_or(format!("Server message stream ended"))?;
+                        let bytes = bytes_option.ok_or("Server message stream ended")?;
 
                         // Decode nonce
                         let nonce = match Nonce::from_bytes(&bytes[..24]) {
@@ -191,7 +191,7 @@ pub fn connect(
                                 let (ourpk, _oursk) = cryptobox::gen_keypair();
 
                                 // Reply with client-hello message
-                                let client_hello = ClientHello::new(ourpk.clone()).into_message();
+                                let client_hello = ClientHello::new(ourpk).into_message();
                                 let client_nonce = Nonce::new(
                                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                                     Sender::new(0),
@@ -206,7 +206,7 @@ pub fn connect(
                                 trace!("Sending {:?}", client_hello);
                                 Box::new(stream
                                     .send(OwnedMessage::Binary(client_hello_bytes))
-                                    .map(|s| Loop::Continue(s))
+                                    .map(Loop::Continue)
                                     .map_err(|e| format!("Could not send client-hello message: {}", e).into()))
                                     as Box<Future<Item = _, Error = _>>
                             },
