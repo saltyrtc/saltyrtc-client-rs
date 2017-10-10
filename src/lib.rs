@@ -36,7 +36,6 @@ use std::rc::Rc;
 
 // Third party imports
 use native_tls::TlsConnector;
-use rust_sodium::crypto::box_ as cryptobox;
 use tokio_core::reactor::{Handle};
 use websocket::WebSocketError;
 use websocket::client::ClientBuilder;
@@ -52,9 +51,9 @@ pub use keystore::{KeyStore, PublicKey, PrivateKey};
 // Internal imports
 use errors::{Result, Error};
 use helpers::libsodium_init;
-use messages::{Message, ServerHello, ClientHello};
-use nonce::{Nonce, Sender, Receiver};
-use protocol::{HandleAction};
+use messages::{Message};
+use nonce::{Nonce};
+use protocol::{HandleAction, ServerHandshakeState, Role};
 
 
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
@@ -71,60 +70,31 @@ macro_rules! boxed {
     }}
 }
 
-enum SignalingState {
-    /// No connection has been established yet.
-    New,
-    /// The websocket connection is being established.
-    WsConnecting,
-    /// The server handshake is currently happening.
-    ServerHandshake,
-}
 
 pub struct SaltyClient {
-    signaling_state: SignalingState,
+    role: Role,
+    server_handshake_state: ServerHandshakeState,
 }
 
 impl SaltyClient {
     pub fn new() -> Self {
         SaltyClient {
-            signaling_state: SignalingState::New,
+            role: Role::Responder, // TODO make this configurable
+            server_handshake_state: ServerHandshakeState::New,
         }
     }
 
-    fn handle_message(&self, msg: Message, nonce: Nonce) -> HandleAction {
+    fn handle_message(&mut self, msg: Message, nonce: Nonce) -> HandleAction {
         info!("SaltyClient::handle_message");
 
-        match msg {
-            Message::ServerHello(m) => self.handle_server_hello(m, nonce),
-            Message::ClientHello(m) => self.handle_client_hello(m, nonce),
-        }
-    }
+        // Do the state transition
+        // TODO: The clone is unelegant! Using mem::replace would be better but wont' work here.
+        let transition = self.server_handshake_state.clone().next(msg, nonce, self.role);
+        trace!("Server handshake state transition: {:?} -> {:?}", self.server_handshake_state, transition.state);
+        self.server_handshake_state = transition.state;
 
-    fn handle_server_hello(&self, msg: ServerHello, _nonce: Nonce) -> HandleAction {
-        info!("Hello from server");
-
-        trace!("Server key is {:?}", msg.key);
-
-        // Generate keypair
-        let (ourpk, _oursk) = cryptobox::gen_keypair();
-
-        // Reply with client-hello message
-        let client_hello = ClientHello::new(ourpk).into_message();
-        let client_nonce = Nonce::new(
-            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-            Sender::new(0),
-            Receiver::new(0),
-            0,
-            123,
-        );
-
-        // TODO: Can we prevent confusing an incoming and an outgoing nonce?
-        HandleAction::Reply(client_hello, client_nonce)
-    }
-
-    fn handle_client_hello(&self, _msg: ClientHello, _nonce: Nonce) -> HandleAction {
-        error!("Received invalid message: client-hello");
-        HandleAction::None
+        // Return the action with side effects
+        transition.action
     }
 }
 
@@ -143,12 +113,6 @@ pub fn connect(
     let ws_url = match Url::parse(url) {
         Ok(b) => b,
         Err(e) => bail!("Could not parse URL: {}", e),
-    };
-
-    // Update signaling state
-    match salty.deref().try_borrow_mut() {
-        Ok(mut s) => s.signaling_state = SignalingState::WsConnecting,
-        Err(e) => bail!("Could not get mutable reference to SaltyClient: {}", e),
     };
 
     // Initialize WebSocket client
@@ -180,14 +144,6 @@ pub fn connect(
             info!("Connected to server!");
 
             // We're connected to the SaltyRTC server.
-            // Update signaling state
-            match salty.deref().try_borrow_mut() {
-                Ok(mut s) => s.signaling_state = SignalingState::ServerHandshake,
-                Err(e) => return boxed!(
-                    future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
-                ),
-            };
-
             // Filter the incoming message stream. We're only interested in the binary ones.
             let messages = client
                 .filter_map(|msg| {
@@ -241,8 +197,8 @@ pub fn connect(
                     .and_then(move |(nonce, msg, stream)| {
                         info!("Received {} message", msg.get_type());
 
-                        let handle_action = match salty.deref().try_borrow() {
-                            Ok(s) => s.handle_message(msg, nonce),
+                        let handle_action = match salty.deref().try_borrow_mut() {
+                            Ok(mut s) => s.handle_message(msg, nonce),
                             Err(e) => return boxed!(
                                 future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
                             ),

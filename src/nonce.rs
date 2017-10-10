@@ -54,6 +54,7 @@ impl Nonce {
             sequence: sequence,
         }
     }
+
     /// Parse bytes, return a Nonce.
     ///
     /// This will fail if the byte slice does not contain exactly 24 bytes of
@@ -84,6 +85,15 @@ impl Nonce {
         BigEndian::write_u16(&mut bytes[18..20], self.overflow);
         BigEndian::write_u32(&mut bytes[20..24], self.sequence);
         bytes
+    }
+
+    /// Create a new instance with dummy data. Used in testing.
+    #[cfg(test)]
+    pub fn random() -> Self {
+        ::helpers::libsodium_init().unwrap();
+        let mut bytes = [0u8; 24];
+        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        Self::from_bytes(&bytes).unwrap()
     }
 }
 
