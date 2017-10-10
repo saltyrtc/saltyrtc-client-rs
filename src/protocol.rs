@@ -1,4 +1,8 @@
 //! Protocol state machine.
+//!
+//! This handles all state transitions independently of the connection.
+
+use std::convert::From;
 
 use messages::Message;
 use nonce::Nonce;
@@ -38,7 +42,20 @@ impl<T> StateTransition<T> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+impl<T> From<(T, HandleAction)> for StateTransition<T> {
+    fn from(val: (T, HandleAction)) -> Self {
+        StateTransition::new(val.0, val.1)
+    }
+}
+
+impl<T> From<T> for StateTransition<T> {
+    /// States can be converted to a `StateTransition` with a `HandleAction::None`.
+    fn from(val: T) -> Self {
+        StateTransition::new(val, HandleAction::None)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum ServerHandshakeState {
     /// Initial state
     New,
@@ -65,21 +82,16 @@ impl ServerHandshakeState {
     fn next(self, event: Message, role: Role) -> StateTransition<ServerHandshakeState> {
         match (self, event, role) {
             // Valid state transitions
-            (ServerHandshakeState::New, Message::ServerHello(_msg), _) => StateTransition::new(
-                ServerHandshakeState::ServerHello.into(), HandleAction::None
-            ),
+            (ServerHandshakeState::New, Message::ServerHello(_msg), _) => ServerHandshakeState::ServerHello.into(),
 
             // A failure transition is terminal and does not change
-            (f @ ServerHandshakeState::Failure(_), _, _) => StateTransition::new(f, HandleAction::None),
+            (f @ ServerHandshakeState::Failure(_), _, _) => f.into(),
 
             // Any undefined state transition changes to Failure
             (s, msg, _) => {
-                StateTransition::new(
-                    ServerHandshakeState::Failure(
-                        format!("Invalid event transition: {:?} <- {}", s, msg.get_type())
-                    ),
-                    HandleAction::None
-                )
+                ServerHandshakeState::Failure(
+                    format!("Invalid event transition: {:?} <- {}", s, msg.get_type())
+                ).into()
             }
         }
     }
@@ -89,6 +101,18 @@ impl ServerHandshakeState {
 mod tests {
     use ::messages::{ServerHello, ClientHello};
     use super::*;
+
+    /// Test that states and tuples implement Into<ServerHandshakeState>.
+    #[test]
+    fn server_handshake_state_from() {
+        let t1: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, HandleAction::None);
+        let t2: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, HandleAction::None).into();
+        let t3: StateTransition<_> = (ServerHandshakeState::New, HandleAction::None).into();
+        let t4: StateTransition<_> = ServerHandshakeState::New.into();
+        assert_eq!(t1, t2);
+        assert_eq!(t1, t3);
+        assert_eq!(t1, t4);
+    }
 
     #[test]
     fn transition_server_hello() {
