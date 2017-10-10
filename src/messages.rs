@@ -55,6 +55,17 @@ impl ClientHello {
         Self { key: key }
     }
 
+    /// Create a new instance with dummy data. Used in testing.
+    #[cfg(test)]
+    pub fn random() -> Self {
+        ::helpers::libsodium_init().unwrap();
+        let mut bytes = [0u8; 32];
+        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        Self {
+            key: PublicKey::from_slice(&bytes).unwrap(),
+        }
+    }
+
     pub fn into_message(self) -> Message {
         self.into()
     }
@@ -76,6 +87,17 @@ pub struct ServerHello {
 impl ServerHello {
     pub fn new(key: PublicKey) -> Self {
         Self { key: key }
+    }
+
+    /// Create a new instance with dummy data. Used in testing.
+    #[cfg(test)]
+    pub fn random() -> Self {
+        ::helpers::libsodium_init().unwrap();
+        let mut bytes = [0u8; 32];
+        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        Self {
+            key: PublicKey::from_slice(&bytes).unwrap(),
+        }
     }
 
     pub fn into_message(self) -> Message {
@@ -159,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    /// Round-trip msgpack serialization for ClientHello message.
+    /// Round-trip msgpack serialization for `ClientHello` message.
     fn test_client_hello_roundtrip() {
         let hello = ClientHello::new(PublicKey::from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 0,
                                                              1, 2, 3, 4, 5, 6, 7, 8, 9, 0,

@@ -27,6 +27,7 @@ mod helpers;
 mod keystore;
 pub mod messages;
 pub mod nonce;
+mod protocol;
 
 // Rust imports
 use std::cell::RefCell;

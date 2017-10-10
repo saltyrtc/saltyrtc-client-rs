@@ -104,7 +104,7 @@ mod tests {
             source: Sender(17),
             destination: Receiver(18),
             overflow: 258,
-            sequence: 50595078,
+            sequence: 50_595_078,
         }
     }
 
@@ -135,7 +135,7 @@ mod tests {
         assert_eq!(nonce.into_bytes(), create_test_nonce_bytes());
     }
 
-    /// Test conversion from a saltyrtc `Nonce` to a rust_sodium `Nonce`.
+    /// Test conversion from a saltyrtc `Nonce` to a rust sodium `Nonce`.
     #[test]
     fn nonce_into_nonce() {
         let nonce: Nonce = create_test_nonce();
