@@ -51,7 +51,7 @@ pub use keystore::{KeyStore, PublicKey, PrivateKey};
 // Internal imports
 use errors::{Result, Error};
 use helpers::libsodium_init;
-use messages::{Message, ClientHello};
+use messages::{Message, ServerHello, ClientHello};
 use nonce::{Nonce, Sender, Receiver};
 
 
@@ -62,6 +62,17 @@ const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
 pub type BoxedFuture<T, E> = Box<Future<Item = T, Error = E>>;
 
 
+/// An enum returned when an incoming message is handled.
+///
+/// It can contain different actions that should be done to finish handling the
+/// message.
+enum HandleAction {
+    /// Send the specified message through the websocket.
+    Reply(Message, Nonce),
+    /// No further 0action required.
+    Done,
+}
+
 pub struct SaltyClient { }
 
 impl SaltyClient {
@@ -69,9 +80,40 @@ impl SaltyClient {
         SaltyClient { }
     }
 
-    //fn handle_message(msg: Message, nonce: Nonce) {
-    fn handle_message(&self) {
+    fn handle_message(&self, msg: Message, nonce: Nonce) -> HandleAction {
         info!("SaltyClient::handle_message");
+
+        match msg {
+            Message::ServerHello(m) => self.handle_server_hello(m, nonce),
+            Message::ClientHello(m) => self.handle_client_hello(m, nonce),
+        }
+    }
+
+    fn handle_server_hello(&self, msg: ServerHello, _nonce: Nonce) -> HandleAction {
+        info!("Hello from server");
+
+        trace!("Server key is {:?}", msg.key);
+
+        // Generate keypair
+        let (ourpk, _oursk) = cryptobox::gen_keypair();
+
+        // Reply with client-hello message
+        let client_hello = ClientHello::new(ourpk).into_message();
+        let client_nonce = Nonce::new(
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            Sender::new(0),
+            Receiver::new(0),
+            0,
+            123,
+        );
+
+        // TODO: Can we prevent confusing an incoming and an outgoing nonce?
+        HandleAction::Reply(client_hello, client_nonce)
+    }
+
+    fn handle_client_hello(&self, _msg: ClientHello, _nonce: Nonce) -> HandleAction {
+        error!("Received invalid message: client-hello");
+        HandleAction::Done
     }
 }
 
@@ -171,11 +213,11 @@ pub fn connect(
                     })
 
                     // Process received message
-                    .and_then(move |(_nonce, msg, stream)| {
+                    .and_then(move |(nonce, msg, stream)| {
                         info!("Received {} message", msg.get_type());
 
-                        match salty.deref().try_borrow_mut() {
-                            Ok(s) => s.handle_message(),
+                        let handle_action = match salty.deref().try_borrow_mut() {
+                            Ok(s) => s.handle_message(msg, nonce),
                             Err(e) => {
                                 return Box::new(
                                     future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
@@ -183,48 +225,26 @@ pub fn connect(
                             },
                         };
 
-                        // Handle depending on type
-                        match msg {
+                        match handle_action {
+                            HandleAction::Reply(msg, nonce) => {
+                                let mut msg_bytes: Vec<u8> = vec![];
+                                msg_bytes.extend(nonce.into_bytes().iter());
+                                msg_bytes.extend(msg.to_msgpack().iter());
 
-                            Message::ServerHello(server_hello) => {
-                                info!("Hello from server");
-
-                                trace!("Server key is {:?}", server_hello.key);
-
-                                // Generate keypair
-                                let (ourpk, _oursk) = cryptobox::gen_keypair();
-
-                                // Reply with client-hello message
-                                let client_hello = ClientHello::new(ourpk).into_message();
-                                let client_nonce = Nonce::new(
-                                    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-                                    Sender::new(0),
-                                    Receiver::new(0),
-                                    0,
-                                    123,
-                                );
-                                let mut client_hello_bytes: Vec<u8> = vec![];
-                                client_hello_bytes.extend(client_nonce.into_bytes().iter());
-                                client_hello_bytes.extend(client_hello.to_msgpack().iter());
-
-                                trace!("Sending {:?}", client_hello);
+                                debug!("Sending {} message", msg.get_type());
                                 Box::new(stream
-                                    .send(OwnedMessage::Binary(client_hello_bytes))
+                                    .send(OwnedMessage::Binary(msg_bytes))
                                     .map(Loop::Continue)
-                                    .map_err(|e| format!("Could not send client-hello message: {}", e).into()))
+                                    .map_err(move |e| format!("Could not send {} message: {}", msg.get_type(), e).into()))
                                     as BoxedFuture<_, _>
                             },
-
-                            Message::ClientHello(_) => {
-                                error!("Received invalid message: {}", msg.get_type());
-                                Box::new(future::ok(Loop::Break("hoo".to_string())))
-                            },
-
+                            HandleAction::Done => {
+                                Box::new(future::ok(Loop::Continue(stream)))
+                            }
                         }
                     })
             })
-        })
-        .map(|_| ());
+        });
 
     Ok(Box::new(future))
 }
