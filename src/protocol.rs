@@ -3,6 +3,12 @@
 use messages::Message;
 
 #[derive(Debug, PartialEq, Eq)]
+enum Role {
+    Initiator,
+    Responder,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 enum ServerHandshakeState {
     /// Initial state
     New,
@@ -26,16 +32,16 @@ impl ServerHandshakeState {
 }
 
 impl ServerHandshakeState {
-    fn next(self, event: Message) -> ServerHandshakeState {
-        match (self, event) {
+    fn next(self, event: Message, role: Role) -> ServerHandshakeState {
+        match (self, event, role) {
             // Valid state transitions
-            (ServerHandshakeState::New, Message::ServerHello(_msg)) => ServerHandshakeState::ServerHello,
+            (ServerHandshakeState::New, Message::ServerHello(_msg), _) => ServerHandshakeState::ServerHello,
 
             // A failure transition is terminal and does not change
-            (f @ ServerHandshakeState::Failure(_), _) => f,
+            (f @ ServerHandshakeState::Failure(_), _, _) => f,
 
             // Any undefined state transition changes to Failure
-            (s, msg) => {
+            (s, msg, _) => {
                 ServerHandshakeState::Failure(format!("Invalid event transition: {:?} <- {}", s, msg.get_type()))
             }
         }
@@ -55,7 +61,7 @@ mod tests {
 
         // Transition to server-hello state.
         let msg = Message::ServerHello(ServerHello::random());
-        let state = state.next(msg);
+        let state = state.next(msg, Role::Initiator);
         assert_eq!(state, ServerHandshakeState::ServerHello);
     }
 
@@ -67,12 +73,12 @@ mod tests {
 
         // Invalid transition to client-hello state.
         let msg = Message::ClientHello(ClientHello::random());
-        let state = state.next(msg);
+        let state = state.next(msg, Role::Initiator);
         assert_eq!(state, ServerHandshakeState::Failure("Invalid event transition: New <- client-hello".into()));
 
         // Another invalid transition won't change the message
         let msg = Message::ServerHello(ServerHello::random());
-        let state = state.next(msg);
+        let state = state.next(msg, Role::Initiator);
         assert_eq!(state, ServerHandshakeState::Failure("Invalid event transition: New <- client-hello".into()));
     }
 }
