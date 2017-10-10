@@ -58,6 +58,10 @@ use nonce::{Nonce, Sender, Receiver};
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
 
 
+/// A type alias for a boxed future.
+pub type BoxedFuture<T, E> = Box<Future<Item = T, Error = E>>;
+
+
 pub struct SaltyClient { }
 
 impl SaltyClient {
@@ -78,7 +82,7 @@ pub fn connect(
     tls_config: Option<TlsConnector>,
     handle: &Handle,
     salty: Rc<RefCell<SaltyClient>>,
-) -> Result<Box<Future<Item = (), Error = Error>>> {
+) -> Result<BoxedFuture<(), Error>> {
     // Initialize libsodium
     libsodium_init()?;
 
@@ -175,7 +179,7 @@ pub fn connect(
                             Err(e) => {
                                 return Box::new(
                                     future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
-                                ) as Box<Future<Item = _, Error = _>>;
+                                ) as BoxedFuture<_, _>;
                             },
                         };
 
@@ -208,7 +212,7 @@ pub fn connect(
                                     .send(OwnedMessage::Binary(client_hello_bytes))
                                     .map(Loop::Continue)
                                     .map_err(|e| format!("Could not send client-hello message: {}", e).into()))
-                                    as Box<Future<Item = _, Error = _>>
+                                    as BoxedFuture<_, _>
                             },
 
                             Message::ClientHello(_) => {
