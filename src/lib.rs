@@ -62,6 +62,14 @@ const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
 pub type BoxedFuture<T, E> = Box<Future<Item = T, Error = E>>;
 
 
+/// Wrap future in a box with type erasure.
+macro_rules! boxed {
+    ($future:expr) => {{
+        Box::new($future) as BoxedFuture<_, _>
+    }}
+}
+
+
 /// An enum returned when an incoming message is handled.
 ///
 /// It can contain different actions that should be done to finish handling the
@@ -185,9 +193,9 @@ pub fn connect(
             // Update signaling state
             match salty.deref().try_borrow_mut() {
                 Ok(mut s) => s.signaling_state = SignalingState::ServerHandshake,
-                Err(e) => return Box::new(
+                Err(e) => return boxed!(
                     future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
-                ) as BoxedFuture<_, _>,
+                ),
             };
 
             // Filter the incoming message stream. We're only interested in the binary ones.
@@ -207,7 +215,7 @@ pub fn connect(
                 });
 
             // Main loop
-            Box::new(future::loop_fn(messages, move |stream| {
+            boxed!(future::loop_fn(messages, move |stream| {
 
                 let salty = Rc::clone(&salty);
 
@@ -245,11 +253,9 @@ pub fn connect(
 
                         let handle_action = match salty.deref().try_borrow() {
                             Ok(s) => s.handle_message(msg, nonce),
-                            Err(e) => {
-                                return Box::new(
-                                    future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
-                                ) as BoxedFuture<_, _>;
-                            },
+                            Err(e) => return boxed!(
+                                future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
+                            ),
                         };
 
                         match handle_action {
@@ -259,19 +265,18 @@ pub fn connect(
                                 msg_bytes.extend(msg.to_msgpack().iter());
 
                                 debug!("Sending {} message", msg.get_type());
-                                Box::new(stream
+                                boxed!(stream
                                     .send(OwnedMessage::Binary(msg_bytes))
                                     .map(Loop::Continue)
                                     .map_err(move |e| format!("Could not send {} message: {}", msg.get_type(), e).into()))
-                                    as BoxedFuture<_, _>
                             },
                             HandleAction::Done => {
-                                Box::new(future::ok(Loop::Continue(stream)))
+                                boxed!(future::ok(Loop::Continue(stream)))
                             }
                         }
                     })
-            })) as BoxedFuture<_, _>
+            }))
         });
 
-    Ok(Box::new(future))
+    Ok(boxed!(future))
 }
