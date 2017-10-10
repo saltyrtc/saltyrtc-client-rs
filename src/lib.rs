@@ -54,6 +54,7 @@ use errors::{Result, Error};
 use helpers::libsodium_init;
 use messages::{Message, ServerHello, ClientHello};
 use nonce::{Nonce, Sender, Receiver};
+use protocol::{HandleAction};
 
 
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
@@ -68,18 +69,6 @@ macro_rules! boxed {
     ($future:expr) => {{
         Box::new($future) as BoxedFuture<_, _>
     }}
-}
-
-
-/// An enum returned when an incoming message is handled.
-///
-/// It can contain different actions that should be done to finish handling the
-/// message.
-enum HandleAction {
-    /// Send the specified message through the websocket.
-    Reply(Message, Nonce),
-    /// No further 0action required.
-    Done,
 }
 
 enum SignalingState {
@@ -135,7 +124,7 @@ impl SaltyClient {
 
     fn handle_client_hello(&self, _msg: ClientHello, _nonce: Nonce) -> HandleAction {
         error!("Received invalid message: client-hello");
-        HandleAction::Done
+        HandleAction::None
     }
 }
 
@@ -271,7 +260,7 @@ pub fn connect(
                                     .map(Loop::Continue)
                                     .map_err(move |e| format!("Could not send {} message: {}", msg.get_type(), e).into()))
                             },
-                            HandleAction::Done => {
+                            HandleAction::None => {
                                 boxed!(future::ok(Loop::Continue(stream)))
                             }
                         }
