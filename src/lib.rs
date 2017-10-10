@@ -73,11 +73,24 @@ enum HandleAction {
     Done,
 }
 
-pub struct SaltyClient { }
+enum SignalingState {
+    /// No connection has been established yet.
+    New,
+    /// The websocket connection is being established.
+    WsConnecting,
+    /// The server handshake is currently happening.
+    ServerHandshake,
+}
+
+pub struct SaltyClient {
+    signaling_state: SignalingState,
+}
 
 impl SaltyClient {
     pub fn new() -> Self {
-        SaltyClient { }
+        SaltyClient {
+            signaling_state: SignalingState::New,
+        }
     }
 
     fn handle_message(&self, msg: Message, nonce: Nonce) -> HandleAction {
@@ -134,6 +147,12 @@ pub fn connect(
         Err(e) => bail!("Could not parse URL: {}", e),
     };
 
+    // Update signaling state
+    match salty.deref().try_borrow_mut() {
+        Ok(mut s) => s.signaling_state = SignalingState::WsConnecting,
+        Err(e) => bail!("Could not get mutable reference to SaltyClient: {}", e),
+    };
+
     // Initialize WebSocket client
     let client = ClientBuilder::from_url(&ws_url)
         .add_protocol(SUBPROTOCOL)
@@ -163,6 +182,14 @@ pub fn connect(
             info!("Connected to server!");
 
             // We're connected to the SaltyRTC server.
+            // Update signaling state
+            match salty.deref().try_borrow_mut() {
+                Ok(mut s) => s.signaling_state = SignalingState::ServerHandshake,
+                Err(e) => return Box::new(
+                    future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
+                ) as BoxedFuture<_, _>,
+            };
+
             // Filter the incoming message stream. We're only interested in the binary ones.
             let messages = client
                 .filter_map(|msg| {
@@ -180,7 +207,7 @@ pub fn connect(
                 });
 
             // Main loop
-            future::loop_fn(messages, move |stream| {
+            Box::new(future::loop_fn(messages, move |stream| {
 
                 let salty = Rc::clone(&salty);
 
@@ -216,7 +243,7 @@ pub fn connect(
                     .and_then(move |(nonce, msg, stream)| {
                         info!("Received {} message", msg.get_type());
 
-                        let handle_action = match salty.deref().try_borrow_mut() {
+                        let handle_action = match salty.deref().try_borrow() {
                             Ok(s) => s.handle_message(msg, nonce),
                             Err(e) => {
                                 return Box::new(
@@ -243,7 +270,7 @@ pub fn connect(
                             }
                         }
                     })
-            })
+            })) as BoxedFuture<_, _>
         });
 
     Ok(Box::new(future))
