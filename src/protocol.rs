@@ -31,15 +31,15 @@ pub enum Role {
 /// It can contain different actions that should be done to finish handling the
 /// message.
 #[derive(Debug, PartialEq)]
-pub enum HandleAction {
+pub(crate) enum HandleAction {
     /// Send the specified message through the websocket.
-    Reply(Message, Nonce),
+    Reply(ByteBox),
     /// No further action required.
     None,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct StateTransition<T> {
+pub(crate) struct StateTransition<T> {
     /// The state resulting from the state transition.
     pub state: T,
     /// Any actions that need to be taken as a result of this state transition.
@@ -118,11 +118,12 @@ impl ServerHandshakeState {
                     0,
                     123,
                 );
+                let obox = OpenBox::new(client_hello, client_nonce);
 
                 // TODO: Can we prevent confusing an incoming and an outgoing nonce?
                 StateTransition {
                     state: ServerHandshakeState::ClientInfoSent,
-                    action: HandleAction::Reply(client_hello, client_nonce),
+                    action: HandleAction::Reply(obox.encode()),
                 }
             },
 

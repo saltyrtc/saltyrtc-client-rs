@@ -65,6 +65,13 @@ impl ByteBox {
             .chain_err(|| ErrorKind::Decode("cannot decode message payload".into()))?;
         Ok(OpenBox::new(message, self.nonce))
     }
+
+    pub(crate) fn into_bytes(self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(NONCEBYTES + self.bytes.len());
+        bytes.extend(self.nonce.into_bytes().iter());
+        bytes.extend(self.bytes.iter());
+        bytes
+    }
 }
 
 

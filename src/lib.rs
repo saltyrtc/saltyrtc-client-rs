@@ -191,16 +191,13 @@ pub fn connect(
                         };
 
                         match handle_action {
-                            HandleAction::Reply(msg, nonce) => {
-                                let mut msg_bytes: Vec<u8> = vec![];
-                                msg_bytes.extend(nonce.into_bytes().iter());
-                                msg_bytes.extend(msg.to_msgpack().iter());
-
-                                debug!("Sending {} message", msg.get_type());
+                            HandleAction::Reply(bbox) => {
+                                let payload = bbox.into_bytes();
+                                debug!("Sending {} bytes", payload.len());
                                 boxed!(stream
-                                    .send(OwnedMessage::Binary(msg_bytes))
+                                    .send(OwnedMessage::Binary(payload))
                                     .map(Loop::Continue)
-                                    .map_err(move |e| format!("Could not send {} message: {}", msg.get_type(), e).into()))
+                                    .map_err(move |e| format!("Could not send message: {}", e).into()))
                             },
                             HandleAction::None => {
                                 boxed!(future::ok(Loop::Continue(stream)))
