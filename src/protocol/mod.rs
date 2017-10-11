@@ -10,7 +10,7 @@
 use boxes::{ByteBox, OpenBox};
 use messages::{Message, ClientHello};
 use nonce::{Nonce, Sender, Receiver};
-use keystore::{KeyStore};
+use keystore::{KeyStore, PublicKey};
 
 mod types;
 mod state;
@@ -20,6 +20,50 @@ pub(crate) use self::types::{HandleAction};
 pub use self::state::{ServerHandshakeState};
 pub(crate) use self::state::{StateTransition};
 
+
+/// All signaling related data.
+struct Signaling {
+    server_handshake_state: ServerHandshakeState,
+    server: ServerContext,
+}
+
+
+trait PeerContext {
+    fn address(&self) -> Receiver;
+    fn permanent_key(&self) -> Option<&PublicKey>;
+    fn session_key(&self) -> Option<&PublicKey>;
+}
+
+struct ServerContext {
+    permanent_key: Option<PublicKey>,
+    session_key: Option<PublicKey>,
+}
+
+impl ServerContext {
+    pub fn new() -> Self {
+        ServerContext {
+            permanent_key: None,
+            session_key: None,
+        }
+    }
+}
+
+impl PeerContext for ServerContext {
+    fn address(&self) -> Receiver {
+        Receiver::server()
+    }
+
+    fn permanent_key(&self) -> Option<&PublicKey> {
+        self.permanent_key.as_ref()
+    }
+
+    fn session_key(&self) -> Option<&PublicKey> {
+        self.session_key.as_ref()
+    }
+}
+
+
+/// Implementation of the server handshake state transitions.
 impl ServerHandshakeState {
     pub(crate) fn next(self, bbox: ByteBox, role: Role) -> StateTransition<ServerHandshakeState> {
         // Decode message
@@ -131,4 +175,12 @@ mod tests {
 //        assert_eq!(state, ServerHandshakeState::Failure("Invalid event transition: New <- client-hello".into()));
 //        assert_eq!(action, HandleAction::None);
 //    }
+
+    #[test]
+    fn server_context_new() {
+        let ctx = ServerContext::new();
+        assert_eq!(ctx.address(), Receiver::new(0));
+        assert_eq!(ctx.permanent_key(), None);
+        assert_eq!(ctx.session_key(), None);
+    }
 }

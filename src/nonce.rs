@@ -26,7 +26,12 @@ pub struct Receiver(u8);
 
 impl Receiver {
     pub fn new(id: u8) -> Self {
+        // TODO: Server / peer value checks?
         Receiver(id)
+    }
+
+    pub fn server() -> Self {
+        Receiver(0)
     }
 }
 
