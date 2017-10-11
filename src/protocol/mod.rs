@@ -22,9 +22,30 @@ pub(crate) use self::state::{StateTransition};
 
 
 /// All signaling related data.
-struct Signaling {
-    server_handshake_state: ServerHandshakeState,
-    server: ServerContext,
+pub(crate) struct Signaling {
+    pub role: Role,
+    pub server: ServerContext,
+}
+
+impl Signaling {
+    pub(crate) fn new(role: Role) -> Self {
+        Signaling {
+            role: role,
+            server: ServerContext::new(),
+        }
+    }
+
+    /// Handle an incoming message.
+    pub(crate) fn handle_message(&mut self, bbox: ByteBox) -> HandleAction {
+        // Do the state transition
+        // TODO: The clone is unelegant! Using mem::replace would be better but won't work here.
+        let transition = self.server.handshake_state.clone().next(bbox, self.role);
+        trace!("Server handshake state transition: {:?} -> {:?}", self.server.handshake_state, transition.state);
+        self.server.handshake_state = transition.state;
+
+        // Return the action with side effects
+        transition.action
+    }
 }
 
 
@@ -34,14 +55,16 @@ trait PeerContext {
     fn session_key(&self) -> Option<&PublicKey>;
 }
 
-struct ServerContext {
+pub(crate) struct ServerContext {
+    handshake_state: ServerHandshakeState,
     permanent_key: Option<PublicKey>,
     session_key: Option<PublicKey>,
 }
 
 impl ServerContext {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         ServerContext {
+            handshake_state: ServerHandshakeState::New,
             permanent_key: None,
             session_key: None,
         }

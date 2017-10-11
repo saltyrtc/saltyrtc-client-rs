@@ -52,7 +52,7 @@ pub use keystore::{KeyStore, PublicKey, PrivateKey};
 // Internal imports
 use errors::{Result, Error};
 use helpers::libsodium_init;
-use protocol::{HandleAction, ServerHandshakeState, Role};
+use protocol::{HandleAction, Role, Signaling};
 
 
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
@@ -71,27 +71,19 @@ macro_rules! boxed {
 
 
 pub struct SaltyClient {
-    role: Role,
-    server_handshake_state: ServerHandshakeState,
+    signaling: Signaling,
 }
 
 impl SaltyClient {
     pub fn new() -> Self {
         SaltyClient {
-            role: Role::Responder, // TODO make this configurable
-            server_handshake_state: ServerHandshakeState::New,
+            signaling: Signaling::new(Role::Responder),
         }
     }
 
+    /// Handle an incoming message.
     fn handle_message(&mut self, bbox: boxes::ByteBox) -> HandleAction {
-        // Do the state transition
-        // TODO: The clone is unelegant! Using mem::replace would be better but won't work here.
-        let transition = self.server_handshake_state.clone().next(bbox, self.role);
-        trace!("Server handshake state transition: {:?} -> {:?}", self.server_handshake_state, transition.state);
-        self.server_handshake_state = transition.state;
-
-        // Return the action with side effects
-        transition.action
+        self.signaling.handle_message(bbox)
     }
 }
 
