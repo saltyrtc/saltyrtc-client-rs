@@ -1,6 +1,11 @@
-//! Protocol state machine.
+//! Protocol state machines.
 //!
-//! This handles all state transitions independently of the connection.
+//! These state machines handle all state transitions independently of the
+//! connection. Instead of executing side effects (like sending a response
+//! message to the peer through the websocket), a `HandleAction` is returned.
+//!
+//! This allows for better decoupling between protocol logic and network code,
+//! and makes it possible to easily add tests.
 
 use std::convert::From;
 
@@ -9,9 +14,14 @@ use rust_sodium::crypto::box_ as cryptobox;
 use messages::{Message, ClientHello};
 use nonce::{Nonce, Sender, Receiver};
 
+/// The role of a peer.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Role {
+    /// A SaltyRTC compliant client who wants to establish a WebRTC or ORTC
+    /// peer-to-peer connection to a responder.
     Initiator,
+    /// A SaltyRTC compliant client who wants to establish a WebRTC or ORTC
+    /// peer-to-peer connection to an initiator.
     Responder,
 }
 
@@ -57,6 +67,13 @@ impl<T> From<T> for StateTransition<T> {
     }
 }
 
+/// The server handshake states.
+///
+/// The `ClientHello` state is only valid for the responder role, otherwise the
+/// state will transition from `ServerHello` to `ClientAuth` directly.
+///
+/// If any invalid transition happens, the state will change to the terminal
+/// `Failure` state.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ServerHandshakeState {
     /// Initial state
@@ -75,8 +92,8 @@ pub enum ServerHandshakeState {
 }
 
 impl ServerHandshakeState {
-    pub fn next(self, event: Message, nonce: Nonce, role: Role) -> StateTransition<ServerHandshakeState> {
-        match (self, event, nonce, role) {
+    pub fn next(self, message: Message, nonce: Nonce, role: Role) -> StateTransition<ServerHandshakeState> {
+        match (self, message, nonce, role) {
             // Valid state transitions
             (ServerHandshakeState::New, Message::ServerHello(msg), _nonce, _) => {
                 info!("Hello from server");
