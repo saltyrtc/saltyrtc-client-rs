@@ -4,7 +4,7 @@ use data_encoding::HEXLOWER;
 use rust_sodium::crypto::box_;
 use rust_sodium_sys::crypto_scalarmult_base;
 
-use errors::{Result, Error, ErrorKind};
+use errors::{Result, ResultExt, Error, ErrorKind};
 use helpers::libsodium_init;
 use nonce::Nonce;
 
@@ -35,7 +35,8 @@ impl KeyStore {
         info!("Generating new key pair");
 
         // Initialize libsodium if it hasn't been initialized already
-        libsodium_init()?;
+        libsodium_init()
+            .chain_err(|| ErrorKind::Crypto("could not generate keystore".into()))?;
 
         // Generate key pair
         let (pk, sk) = box_::gen_keypair();

@@ -9,11 +9,10 @@
 
 use std::convert::From;
 
-use rust_sodium::crypto::box_ as cryptobox;
-
 use boxes::{ByteBox, OpenBox};
 use messages::{Message, ClientHello};
 use nonce::{Nonce, Sender, Receiver};
+use keystore::{KeyStore};
 
 /// The role of a peer.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -107,10 +106,13 @@ impl ServerHandshakeState {
                 trace!("Server key is {:?}", msg.key);
 
                 // Generate keypair
-                let (ourpk, _oursk) = cryptobox::gen_keypair();
+                let keystore = match KeyStore::new() {
+                    Ok(ks) => ks,
+                    Err(e) => return ServerHandshakeState::Failure(format!("{}", e)).into(),
+                };
 
                 // Reply with client-hello message
-                let client_hello = ClientHello::new(ourpk).into_message();
+                let client_hello = ClientHello::new(keystore.public_key().clone()).into_message();
                 let client_nonce = Nonce::new(
                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                     Sender::new(0),

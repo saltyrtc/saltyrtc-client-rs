@@ -1,4 +1,10 @@
 //! Message types used in the SaltyRTC protocol.
+//!
+//! ## Implementation notes
+//!
+//! All message types own their values. This choice was made to simplify the
+//! use and implementation of the library. Some values may be optimized to take
+//! references in a future version.
 
 use std::convert::From;
 

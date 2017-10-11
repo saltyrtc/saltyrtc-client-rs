@@ -9,7 +9,7 @@ use errors::{Result, ErrorKind};
 pub fn libsodium_init() -> Result<()> {
     let success = ::rust_sodium::init();
     if !success {
-        bail!(ErrorKind::Crypto("Could not initialize libsodium".into()));
+        bail!(ErrorKind::Crypto("could not initialize libsodium".into()));
     } else {
         Ok(())
     }
