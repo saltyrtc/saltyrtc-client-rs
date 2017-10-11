@@ -75,10 +75,13 @@ pub struct SaltyClient {
 }
 
 impl SaltyClient {
-    pub fn new() -> Self {
-        SaltyClient {
-            signaling: Signaling::new(Role::Responder),
-        }
+    pub fn new() -> Result<Self> {
+        // Generate permanent keypair
+        let permanent_key = KeyStore::new()?;
+
+        Ok(SaltyClient {
+            signaling: Signaling::new(Role::Responder, permanent_key),
+        })
     }
 
     /// Handle an incoming message.

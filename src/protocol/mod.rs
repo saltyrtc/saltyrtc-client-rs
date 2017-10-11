@@ -23,13 +23,15 @@ use self::state::{ServerHandshakeState, StateTransition};
 pub struct Signaling {
     pub role: Role,
     pub server: ServerContext,
+    pub permanent_key: KeyStore,
 }
 
 impl Signaling {
-    pub fn new(role: Role) -> Self {
+    pub fn new(role: Role, permanent_key: KeyStore) -> Self {
         Signaling {
             role: role,
             server: ServerContext::new(),
+            permanent_key: permanent_key,
         }
     }
 
@@ -74,14 +76,9 @@ impl Signaling {
 
                 trace!("Server key is {:?}", msg.key);
 
-                // Generate keypair
-                let keystore = match KeyStore::new() {
-                    Ok(ks) => ks,
-                    Err(e) => return ServerHandshakeState::Failure(format!("{}", e)).into(),
-                };
-
                 // Reply with client-hello message
-                let client_hello = ClientHello::new(keystore.public_key().clone()).into_message();
+                let key = self.permanent_key.public_key().clone();
+                let client_hello = ClientHello::new(key).into_message();
                 let client_nonce = Nonce::new(
                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                     Sender::new(0),
