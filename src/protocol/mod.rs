@@ -7,90 +7,18 @@
 //! This allows for better decoupling between protocol logic and network code,
 //! and makes it possible to easily add tests.
 
-use std::convert::From;
-
 use boxes::{ByteBox, OpenBox};
 use messages::{Message, ClientHello};
 use nonce::{Nonce, Sender, Receiver};
 use keystore::{KeyStore};
 
+mod types;
+mod state;
 
-/// The role of a peer.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum Role {
-    /// A SaltyRTC compliant client who wants to establish a WebRTC or ORTC
-    /// peer-to-peer connection to a responder.
-    Initiator,
-    /// A SaltyRTC compliant client who wants to establish a WebRTC or ORTC
-    /// peer-to-peer connection to an initiator.
-    Responder,
-}
-
-
-/// An enum returned when an incoming message is handled.
-///
-/// It can contain different actions that should be done to finish handling the
-/// message.
-#[derive(Debug, PartialEq)]
-pub(crate) enum HandleAction {
-    /// Send the specified message through the websocket.
-    Reply(ByteBox),
-    /// No further action required.
-    None,
-}
-
-
-/// A state transition contains the new target state as well as a
-/// `HandleAction` with resulting side effects (like response messages).
-#[derive(Debug, PartialEq)]
-pub(crate) struct StateTransition<T> {
-    /// The state resulting from the state transition.
-    pub state: T,
-    /// Any actions that need to be taken as a result of this state transition.
-    pub action: HandleAction,
-}
-
-impl<T> StateTransition<T> {
-    fn new(state: T, action: HandleAction) -> Self {
-        Self {
-            state: state,
-            action: action,
-        }
-    }
-}
-
-impl<T> From<(T, HandleAction)> for StateTransition<T> {
-    fn from(val: (T, HandleAction)) -> Self {
-        StateTransition::new(val.0, val.1)
-    }
-}
-
-impl<T> From<T> for StateTransition<T> {
-    /// States can be converted to a `StateTransition` with a `HandleAction::None`.
-    fn from(val: T) -> Self {
-        StateTransition::new(val, HandleAction::None)
-    }
-}
-
-
-/// The server handshake states.
-///
-/// The `ClientHello` state is only valid for the responder role, otherwise the
-/// state will transition from `ServerHello` to `ClientAuth` directly.
-///
-/// If any invalid transition happens, the state will change to the terminal
-/// `Failure` state.
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum ServerHandshakeState {
-    /// Initial state.
-    New,
-    /// The client-hello (only responder) and client-auth messages have been sent.
-    ClientInfoSent,
-    /// The server-auth message has been received and processed.
-    Done,
-    /// Something went wrong. This is a terminal state.
-    Failure(String),
-}
+pub use self::types::{Role};
+pub(crate) use self::types::{HandleAction};
+pub use self::state::{ServerHandshakeState};
+pub(crate) use self::state::{StateTransition};
 
 impl ServerHandshakeState {
     pub(crate) fn next(self, bbox: ByteBox, role: Role) -> StateTransition<ServerHandshakeState> {
