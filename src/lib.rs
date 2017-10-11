@@ -160,8 +160,8 @@ pub fn connect(
                     }
                 });
 
-            // Main loop
-            boxed!(future::loop_fn(messages, move |stream| {
+            // Server handshake loop
+            let server_handshake = future::loop_fn(messages, move |stream| {
 
                 let salty = Rc::clone(&salty);
 
@@ -221,7 +221,9 @@ pub fn connect(
                             }
                         }
                     })
-            }))
+            });
+
+            boxed!(server_handshake)
         });
 
     Ok(boxed!(future))
