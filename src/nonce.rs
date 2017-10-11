@@ -8,7 +8,7 @@ use std::io::Write;
 use byteorder::{BigEndian, ByteOrder};
 use rust_sodium::crypto::box_;
 
-use errors::Error;
+use errors::{Result, ErrorKind};
 
 /// Newtype for the sender address.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -59,8 +59,11 @@ impl Nonce {
     ///
     /// This will fail if the byte slice does not contain exactly 24 bytes of
     /// data.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
-        ensure!(bytes.len() == 24, "Nonce must be exactly 24 bytes long");
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        ensure!(
+            bytes.len() == 24,
+            ErrorKind::Crypto(format!("byte slice must be exactly 24 bytes, not {}", bytes.len()))
+        );
         Ok(Self {
             cookie: [
                 bytes[0], bytes[1], bytes[2],  bytes[3],  bytes[4],  bytes[5],  bytes[6],  bytes[7],

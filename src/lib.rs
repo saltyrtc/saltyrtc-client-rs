@@ -52,8 +52,6 @@ pub use keystore::{KeyStore, PublicKey, PrivateKey};
 // Internal imports
 use errors::{Result, Error};
 use helpers::libsodium_init;
-use messages::{Message};
-use nonce::{Nonce};
 use protocol::{HandleAction, ServerHandshakeState, Role};
 
 
@@ -85,12 +83,10 @@ impl SaltyClient {
         }
     }
 
-    fn handle_message(&mut self, msg: Message, nonce: Nonce) -> HandleAction {
-        info!("SaltyClient::handle_message");
-
+    fn handle_message(&mut self, bbox: boxes::ByteBox) -> HandleAction {
         // Do the state transition
-        // TODO: The clone is unelegant! Using mem::replace would be better but wont' work here.
-        let transition = self.server_handshake_state.clone().next(msg, nonce, self.role);
+        // TODO: The clone is unelegant! Using mem::replace would be better but won't work here.
+        let transition = self.server_handshake_state.clone().next(bbox, self.role);
         trace!("Server handshake state transition: {:?} -> {:?}", self.server_handshake_state, transition.state);
         self.server_handshake_state = transition.state;
 
@@ -172,34 +168,23 @@ pub fn connect(
                     // Map errors to our custom error type
                     .map_err(|(e, _)| format!("Could not receive message from server: {}", e).into())
 
-                    // Decode nonce and message from the incoming bytes
+                    // Get nonce and message payload from the incoming bytes
                     .and_then(|(bytes_option, stream)| {
                         // Unwrap bytes
                         let bytes = bytes_option.ok_or("Server message stream ended")?;
+                        info!("Received {} bytes", bytes.len());
 
-                        // Decode nonce
-                        let nonce = match Nonce::from_bytes(&bytes[..24]) {
-                            Ok(val) => val,
-                            Err(e) => bail!("Could not parse nonce: {}", e),
-                        };
-                        trace!("Nonce: {:?}", nonce);
+                        // Parse into ByteBox
+                        let bbox = boxes::ByteBox::from_slice(&bytes)?;
+                        trace!("ByteBox: {:?}", bbox);
 
-                        // Decode message
-                        let msg = match Message::from_msgpack(&bytes[24..]) {
-                            Ok(msg) => msg,
-                            Err(e) => bail!("Could not decode message: {}", e),
-                        };
-                        trace!("Message: {:?}", msg);
-
-                        Ok((nonce, msg, stream))
+                        Ok((bbox, stream))
                     })
 
                     // Process received message
-                    .and_then(move |(nonce, msg, stream)| {
-                        info!("Received {} message", msg.get_type());
-
+                    .and_then(move |(bbox, stream)| {
                         let handle_action = match salty.deref().try_borrow_mut() {
-                            Ok(mut s) => s.handle_message(msg, nonce),
+                            Ok(mut s) => s.handle_message(bbox),
                             Err(e) => return boxed!(
                                 future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
                             ),

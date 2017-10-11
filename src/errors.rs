@@ -26,6 +26,11 @@ error_chain!{
     }
 
     errors {
+        /// A problem with decoding data.
+        Decode(msg: String) {
+            description("decoding error"),
+            display("decoding error: {}", msg),
+        }
         /// A problem with Libsodium or with encrypting or decrypting data.
         Crypto(msg: String) {
             description("crypto error"),
