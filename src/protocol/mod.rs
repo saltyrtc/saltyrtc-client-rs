@@ -15,20 +15,18 @@ use keystore::{KeyStore, PublicKey};
 mod types;
 mod state;
 
-pub use self::types::{Role};
-pub(crate) use self::types::{HandleAction};
-pub use self::state::{ServerHandshakeState};
-pub(crate) use self::state::{StateTransition};
+pub use self::types::{Role, HandleAction};
+use self::state::{ServerHandshakeState, StateTransition};
 
 
 /// All signaling related data.
-pub(crate) struct Signaling {
+pub struct Signaling {
     pub role: Role,
     pub server: ServerContext,
 }
 
 impl Signaling {
-    pub(crate) fn new(role: Role) -> Self {
+    pub fn new(role: Role) -> Self {
         Signaling {
             role: role,
             server: ServerContext::new(),
@@ -36,14 +34,14 @@ impl Signaling {
     }
 
     /// Handle an incoming message.
-    pub(crate) fn handle_message(&mut self, bbox: ByteBox) -> HandleAction {
+    pub fn handle_message(&mut self, bbox: ByteBox) -> HandleAction {
         // Do the state transition
         // TODO: The clone is unelegant! Using mem::replace would be better but won't work here.
         let transition = self.server.handshake_state.clone().next(bbox, self.role);
         trace!("Server handshake state transition: {:?} -> {:?}", self.server.handshake_state, transition.state);
         self.server.handshake_state = transition.state;
 
-        // Return the action with side effects
+        // Return the action
         transition.action
     }
 }
@@ -55,14 +53,14 @@ trait PeerContext {
     fn session_key(&self) -> Option<&PublicKey>;
 }
 
-pub(crate) struct ServerContext {
+pub struct ServerContext {
     handshake_state: ServerHandshakeState,
     permanent_key: Option<PublicKey>,
     session_key: Option<PublicKey>,
 }
 
 impl ServerContext {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         ServerContext {
             handshake_state: ServerHandshakeState::New,
             permanent_key: None,
@@ -88,7 +86,7 @@ impl PeerContext for ServerContext {
 
 /// Implementation of the server handshake state transitions.
 impl ServerHandshakeState {
-    pub(crate) fn next(self, bbox: ByteBox, role: Role) -> StateTransition<ServerHandshakeState> {
+    pub fn next(self, bbox: ByteBox, role: Role) -> StateTransition<ServerHandshakeState> {
         // Decode message
         let obox: OpenBox = if self == ServerHandshakeState::New {
             match bbox.decode() {

@@ -6,7 +6,7 @@ use super::types::HandleAction;
 /// A state transition contains the new target state as well as a
 /// `HandleAction` with resulting side effects (like response messages).
 #[derive(Debug, PartialEq)]
-pub(crate) struct StateTransition<T> {
+pub struct StateTransition<T> {
     /// The state resulting from the state transition.
     pub state: T,
     /// Any actions that need to be taken as a result of this state transition.
@@ -14,7 +14,7 @@ pub(crate) struct StateTransition<T> {
 }
 
 impl<T> StateTransition<T> {
-    pub(crate) fn new(state: T, action: HandleAction) -> Self {
+    pub fn new(state: T, action: HandleAction) -> Self {
         Self {
             state: state,
             action: action,

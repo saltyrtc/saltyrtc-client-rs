@@ -17,7 +17,7 @@ pub enum Role {
 /// It can contain different actions that should be done to finish handling the
 /// message.
 #[derive(Debug, PartialEq)]
-pub(crate) enum HandleAction {
+pub enum HandleAction {
     /// Send the specified message through the websocket.
     Reply(ByteBox),
     /// No further action required.

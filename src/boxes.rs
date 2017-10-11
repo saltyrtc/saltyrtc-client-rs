@@ -12,13 +12,13 @@ use nonce::Nonce;
 
 /// An open box (unencrypted message + nonce).
 #[derive(Debug, PartialEq)]
-pub(crate) struct OpenBox {
+pub struct OpenBox {
     pub message: Message,
     pub nonce: Nonce,
 }
 
 impl OpenBox {
-    pub(crate) fn new(message: Message, nonce: Nonce) -> Self {
+    pub fn new(message: Message, nonce: Nonce) -> Self {
         OpenBox { message, nonce }
     }
 }
@@ -29,7 +29,7 @@ impl OpenBox {
     ///
     /// This should only be necessary for the server-hello message. All other
     /// messages are encrypted.
-    pub(crate) fn encode(self) -> ByteBox {
+    pub fn encode(self) -> ByteBox {
         let bytes = self.message.to_msgpack();
         ByteBox::new(bytes, self.nonce)
     }
@@ -38,17 +38,17 @@ impl OpenBox {
 
 /// A byte box (message bytes + nonce). The bytes may or may not be encrypted.
 #[derive(Debug, PartialEq)]
-pub(crate) struct ByteBox {
+pub struct ByteBox {
     pub bytes: Vec<u8>,
     pub nonce: Nonce,
 }
 
 impl ByteBox {
-    pub(crate) fn new(bytes: Vec<u8>, nonce: Nonce) -> Self {
+    pub fn new(bytes: Vec<u8>, nonce: Nonce) -> Self {
         ByteBox { bytes, nonce }
     }
 
-    pub(crate) fn from_slice(bytes: &[u8]) -> Result<Self> {
+    pub fn from_slice(bytes: &[u8]) -> Result<Self> {
         ensure!(bytes.len() > NONCEBYTES, ErrorKind::Decode("message is too short".into()));
         let nonce = Nonce::from_bytes(&bytes[..24])
             .chain_err(|| ErrorKind::Decode("cannot decode nonce".into()))?;
@@ -60,13 +60,13 @@ impl ByteBox {
     ///
     /// This should only be necessary for the server-hello message. All other
     /// messages are encrypted.
-    pub(crate) fn decode(self) -> Result<OpenBox> {
+    pub fn decode(self) -> Result<OpenBox> {
         let message = Message::from_msgpack(&self.bytes)
             .chain_err(|| ErrorKind::Decode("cannot decode message payload".into()))?;
         Ok(OpenBox::new(message, self.nonce))
     }
 
-    pub(crate) fn into_bytes(self) -> Vec<u8> {
+    pub fn into_bytes(self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(NONCEBYTES + self.bytes.len());
         bytes.extend(self.nonce.into_bytes().iter());
         bytes.extend(self.bytes.iter());
