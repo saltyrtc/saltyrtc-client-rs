@@ -14,6 +14,7 @@ use messages::{Message, ClientHello};
 use nonce::{Nonce, Sender, Receiver};
 use keystore::{KeyStore};
 
+
 /// The role of a peer.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Role {
@@ -24,6 +25,7 @@ pub enum Role {
     /// peer-to-peer connection to an initiator.
     Responder,
 }
+
 
 /// An enum returned when an incoming message is handled.
 ///
@@ -37,6 +39,9 @@ pub(crate) enum HandleAction {
     None,
 }
 
+
+/// A state transition contains the new target state as well as a
+/// `HandleAction` with resulting side effects (like response messages).
 #[derive(Debug, PartialEq)]
 pub(crate) struct StateTransition<T> {
     /// The state resulting from the state transition.
@@ -66,6 +71,7 @@ impl<T> From<T> for StateTransition<T> {
         StateTransition::new(val, HandleAction::None)
     }
 }
+
 
 /// The server handshake states.
 ///
@@ -141,6 +147,7 @@ impl ServerHandshakeState {
         }
     }
 }
+
 
 #[cfg(test)]
 mod tests {
