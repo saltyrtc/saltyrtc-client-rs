@@ -22,6 +22,7 @@ extern crate tokio_core;
 extern crate websocket;
 
 // Modules
+mod boxes;
 pub mod errors;
 mod helpers;
 mod keystore;
