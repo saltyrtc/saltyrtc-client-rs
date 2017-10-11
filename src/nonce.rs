@@ -95,6 +95,31 @@ impl Nonce {
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
         Self::from_bytes(&bytes).unwrap()
     }
+
+    /// Return a reference to the cookie bytes.
+    pub fn cookie(&self) -> &[u8] {
+        &self.cookie
+    }
+
+    /// Return the sender.
+    pub fn source(&self) -> Sender {
+        self.source
+    }
+
+    /// Return the receiver.
+    pub fn destination(&self) -> Receiver {
+        self.destination
+    }
+
+    /// Return the overflow number.
+    pub fn overflow(&self) -> u16 {
+        self.overflow
+    }
+
+    /// Return the sequence number.
+    pub fn sequence(&self) -> u32 {
+        self.sequence
+    }
 }
 
 impl Into<box_::Nonce> for Nonce {
@@ -137,6 +162,16 @@ mod tests {
     fn parse_nonce() {
         let bytes = create_test_nonce_bytes();
         assert_eq!(Nonce::from_bytes(&bytes).unwrap(), create_test_nonce());
+    }
+
+    #[test]
+    fn nonce_methods() {
+        let nonce = create_test_nonce();
+        assert_eq!(nonce.cookie(), &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+        assert_eq!(nonce.source(), Sender(17));
+        assert_eq!(nonce.destination(), Receiver(18));
+        assert_eq!(nonce.overflow(), 258);
+        assert_eq!(nonce.sequence(), 50_595_078);
     }
 
     #[test]
