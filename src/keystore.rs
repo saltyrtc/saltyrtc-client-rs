@@ -6,7 +6,7 @@ use rust_sodium_sys::crypto_scalarmult_base;
 
 use errors::{Result, ResultExt, Error, ErrorKind};
 use helpers::libsodium_init;
-use nonce::Nonce;
+use protocol::Nonce;
 
 /// A public key used for decrypting data.
 ///

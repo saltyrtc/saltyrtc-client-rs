@@ -9,16 +9,19 @@
 
 use boxes::{ByteBox, OpenBox};
 use messages::{Message, ClientHello, ClientAuth};
-use nonce::{Nonce};
 use keystore::{KeyStore, PublicKey};
 
-mod types;
+mod csn;
+mod nonce;
 mod state;
+mod types;
 
-use csn::{CombinedSequence};
 use errors::{Result};
 
-pub use self::types::{Role, Identity, Address, HandleAction};
+use self::csn::{CombinedSequence};
+pub use self::nonce::{Nonce};
+pub use self::types::{Role, HandleAction};
+use self::types::{Identity, Address};
 use self::state::{ServerHandshakeState, StateTransition};
 
 

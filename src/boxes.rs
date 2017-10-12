@@ -7,9 +7,9 @@
 use rust_sodium::crypto::box_::NONCEBYTES;
 
 use errors::{Result, ResultExt, ErrorKind};
-use messages::Message;
-use nonce::Nonce;
 use keystore::{PublicKey, PrivateKey};
+use messages::Message;
+use protocol::Nonce;
 
 /// An open box (unencrypted message + nonce).
 #[derive(Debug, PartialEq)]

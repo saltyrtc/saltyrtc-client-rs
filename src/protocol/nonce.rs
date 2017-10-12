@@ -1,8 +1,6 @@
 //! Nonce related functionality.
 //!
 //! This includes serialization and deserialization.
-//!
-//! TODO: Move into protocol module.
 
 use std::convert::Into;
 use std::io::Write;
@@ -10,9 +8,10 @@ use std::io::Write;
 use byteorder::{BigEndian, ByteOrder};
 use rust_sodium::crypto::box_;
 
-use csn::CombinedSequence;
 use errors::{Result, ErrorKind};
-use protocol::{Address};
+
+use super::csn::CombinedSequence;
+use super::types::{Address};
 
 
 /// The SaltyRTC nonce.
