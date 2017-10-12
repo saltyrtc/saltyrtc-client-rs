@@ -23,6 +23,7 @@ extern crate websocket;
 
 // Modules
 mod boxes;
+mod csn;
 pub mod errors;
 mod helpers;
 mod keystore;

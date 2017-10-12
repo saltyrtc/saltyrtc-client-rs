@@ -36,5 +36,11 @@ error_chain!{
             description("crypto error"),
             display("crypto error: {}", msg),
         }
+        /// A CSN overflowed.
+        /// This is extremely unlikely and must be treated as a protocol error.
+        CsnOverflow {
+            description("csn overflow"),
+            display("csn overflow"),
+        }
     }
 }
