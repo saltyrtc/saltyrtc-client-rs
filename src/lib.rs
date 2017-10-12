@@ -144,6 +144,17 @@ pub fn connect(
                             debug!("Received binary message");
                             Some(bytes)
                         },
+                        OwnedMessage::Close(close_data) => {
+                            match close_data {
+                                Some(data) => if data.reason.is_empty() {
+                                    info!("Server closed connection with status code {}", data.status_code);
+                                } else {
+                                    info!("Server closed connection with status code {} ({})", data.status_code, data.reason);
+                                },
+                                None => info!("Server closed connection without close reason"),
+                            };
+                            None
+                        },
                         m => {
                             // TODO: Handle ping messages
                             warn!("Skipping non-binary message: {:?}", m);

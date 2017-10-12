@@ -54,7 +54,7 @@ fn main() {
     match core.run(task) {
         Ok(x) => println!("Success: {:?}", x),
         Err(e) => {
-            println!("Error: {}", e);
+            println!("{}", e);
             if let Some(cause) = e.cause() {
                 println!("Cause: {}", cause);
             }
