@@ -1,6 +1,7 @@
 use boxes::{ByteBox};
 use keystore::{PublicKey};
 
+
 /// The role of a peer.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Role {
@@ -21,6 +22,30 @@ impl Role {
         *self == Role::Responder
     }
 }
+
+
+/// A peer identity.
+///
+/// On the network level, this is encoded as a single unsigned byte.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum Identity {
+    /// The initiator has the identity `0x01`.
+    Initiator,
+    /// The responder has an identity in the range `0x02-0xff`.
+    Responder(u8),
+    /// The server has the identity `0x00`.
+    Server,
+    /// An unknown identity is initialized to `0x00`.
+    Unknown,
+}
+
+
+/// An address.
+///
+/// This is an unsigned byte like the [`Identity`](enum.Identity.html),
+/// but without any semantic information attached.
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub struct Address(pub u8);
 
 
 /// An enum returned when an incoming message is handled.

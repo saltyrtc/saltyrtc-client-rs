@@ -9,21 +9,23 @@
 
 use boxes::{ByteBox, OpenBox};
 use messages::{Message, ClientHello, ClientAuth};
-use nonce::{Nonce, Sender, Receiver};
+use nonce::{Nonce};
 use keystore::{KeyStore, PublicKey};
 
 mod types;
 mod state;
 
-use csn::CombinedSequence;
+use csn::{CombinedSequence};
+use errors::{Result};
 
-pub use self::types::{Role, HandleAction};
+pub use self::types::{Role, Identity, Address, HandleAction};
 use self::state::{ServerHandshakeState, StateTransition};
 
 
 /// All signaling related data.
 pub struct Signaling {
-    pub role: Role,
+    pub role: Role, // TODO: Redundant?
+    pub identity: Identity,
     pub server: ServerContext,
     pub permanent_key: KeyStore,
 }
@@ -32,6 +34,7 @@ impl Signaling {
     pub fn new(role: Role, permanent_key: KeyStore) -> Self {
         Signaling {
             role: role,
+            identity: Identity::Unknown,
             server: ServerContext::new(),
             permanent_key: permanent_key,
         }
@@ -86,8 +89,8 @@ impl Signaling {
                 let client_hello = ClientHello::new(key).into_message();
                 let client_hello_nonce = Nonce::new(
                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-                    Sender::new(0),
-                    Receiver::new(0),
+                    Address(0),
+                    Address(0),
                     CombinedSequence::random().unwrap(),
                 );
                 let reply = OpenBox::new(client_hello, client_hello_nonce);
@@ -102,8 +105,8 @@ impl Signaling {
                 }.into_message();
                 let client_auth_nonce = Nonce::new(
                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-                    Sender::new(0),
-                    Receiver::new(0),
+                    Address(0),
+                    Address(0),
                     CombinedSequence::random().unwrap(),
                 );
                 let reply = OpenBox::new(client_auth, client_auth_nonce);
@@ -132,7 +135,7 @@ impl Signaling {
 
 
 trait PeerContext {
-    fn address(&self) -> Receiver;
+    fn identity(&self) -> Identity;
     fn permanent_key(&self) -> Option<&PublicKey>;
     fn session_key(&self) -> Option<&PublicKey>;
 }
@@ -154,8 +157,8 @@ impl ServerContext {
 }
 
 impl PeerContext for ServerContext {
-    fn address(&self) -> Receiver {
-        Receiver::server()
+    fn identity(&self) -> Identity {
+        Identity::Server
     }
 
     fn permanent_key(&self) -> Option<&PublicKey> {
@@ -176,8 +179,8 @@ mod tests {
     fn create_test_nonce() -> Nonce {
         Nonce::new(
             [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            Sender::new(17),
-            Receiver::new(18),
+            Address(17),
+            Address(18),
             CombinedSequence::new(258, 50_595_078),
         )
     }
@@ -243,7 +246,7 @@ mod tests {
     #[test]
     fn server_context_new() {
         let ctx = ServerContext::new();
-        assert_eq!(ctx.address(), Receiver::new(0));
+        assert_eq!(ctx.identity(), Identity::Server);
         assert_eq!(ctx.permanent_key(), None);
         assert_eq!(ctx.session_key(), None);
     }

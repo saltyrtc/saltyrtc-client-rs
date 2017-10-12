@@ -1,6 +1,8 @@
 //! Nonce related functionality.
 //!
 //! This includes serialization and deserialization.
+//!
+//! TODO: Move into protocol module.
 
 use std::convert::Into;
 use std::io::Write;
@@ -10,31 +12,8 @@ use rust_sodium::crypto::box_;
 
 use csn::CombinedSequence;
 use errors::{Result, ErrorKind};
+use protocol::{Address};
 
-/// Newtype for the sender address.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct Sender(u8);
-
-impl Sender {
-    pub fn new(id: u8) -> Self {
-        Sender(id)
-    }
-}
-
-/// Newtype for the receiver address.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct Receiver(u8);
-
-impl Receiver {
-    pub fn new(id: u8) -> Self {
-        // TODO: Server / peer value checks?
-        Receiver(id)
-    }
-
-    pub fn server() -> Self {
-        Receiver(0)
-    }
-}
 
 /// The SaltyRTC nonce.
 ///
@@ -44,13 +23,13 @@ impl Receiver {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Nonce {
     cookie: [u8; 16],
-    source: Sender,
-    destination: Receiver,
+    source: Address,
+    destination: Address,
     csn: CombinedSequence,
 }
 
 impl Nonce {
-    pub fn new(cookie: [u8; 16], source: Sender, destination: Receiver, csn: CombinedSequence) -> Self {
+    pub fn new(cookie: [u8; 16], source: Address, destination: Address, csn: CombinedSequence) -> Self {
         Nonce {
             cookie,
             source,
@@ -76,8 +55,8 @@ impl Nonce {
                 bytes[0], bytes[1], bytes[2],  bytes[3],  bytes[4],  bytes[5],  bytes[6],  bytes[7],
                 bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
             ],
-            source: Sender(bytes[16]),
-            destination: Receiver(bytes[17]),
+            source: Address(bytes[16]),
+            destination: Address(bytes[17]),
             csn: csn,
         })
     }
@@ -110,13 +89,13 @@ impl Nonce {
         &self.cookie
     }
 
-    /// Return the sender.
-    pub fn source(&self) -> Sender {
+    /// Return the source.
+    pub fn source(&self) -> Address {
         self.source
     }
 
-    /// Return the receiver.
-    pub fn destination(&self) -> Receiver {
+    /// Return the destination.
+    pub fn destination(&self) -> Address {
         self.destination
     }
 
@@ -140,8 +119,8 @@ mod tests {
     fn create_test_nonce() -> Nonce {
         Nonce {
             cookie: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            source: Sender(17),
-            destination: Receiver(18),
+            source: Address(17),
+            destination: Address(18),
             csn: CombinedSequence::new(258, 50_595_078),
         }
     }
@@ -171,8 +150,8 @@ mod tests {
     fn nonce_methods() {
         let nonce = create_test_nonce();
         assert_eq!(nonce.cookie(), &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
-        assert_eq!(nonce.source(), Sender(17));
-        assert_eq!(nonce.destination(), Receiver(18));
+        assert_eq!(nonce.source(), Address(17));
+        assert_eq!(nonce.destination(), Address(18));
         assert_eq!(nonce.csn().overflow_number(), 258);
         assert_eq!(nonce.csn().sequence_number(), 50_595_078);
     }
