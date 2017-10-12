@@ -20,13 +20,15 @@ use keystore::PublicKey;
 /// When converting a `Message` to msgpack bytes, it is serialized as
 /// internally tagged enum. This is why the inner structs don't actually need
 /// to contain a `type` field.
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum Message {
     #[serde(rename = "client-hello")]
     ClientHello(ClientHello),
     #[serde(rename = "server-hello")]
     ServerHello(ServerHello),
+    #[serde(rename = "client-auth")]
+    ClientAuth(ClientAuth),
 }
 
 impl Message {
@@ -45,13 +47,14 @@ impl Message {
         match *self {
             Message::ClientHello(_) => "client-hello",
             Message::ServerHello(_) => "server-hello",
+            Message::ClientAuth(_) => "client-auth",
         }
     }
 }
 
 
 /// The client-hello message.
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct ClientHello {
     pub key: PublicKey,
 }
@@ -85,7 +88,7 @@ impl From<ClientHello> for Message {
 
 
 /// The server-hello message.
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct ServerHello {
     pub key: PublicKey,
 }
@@ -116,6 +119,30 @@ impl From<ServerHello> for Message {
         Message::ServerHello(val)
     }
 }
+
+
+/// The client-auth message.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ClientAuth {
+    pub your_cookie: [u8; 16],
+    pub subprotocols: Vec<String>,
+    pub ping_interval: u32,
+    pub your_key: Option<PublicKey>,
+}
+
+impl ClientAuth {
+    pub fn into_message(self) -> Message {
+        self.into()
+    }
+}
+
+impl From<ClientAuth> for Message {
+    fn from(val: ClientAuth) -> Self {
+        Message::ClientAuth(val)
+    }
+}
+
+
 
 
 #[cfg(test)]
