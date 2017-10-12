@@ -89,6 +89,9 @@ impl Nonce {
     }
 
     /// Return the source.
+    ///
+    /// TODO: Does it make sense to provide these accessors instead of making
+    /// the fields public?
     pub fn source(&self) -> Address {
         self.source
     }

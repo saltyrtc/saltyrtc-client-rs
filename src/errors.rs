@@ -31,6 +31,11 @@ error_chain!{
             description("decoding error"),
             display("decoding error: {}", msg),
         }
+        /// Nonce validation fails.
+        InvalidNonce(msg: String) {
+            description("invalid nonce"),
+            display("invalid nonce: {}", msg),
+        }
         /// A problem with Libsodium or with encrypting or decrypting data.
         Crypto(msg: String) {
             description("crypto error"),

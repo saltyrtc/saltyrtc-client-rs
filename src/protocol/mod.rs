@@ -16,19 +16,19 @@ mod nonce;
 mod state;
 mod types;
 
-use errors::{Result};
+use errors::{Result, ErrorKind};
 
 use self::csn::{CombinedSequence};
 pub use self::nonce::{Nonce};
 pub use self::types::{Role, HandleAction};
-use self::types::{Identity, Address};
+use self::types::{Identity, ClientIdentity, Address};
 use self::state::{ServerHandshakeState, StateTransition};
 
 
 /// All signaling related data.
 pub struct Signaling {
     pub role: Role, // TODO: Redundant?
-    pub identity: Identity,
+    pub identity: ClientIdentity,
     pub server: ServerContext,
     pub permanent_key: KeyStore,
 }
@@ -37,7 +37,7 @@ impl Signaling {
     pub fn new(role: Role, permanent_key: KeyStore) -> Self {
         Signaling {
             role: role,
-            identity: Identity::Unknown,
+            identity: ClientIdentity::Unknown,
             server: ServerContext::new(),
             permanent_key: permanent_key,
         }
@@ -54,9 +54,30 @@ impl Signaling {
         transition.actions
     }
 
+    fn validate_nonce(&self, nonce: &Nonce) -> Result<()> {
+		// A client MUST check that the destination address targets its
+		// assigned identity (or `0x00` during authentication).
+        if nonce.destination() != self.identity.into() {
+            let msg = format!("bad destination: {} (our identity is {})", nonce.destination(), self.identity);
+            bail!(ErrorKind::InvalidNonce(msg));
+        }
+		// The first message received with a destination address different to
+		// 0x00 SHALL be accepted as the client's assigned identity. However, the client
+		// MUST validate that the identity fits its role – initiators SHALL ONLY accept
+		// 0x01 and responders SHALL ONLY an identity from the range 0x02..0xff. The
+		// identity MUST be stored as the client's assigned identity.
+		// TODO
+        Ok(())
+    }
+
     /// Determine the next state based on the incoming message bytes and the
     /// current (read-only) state.
     fn next_state(&self, bbox: ByteBox) -> StateTransition<ServerHandshakeState> {
+        // Validate the nonce
+        if let Err(e) = self.validate_nonce(&bbox.nonce) {
+            return ServerHandshakeState::Failure(format!("{}", e)).into();
+        }
+
         // Decode message
         let obox: OpenBox = match self.server.handshake_state {
 
@@ -206,6 +227,31 @@ mod tests {
         let t4: StateTransition<_> = ServerHandshakeState::New.into();
         let t5: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, vec![]);
         assert_eq!(t4, t5);
+    }
+
+    /// A client MUST check that the destination address targets its assigned
+    /// identity (or 0x00 during authentication).
+    ///
+    /// In case that any check fails, the peer MUST close the connection with a
+    /// close code of 3001 (Protocol Error) unless otherwise stated.
+    #[test]
+    fn first_message_wrong_destination() {
+        let ks = KeyStore::new().unwrap();
+        let mut s = Signaling::new(Role::Initiator, ks);
+
+        let msg = ServerHello::random().into_message();
+        let cs = CombinedSequence::random().unwrap();
+        let nonce = Nonce::new([0; 16], Address(0), Address(1), cs);
+        let obox = OpenBox::new(msg, nonce);
+        let bbox = obox.encode();
+
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        let actions = s.handle_message(bbox);
+        assert_eq!(
+            s.server.handshake_state,
+            ServerHandshakeState::Failure("invalid nonce: bad destination: Address(0x01) (our identity is Unknown)".into())
+        );
+        // TODO: Check actions for closing
     }
 
 //    #[test]
