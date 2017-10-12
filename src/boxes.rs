@@ -9,6 +9,7 @@ use rust_sodium::crypto::box_::NONCEBYTES;
 use errors::{Result, ResultExt, ErrorKind};
 use messages::Message;
 use nonce::Nonce;
+use keystore::{PublicKey, PrivateKey};
 
 /// An open box (unencrypted message + nonce).
 #[derive(Debug, PartialEq)]
@@ -33,6 +34,8 @@ impl OpenBox {
         let bytes = self.message.to_msgpack();
         ByteBox::new(bytes, self.nonce)
     }
+
+    //pub fn encrypt(self, public_key: PublicKey, private_key: PrivateKey,
 }
 
 
@@ -88,8 +91,8 @@ mod tests {
             9, 10,
         ];
         let bbox = ByteBox::from_slice(&bytes).unwrap();
-        assert_eq!(bbox.nonce.overflow(), (3 << 8) + 4);
-        assert_eq!(bbox.nonce.sequence(), (5 << 24) + (6 << 16) + (7 << 8) + 8);
+        assert_eq!(bbox.nonce.csn().overflow_number(), (3 << 8) + 4);
+        assert_eq!(bbox.nonce.csn().sequence_number(), (5 << 24) + (6 << 16) + (7 << 8) + 8);
         assert_eq!(bbox.bytes, vec![9, 10]);
     }
 

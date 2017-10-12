@@ -15,6 +15,8 @@ use keystore::{KeyStore, PublicKey};
 mod types;
 mod state;
 
+use csn::CombinedSequence;
+
 pub use self::types::{Role, HandleAction};
 use self::state::{ServerHandshakeState, StateTransition};
 
@@ -86,8 +88,7 @@ impl Signaling {
                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                     Sender::new(0),
                     Receiver::new(0),
-                    0,
-                    123,
+                    CombinedSequence::random().unwrap(),
                 );
                 let reply = OpenBox::new(client_hello, client_hello_nonce);
                 actions.push(HandleAction::Reply(reply.encode()));
@@ -103,8 +104,7 @@ impl Signaling {
                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                     Sender::new(0),
                     Receiver::new(0),
-                    0,
-                    124,
+                    CombinedSequence::random().unwrap(),
                 );
                 let reply = OpenBox::new(client_auth, client_auth_nonce);
                 actions.push(HandleAction::Reply(reply.encode()));
@@ -178,8 +178,7 @@ mod tests {
             [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
             Sender::new(17),
             Receiver::new(18),
-            258,
-            50_595_078,
+            CombinedSequence::new(258, 50_595_078),
         )
     }
 

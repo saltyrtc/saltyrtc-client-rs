@@ -8,6 +8,7 @@ use std::io::Write;
 use byteorder::{BigEndian, ByteOrder};
 use rust_sodium::crypto::box_;
 
+use csn::CombinedSequence;
 use errors::{Result, ErrorKind};
 
 /// Newtype for the sender address.
@@ -45,18 +46,16 @@ pub struct Nonce {
     cookie: [u8; 16],
     source: Sender,
     destination: Receiver,
-    overflow: u16,
-    sequence: u32,
+    csn: CombinedSequence,
 }
 
 impl Nonce {
-    pub fn new(cookie: [u8; 16], source: Sender, destination: Receiver, overflow: u16, sequence: u32) -> Self {
+    pub fn new(cookie: [u8; 16], source: Sender, destination: Receiver, csn: CombinedSequence) -> Self {
         Nonce {
-            cookie: cookie,
-            source: source,
-            destination: destination,
-            overflow: overflow,
-            sequence: sequence,
+            cookie,
+            source,
+            destination,
+            csn,
         }
     }
 
@@ -69,6 +68,9 @@ impl Nonce {
             bytes.len() == 24,
             ErrorKind::Crypto(format!("byte slice must be exactly 24 bytes, not {}", bytes.len()))
         );
+        let overflow = BigEndian::read_u16(&bytes[18..20]);
+        let sequence = BigEndian::read_u32(&bytes[20..24]);
+        let csn = CombinedSequence::new(overflow, sequence);
         Ok(Self {
             cookie: [
                 bytes[0], bytes[1], bytes[2],  bytes[3],  bytes[4],  bytes[5],  bytes[6],  bytes[7],
@@ -76,8 +78,7 @@ impl Nonce {
             ],
             source: Sender(bytes[16]),
             destination: Receiver(bytes[17]),
-            overflow: BigEndian::read_u16(&bytes[18..20]),
-            sequence: BigEndian::read_u32(&bytes[20..24]),
+            csn: csn,
         })
     }
 
@@ -90,8 +91,8 @@ impl Nonce {
         (&mut bytes[0..16]).write_all(&self.cookie).expect("Writing cookie to nonce failed");
         bytes[16] = self.source.0;
         bytes[17] = self.destination.0;
-        BigEndian::write_u16(&mut bytes[18..20], self.overflow);
-        BigEndian::write_u32(&mut bytes[20..24], self.sequence);
+        BigEndian::write_u16(&mut bytes[18..20], self.csn.overflow_number());
+        BigEndian::write_u32(&mut bytes[20..24], self.csn.sequence_number());
         bytes
     }
 
@@ -119,14 +120,9 @@ impl Nonce {
         self.destination
     }
 
-    /// Return the overflow number.
-    pub fn overflow(&self) -> u16 {
-        self.overflow
-    }
-
-    /// Return the sequence number.
-    pub fn sequence(&self) -> u32 {
-        self.sequence
+    /// Return the combined sequence number.
+    pub fn csn(&self) -> &CombinedSequence {
+        &self.csn
     }
 }
 
@@ -146,8 +142,7 @@ mod tests {
             cookie: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
             source: Sender(17),
             destination: Receiver(18),
-            overflow: 258,
-            sequence: 50_595_078,
+            csn: CombinedSequence::new(258, 50_595_078),
         }
     }
 
@@ -178,8 +173,8 @@ mod tests {
         assert_eq!(nonce.cookie(), &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
         assert_eq!(nonce.source(), Sender(17));
         assert_eq!(nonce.destination(), Receiver(18));
-        assert_eq!(nonce.overflow(), 258);
-        assert_eq!(nonce.sequence(), 50_595_078);
+        assert_eq!(nonce.csn().overflow_number(), 258);
+        assert_eq!(nonce.csn().sequence_number(), 50_595_078);
     }
 
     #[test]
