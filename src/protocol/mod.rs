@@ -8,7 +8,7 @@
 //! and makes it possible to easily add tests.
 
 use boxes::{ByteBox, OpenBox};
-use messages::{Message, ClientHello};
+use messages::{Message, ClientHello, ClientAuth};
 use nonce::{Nonce, Sender, Receiver};
 use keystore::{KeyStore, PublicKey};
 
@@ -36,14 +36,14 @@ impl Signaling {
     }
 
     /// Handle an incoming message.
-    pub fn handle_message(&mut self, bbox: ByteBox) -> HandleAction {
+    pub fn handle_message(&mut self, bbox: ByteBox) -> Vec<HandleAction> {
         // Do the state transition
         let transition = self.next_state(bbox);
         trace!("Server handshake state transition: {:?} -> {:?}", self.server.handshake_state, transition.state);
         self.server.handshake_state = transition.state;
 
         // Return the action
-        transition.action
+        transition.actions
     }
 
     /// Determine the next state based on the incoming message bytes and the
@@ -68,38 +68,59 @@ impl Signaling {
 
         };
 
-        match (&self.server.handshake_state, obox.message, self.role) {
+        match (&self.server.handshake_state, obox.message) {
 
             // Valid state transitions
-            (&ServerHandshakeState::New, Message::ServerHello(msg), _) => {
+            (&ServerHandshakeState::New, Message::ServerHello(msg)) => {
                 info!("Hello from server");
 
+                let mut actions = Vec::with_capacity(3);
+
                 trace!("Server key is {:?}", msg.key);
+                actions.push(HandleAction::SetServerKey(msg.key.clone()));
 
                 // Reply with client-hello message
                 let key = self.permanent_key.public_key().clone();
                 let client_hello = ClientHello::new(key).into_message();
-                let client_nonce = Nonce::new(
+                let client_hello_nonce = Nonce::new(
                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                     Sender::new(0),
                     Receiver::new(0),
                     0,
                     123,
                 );
-                let reply = OpenBox::new(client_hello, client_nonce);
+                let reply = OpenBox::new(client_hello, client_hello_nonce);
+                actions.push(HandleAction::Reply(reply.encode()));
+
+                // Send with client-auth message
+                let client_auth = ClientAuth {
+                    your_cookie: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], // TODO
+                    subprotocols: vec!["vX.saltyrtc.org".into()], // TODO
+                    ping_interval: 0, // TODO
+                    your_key: None, // TODO
+                }.into_message();
+                let client_auth_nonce = Nonce::new(
+                    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                    Sender::new(0),
+                    Receiver::new(0),
+                    0,
+                    124,
+                );
+                let reply = OpenBox::new(client_auth, client_auth_nonce);
+                actions.push(HandleAction::Reply(reply.encode()));
 
                 // TODO: Can we prevent confusing an incoming and an outgoing nonce?
                 StateTransition {
                     state: ServerHandshakeState::ClientInfoSent,
-                    action: HandleAction::Reply(reply.encode()),
+                    actions: actions,
                 }
             },
 
             // A failure transition is terminal and does not change
-            (&ServerHandshakeState::Failure(ref msg), _, _) => ServerHandshakeState::Failure(msg.clone()).into(),
+            (&ServerHandshakeState::Failure(ref msg), _) => ServerHandshakeState::Failure(msg.clone()).into(),
 
             // Any undefined state transition changes to Failure
-            (s, message, _) => {
+            (s, message) => {
                 ServerHandshakeState::Failure(
                     format!("Invalid event transition: {:?} <- {}", s, message.get_type())
                 ).into()
@@ -152,16 +173,34 @@ mod tests {
     use ::messages::{ServerHello, ClientHello};
     use super::*;
 
+    fn create_test_nonce() -> Nonce {
+        Nonce::new(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            Sender::new(17),
+            Receiver::new(18),
+            258,
+            50_595_078,
+        )
+    }
+
+    fn create_test_bbox() -> ByteBox {
+        ByteBox::new(vec![1, 2, 3], create_test_nonce())
+    }
+
     /// Test that states and tuples implement Into<ServerHandshakeState>.
     #[test]
     fn server_handshake_state_from() {
-        let t1: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, HandleAction::None);
-        let t2: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, HandleAction::None).into();
-        let t3: StateTransition<_> = (ServerHandshakeState::New, HandleAction::None).into();
-        let t4: StateTransition<_> = ServerHandshakeState::New.into();
+        let t1: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, vec![HandleAction::Reply(create_test_bbox())]);
+        let t2: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, vec![HandleAction::Reply(create_test_bbox())]).into();
+        let t3: StateTransition<_> = (ServerHandshakeState::New, HandleAction::Reply(create_test_bbox())).into();
+        let t4: StateTransition<_> = (ServerHandshakeState::New, vec![HandleAction::Reply(create_test_bbox())]).into();
         assert_eq!(t1, t2);
         assert_eq!(t1, t3);
         assert_eq!(t1, t4);
+
+        let t4: StateTransition<_> = ServerHandshakeState::New.into();
+        let t5: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, vec![]);
+        assert_eq!(t4, t5);
     }
 
 //    #[test]

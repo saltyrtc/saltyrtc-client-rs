@@ -10,28 +10,34 @@ pub struct StateTransition<T> {
     /// The state resulting from the state transition.
     pub state: T,
     /// Any actions that need to be taken as a result of this state transition.
-    pub action: HandleAction,
+    pub actions: Vec<HandleAction>,
 }
 
 impl<T> StateTransition<T> {
-    pub fn new(state: T, action: HandleAction) -> Self {
+    pub fn new(state: T, actions: Vec<HandleAction>) -> Self {
         Self {
             state: state,
-            action: action,
+            actions: actions,
         }
     }
 }
 
 impl<T> From<(T, HandleAction)> for StateTransition<T> {
     fn from(val: (T, HandleAction)) -> Self {
+        StateTransition::new(val.0, vec![val.1])
+    }
+}
+
+impl<T> From<(T, Vec<HandleAction>)> for StateTransition<T> {
+    fn from(val: (T, Vec<HandleAction>)) -> Self {
         StateTransition::new(val.0, val.1)
     }
 }
 
 impl<T> From<T> for StateTransition<T> {
-    /// States can be converted to a `StateTransition` with a `HandleAction::None`.
+    /// States can be converted to a `StateTransition` with no actions.
     fn from(val: T) -> Self {
-        StateTransition::new(val, HandleAction::None)
+        StateTransition::new(val, vec![])
     }
 }
 

@@ -41,6 +41,8 @@ use tokio_core::reactor::{Handle};
 use websocket::WebSocketError;
 use websocket::client::ClientBuilder;
 use websocket::client::builder::Url;
+use websocket::ws::dataframe::DataFrame;
+use websocket::futures::stream;
 use websocket::futures::{Future, Stream, Sink};
 use websocket::futures::future::{self, Loop};
 use websocket::header::WebSocketProtocol;
@@ -85,7 +87,7 @@ impl SaltyClient {
     }
 
     /// Handle an incoming message.
-    fn handle_message(&mut self, bbox: boxes::ByteBox) -> HandleAction {
+    fn handle_message(&mut self, bbox: boxes::ByteBox) -> Vec<HandleAction> {
         self.signaling.handle_message(bbox)
     }
 }
@@ -189,26 +191,43 @@ pub fn connect(
 
                     // Process received message
                     .and_then(move |(bbox, stream)| {
-                        let handle_action = match salty.deref().try_borrow_mut() {
+                        let handle_actions = match salty.deref().try_borrow_mut() {
                             Ok(mut s) => s.handle_message(bbox),
                             Err(e) => return boxed!(
                                 future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
                             ),
                         };
 
-                        match handle_action {
-                            HandleAction::Reply(bbox) => {
-                                let payload = bbox.into_bytes();
-                                debug!("Sending {} bytes", payload.len());
-                                boxed!(stream
-                                    .send(OwnedMessage::Binary(payload))
-                                    .map(Loop::Continue)
-                                    .map_err(move |e| format!("Could not send message: {}", e).into()))
-                            },
-                            HandleAction::None => {
-                                boxed!(future::ok(Loop::Continue(stream)))
+                        let mut messages = vec![];
+                        for action in handle_actions {
+                            match action {
+                                HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
+                                HandleAction::SetServerKey(_) => {}
                             }
                         }
+                        if messages.is_empty() {
+                            boxed!(future::ok(Loop::Continue(stream)))
+                        } else {
+                            for message in messages.iter() {
+                                debug!("Sending {} bytes", message.size());
+                            }
+                            let outbox = stream::iter_ok::<_, WebSocketError>(messages);
+                            boxed!(stream
+                                .send_all(outbox)
+                                .map(|(sink, _)| Loop::Continue(sink))
+                                .map_err(move |e| format!("Could not send message: {}", e).into()))
+                        }
+
+//                        if messages.is_empty() {
+//                            boxed!(future::ok(Loop::Continue(stream)))
+//                        } else {
+//                            // TODO: Send all!
+//                            debug!("Sending {} bytes", messages[0].size());
+//                            boxed!(stream
+//                                .send(messages[0].clone())
+//                                .map(|sink| Loop::Continue(sink))
+//                                .map_err(move |e| format!("Could not send message: {}", e).into()))
+//                        }
                     })
             });
 
