@@ -82,7 +82,8 @@ impl fmt::Display for Address {
 }
 
 impl From<ClientIdentity> for Address {
-    /// Convert a `ClientIdentity` into the corresponding address.
+    /// Convert a [`ClientIdentity`](enum.ClientIdentity.html) into the
+    /// corresponding address.
     ///
     /// Panics if a `Responder` with an out-of-range value is encountered.
     fn from(val: ClientIdentity) -> Self {
@@ -90,6 +91,20 @@ impl From<ClientIdentity> for Address {
             ClientIdentity::Unknown => 0x00,
             ClientIdentity::Initiator => 0x01,
             ClientIdentity::Responder(address) => { assert!(address > 0x01); address },
+        })
+    }
+}
+
+impl From<Identity> for Address {
+    /// Convert an [`Identity`](enum.Identity.html) into the
+    /// corresponding address.
+    ///
+    /// Panics if a `Responder` with an out-of-range value is encountered.
+    fn from(val: Identity) -> Self {
+        Address(match val {
+            Identity::Unknown | Identity::Server => 0x00,
+            Identity::Initiator => 0x01,
+            Identity::Responder(address) => { assert!(address > 0x01); address },
         })
     }
 }

@@ -33,6 +33,13 @@ pub struct Signaling {
     pub permanent_key: KeyStore,
 }
 
+/// Result of the nonce validation.
+enum ValidationResult {
+    Ok,
+    DropMsg(String),
+    Fail(String),
+}
+
 impl Signaling {
     pub fn new(role: Role, permanent_key: KeyStore) -> Self {
         Signaling {
@@ -54,28 +61,78 @@ impl Signaling {
         transition.actions
     }
 
-    fn validate_nonce(&self, nonce: &Nonce) -> Result<()> {
+    fn validate_nonce(&self, nonce: &Nonce) -> ValidationResult {
 		// A client MUST check that the destination address targets its
 		// assigned identity (or `0x00` during authentication).
         if nonce.destination() != self.identity.into() {
             let msg = format!("bad destination: {} (our identity is {})", nonce.destination(), self.identity);
-            bail!(ErrorKind::InvalidNonce(msg));
+            return ValidationResult::Fail(msg);
         }
-		// The first message received with a destination address different to
-		// 0x00 SHALL be accepted as the client's assigned identity. However, the client
-		// MUST validate that the identity fits its role – initiators SHALL ONLY accept
-		// 0x01 and responders SHALL ONLY an identity from the range 0x02..0xff. The
-		// identity MUST be stored as the client's assigned identity.
-		// TODO
-        Ok(())
+
+        // An initiator SHALL ONLY process messages from the server (0x00). As
+        // soon as the initiator has been assigned an identity, it MAY ALSO accept
+        // messages from other responders (0x02..0xff). Other messages SHALL be
+        // discarded and SHOULD trigger a warning.
+        //
+        // A responder SHALL ONLY process messages from the server (0x00). As soon
+        // as the responder has been assigned an identity, it MAY ALSO accept
+        // messages from the initiator (0x01). Other messages SHALL be discarded
+        // and SHOULD trigger a warning.
+        match nonce.source() {
+            // From server
+            Address(0x00) => {},
+
+            // From initiator
+            Address(0x01) => {
+                match self.identity {
+                    // We're the responder: OK
+                    ClientIdentity::Responder(_) => {},
+                    // Otherwise: Not OK
+                    _ => {
+                        let msg = format!("bad source: {} (our identity is {})", nonce.source(), self.identity);
+                        return ValidationResult::DropMsg(msg);
+                    },
+                }
+            },
+
+            // From responder
+            Address(0x02...0xff) => {
+                match self.identity {
+                    // We're the initiator: OK
+                    ClientIdentity::Initiator => {},
+                    // Otherwise: Not OK
+                    _ => {
+                        let msg = format!("bad source: {} (our identity is {})", nonce.source(), self.identity);
+                        return ValidationResult::DropMsg(msg);
+                    },
+                }
+            },
+
+            // Required due to https://github.com/rust-lang/rfcs/issues/1550
+            Address(_) => { unreachable!() },
+        };
+
+        ValidationResult::Ok
     }
 
     /// Determine the next state based on the incoming message bytes and the
     /// current (read-only) state.
     fn next_state(&self, bbox: ByteBox) -> StateTransition<ServerHandshakeState> {
         // Validate the nonce
-        if let Err(e) = self.validate_nonce(&bbox.nonce) {
-            return ServerHandshakeState::Failure(format!("{}", e)).into();
+        match self.validate_nonce(&bbox.nonce) {
+            // It's valid! Carry on.
+            ValidationResult::Ok => {},
+
+            // Drop and ignore some of the messages
+            ValidationResult::DropMsg(warning) => {
+                warn!("invalid nonce: {}", warning);
+                return self.server.handshake_state.clone().into();
+            },
+
+            // Nonce is invalid, fail the signaling
+            ValidationResult::Fail(reason) => {
+                return ServerHandshakeState::Failure(format!("invalid nonce: {}", reason)).into();
+            },
         }
 
         // Decode message
@@ -231,9 +288,6 @@ mod tests {
 
     /// A client MUST check that the destination address targets its assigned
     /// identity (or 0x00 during authentication).
-    ///
-    /// In case that any check fails, the peer MUST close the connection with a
-    /// close code of 3001 (Protocol Error) unless otherwise stated.
     #[test]
     fn first_message_wrong_destination() {
         let ks = KeyStore::new().unwrap();
@@ -253,6 +307,101 @@ mod tests {
         );
         // TODO: Check actions for closing
     }
+
+    /// An initiator SHALL ONLY process messages from the server (0x00). As
+    /// soon as the initiator has been assigned an identity, it MAY ALSO accept
+    /// messages from other responders (0x02..0xff). Other messages SHALL be
+    /// discarded and SHOULD trigger a warning.
+    #[test]
+    fn wrong_source_initiator() {
+        let ks = KeyStore::new().unwrap();
+        let mut s = Signaling::new(Role::Initiator, ks);
+
+        let make_msg = |src: u8, dest: u8| {
+            let msg = ServerHello::random().into_message();
+            let cs = CombinedSequence::random().unwrap();
+            let nonce = Nonce::new([0; 16], Address(src), Address(dest), cs);
+            let obox = OpenBox::new(msg, nonce);
+            let bbox = obox.encode();
+            bbox
+        };
+
+        // Handling messages from initiator is always invalid
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        let actions = s.handle_message(make_msg(0x01, 0x00));
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        assert_eq!(actions, vec![]);
+
+        // Handling messages from responder is invalid as long as identity
+        // hasn't been assigned.
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        let actions = s.handle_message(make_msg(0xff, 0x00));
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        assert_eq!(actions, vec![]);
+
+        // Handling messages from the server is always valid
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        let actions = s.handle_message(make_msg(0x00, 0x00));
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+
+        // Handling messages from responder is valid as soon as the identity
+        // has been assigned.
+        // TODO once state transition has been implemented
+//        s.server.handshake_state = ServerHandshakeState::Done;
+//        s.identity = ClientIdentity::Initiator;
+//        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+//        let actions = s.handle_message(make_msg(0xff, 0x01));
+//        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+//        assert_eq!(actions, vec![]);
+    }
+
+    /// A responder SHALL ONLY process messages from the server (0x00). As soon
+    /// as the responder has been assigned an identity, it MAY ALSO accept
+    /// messages from the initiator (0x01). Other messages SHALL be discarded
+    /// and SHOULD trigger a warning.
+    #[test]
+    fn wrong_source_responder() {
+        let ks = KeyStore::new().unwrap();
+        let mut s = Signaling::new(Role::Responder, ks);
+
+        let make_msg = |src: u8, dest: u8| {
+            let msg = ServerHello::random().into_message();
+            let cs = CombinedSequence::random().unwrap();
+            let nonce = Nonce::new([0; 16], Address(src), Address(dest), cs);
+            let obox = OpenBox::new(msg, nonce);
+            let bbox = obox.encode();
+            bbox
+        };
+
+        // Handling messages from a responder is always invalid
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        let actions = s.handle_message(make_msg(0x03, 0x00));
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        assert_eq!(actions, vec![]);
+
+        // Handling messages from initiator is invalid as long as identity
+        // hasn't been assigned.
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        let actions = s.handle_message(make_msg(0x01, 0x00));
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        assert_eq!(actions, vec![]);
+
+        // Handling messages from the server is always valid
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        let actions = s.handle_message(make_msg(0x00, 0x00));
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+
+        // Handling messages from initiator is valid as soon as the identity
+        // has been assigned.
+        // TODO once state transition has been implemented
+//        s.server.handshake_state = ServerHandshakeState::Done;
+//        s.identity = ClientIdentity::Initiator;
+//        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+//        let actions = s.handle_message(make_msg(0x01, 0x03));
+//        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+//        assert_eq!(actions, vec![]);
+    }
+
 
 //    #[test]
 //    fn transition_server_hello() {
