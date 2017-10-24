@@ -77,7 +77,7 @@ impl Nonce {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub fn random() -> Self {
-        ::helpers::libsodium_init().unwrap();
+        ::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 24];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
         Self::from_bytes(&bytes).unwrap()

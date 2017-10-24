@@ -172,7 +172,7 @@ impl Signaling {
                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                     Address(0),
                     Address(0),
-                    CombinedSequence::random().unwrap(),
+                    CombinedSequence::random(),
                 );
                 let reply = OpenBox::new(client_hello, client_hello_nonce);
                 actions.push(HandleAction::Reply(reply.encode()));
@@ -188,7 +188,7 @@ impl Signaling {
                     [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                     Address(0),
                     Address(0),
-                    CombinedSequence::random().unwrap(),
+                    CombinedSequence::random(),
                 );
                 let reply = OpenBox::new(client_auth, client_auth_nonce);
                 actions.push(HandleAction::Reply(reply.encode()));
@@ -294,7 +294,7 @@ mod tests {
         let mut s = Signaling::new(Role::Initiator, ks);
 
         let msg = ServerHello::random().into_message();
-        let cs = CombinedSequence::random().unwrap();
+        let cs = CombinedSequence::random();
         let nonce = Nonce::new([0; 16], Address(0), Address(1), cs);
         let obox = OpenBox::new(msg, nonce);
         let bbox = obox.encode();
@@ -319,7 +319,7 @@ mod tests {
 
         let make_msg = |src: u8, dest: u8| {
             let msg = ServerHello::random().into_message();
-            let cs = CombinedSequence::random().unwrap();
+            let cs = CombinedSequence::random();
             let nonce = Nonce::new([0; 16], Address(src), Address(dest), cs);
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
@@ -366,7 +366,7 @@ mod tests {
 
         let make_msg = |src: u8, dest: u8| {
             let msg = ServerHello::random().into_message();
-            let cs = CombinedSequence::random().unwrap();
+            let cs = CombinedSequence::random();
             let nonce = Nonce::new([0; 16], Address(src), Address(dest), cs);
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();

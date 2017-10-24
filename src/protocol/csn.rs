@@ -7,7 +7,8 @@
 use rust_sodium::randombytes::randombytes;
 
 use errors::{Result, ResultExt, ErrorKind};
-use helpers::libsodium_init;
+use helpers::libsodium_init_or_panic;
+
 
 /// The `CombinedSequence` type handles the overflow checking of the 48 bit
 /// combined sequence number (CSN) consisting of the sequence number and the
@@ -29,10 +30,9 @@ impl CombinedSequence {
     ///
     /// The overflow number will be initialized to 0, while a cryptographically
     /// secure random value will be generated for the sequence number.
-    pub fn random() -> Result<Self> {
+    pub fn random() -> Self {
         // Make sure that libsodium is initialized
-        libsodium_init()
-            .chain_err(|| ErrorKind::Crypto("could not create new random combined sequence".into()))?;
+        libsodium_init_or_panic();
 
         // Create 32 bits of cryptographically secure random data
         let rand = randombytes(4);
@@ -44,10 +44,10 @@ impl CombinedSequence {
                      + ((rand[2] as u32) << 8)
                      + (rand[3] as u32);
 
-        Ok(CombinedSequence {
+        CombinedSequence {
             overflow: overflow,
             sequence: sequence,
-        })
+        }
     }
 
     /// Return the 16 bit overflow number.
@@ -92,7 +92,7 @@ mod tests {
     fn random_distinct() {
         let mut numbers = HashSet::new();
         for _ in 0..100 {
-            let csn = CombinedSequence::random().unwrap();
+            let csn = CombinedSequence::random();
             numbers.insert(csn);
         }
         assert_eq!(numbers.len(), 100);
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn combined_value_range() {
         for _ in 0..100 {
-            let csn = CombinedSequence::random().unwrap();
+            let csn = CombinedSequence::random();
             let number = csn.combined_sequence_number();
             assert!(number < (1 << 48));
         }
@@ -112,9 +112,9 @@ mod tests {
     #[test]
     fn increment_without_overflow() {
         // Find a CSN that will not overflow
-        let mut old = CombinedSequence::random().unwrap();
+        let mut old = CombinedSequence::random();
         while old.sequence_number() == ::std::u32::MAX {
-            old = CombinedSequence::random().unwrap();
+            old = CombinedSequence::random();
         }
 
         // Get previous numbers
