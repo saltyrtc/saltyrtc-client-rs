@@ -75,10 +75,7 @@ impl Signaling {
     }
 
     /// Validate the nonce.
-    ///
-    /// This will also initialize peer contexts if missing (hence the mutable
-    /// reference to self).
-    fn validate_nonce(&self, nonce: &Nonce) -> ValidationResult {
+    fn validate_nonce(&mut self, nonce: &Nonce) -> ValidationResult {
 		// A client MUST check that the destination address targets its
 		// assigned identity (or `0x00` during authentication).
         if nonce.destination() != self.identity.into() {
@@ -131,11 +128,11 @@ impl Signaling {
 
         // Find peer
         // TODO: Also consider signaling state, see InitiatorSignaling.java getPeerWithId
-        let peer: &PeerContext = match nonce.source().0 {
-            0x00 => &self.server,
+        let peer: &mut PeerContext = match nonce.source().0 {
+            0x00 => &mut self.server,
             0x01 => unimplemented!(),
             addr @ 0x02...0xff => {
-                match self.responders.get(&nonce.source()) {
+                match self.responders.get_mut(&nonce.source()) {
                     Some(responder) => responder,
                     None => return ValidationResult::Fail(format!("could not find responder with address {}", addr)),
                 }
@@ -144,25 +141,60 @@ impl Signaling {
         };
 
         // Validate CSN
-        match peer.csn_pair().theirs {
-            None => {
-                // This is the first message from that peer,
-                // validate the overflow number and store the CSN.
-                if nonce.csn().overflow_number() != 0 {
-                    let msg = format!("first message from {} must have set the overflow number to 0", peer.identity());
-                    return ValidationResult::Fail(msg);
-                }
-            },
-            Some(ref csn) => {
-            },
+        //
+        // In case this is the first message received from the sender, the peer:
+        //
+        // * MUST check that the overflow number of the source peer is 0 and,
+        // * if the peer has already sent a message to the sender, MUST check
+        //   that the sender's cookie is different than its own cookie, and
+        // * MUST store the combined sequence number for checks on further messages.
+        // * The above number(s) SHALL be stored and updated separately for
+        //   each other peer by its identity (source address in this case).
+        //
+        // Otherwise, the peer:
+        //
+        // * MUST check that the combined sequence number of the source peer
+        //   has been increased by 1 and has not reset to 0.
+        {
+            let peer_identity = peer.identity();
+            let csn_pair = peer.csn_pair_mut();
+            match csn_pair.theirs {
+                None => {
+                    // This is the first message from that peer,
+                    // validate the overflow number...
+                    if nonce.csn().overflow_number() != 0 {
+                        let msg = format!("first message from {} must have set the overflow number to 0", peer_identity);
+                        return ValidationResult::Fail(msg);
+                    }
+                    // ...and store the CSN.
+                    csn_pair.theirs = Some(nonce.csn().clone());
+                },
+                Some(ref mut csn) => {
+                    // Ensure that the CSN has been increased properly.
+                    let previous = csn;
+                    let current = nonce.csn();
+                    if current < previous {
+                        let msg = format!("{} CSN is lower than last time", peer_identity);
+                        return ValidationResult::Fail(msg);
+                    } else if current == previous {
+                        let msg = format!("{} CSN hasn't been incremented", peer_identity);
+                        return ValidationResult::Fail(msg);
+                    } else {
+                        *previous = current.clone();
+                    }
+                },
+            }
         }
 
         ValidationResult::Ok
     }
 
     /// Determine the next state based on the incoming message bytes and the
-    /// current (read-only) state.
-    fn next_state(&self, bbox: ByteBox) -> StateTransition<ServerHandshakeState> {
+    /// current state.
+    ///
+    /// This method call may have some side effects, like updates in the peer
+    /// context (cookie, CSN, etc).
+    fn next_state(&mut self, bbox: ByteBox) -> StateTransition<ServerHandshakeState> {
         // Validate the nonce
         match self.validate_nonce(&bbox.nonce) {
             // It's valid! Carry on.
@@ -279,159 +311,171 @@ mod tests {
         ByteBox::new(vec![1, 2, 3], create_test_nonce())
     }
 
-    /// Test that states and tuples implement Into<ServerHandshakeState>.
-    #[test]
-    fn server_handshake_state_from() {
-        let t1: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, vec![HandleAction::Reply(create_test_bbox())]);
-        let t2: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, vec![HandleAction::Reply(create_test_bbox())]).into();
-        let t3: StateTransition<_> = (ServerHandshakeState::New, HandleAction::Reply(create_test_bbox())).into();
-        let t4: StateTransition<_> = (ServerHandshakeState::New, vec![HandleAction::Reply(create_test_bbox())]).into();
-        assert_eq!(t1, t2);
-        assert_eq!(t1, t3);
-        assert_eq!(t1, t4);
+    mod validate_nonce {
 
-        let t4: StateTransition<_> = ServerHandshakeState::New.into();
-        let t5: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, vec![]);
-        assert_eq!(t4, t5);
-    }
+        use super::*;
 
-    /// A client MUST check that the destination address targets its assigned
-    /// identity (or 0x00 during authentication).
-    #[test]
-    fn first_message_wrong_destination() {
-        let ks = KeyStore::new().unwrap();
-        let mut s = Signaling::new(Role::Initiator, ks);
+        /// Test that states and tuples implement Into<ServerHandshakeState>.
+        #[test]
+        fn server_handshake_state_from() {
+            let t1: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, vec![HandleAction::Reply(create_test_bbox())]);
+            let t2: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, vec![HandleAction::Reply(create_test_bbox())]).into();
+            let t3: StateTransition<_> = (ServerHandshakeState::New, HandleAction::Reply(create_test_bbox())).into();
+            let t4: StateTransition<_> = (ServerHandshakeState::New, vec![HandleAction::Reply(create_test_bbox())]).into();
+            assert_eq!(t1, t2);
+            assert_eq!(t1, t3);
+            assert_eq!(t1, t4);
 
-        let msg = ServerHello::random().into_message();
-        let cs = CombinedSequence::random();
-        let nonce = Nonce::new([0; 16], Address(0), Address(1), cs);
-        let obox = OpenBox::new(msg, nonce);
-        let bbox = obox.encode();
+            let t4: StateTransition<_> = ServerHandshakeState::New.into();
+            let t5: StateTransition<_> = StateTransition::new(ServerHandshakeState::New, vec![]);
+            assert_eq!(t4, t5);
+        }
 
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        let actions = s.handle_message(bbox);
-        assert_eq!(
-            s.server.handshake_state,
-            ServerHandshakeState::Failure("invalid nonce: bad destination: Address(0x01) (our identity is Unknown)".into())
-        );
-        // TODO: Check actions for closing
-    }
+        /// A client MUST check that the destination address targets its assigned
+        /// identity (or 0x00 during authentication).
+        #[test]
+        fn first_message_wrong_destination() {
+            let ks = KeyStore::new().unwrap();
+            let mut s = Signaling::new(Role::Initiator, ks);
 
-    /// An initiator SHALL ONLY process messages from the server (0x00). As
-    /// soon as the initiator has been assigned an identity, it MAY ALSO accept
-    /// messages from other responders (0x02..0xff). Other messages SHALL be
-    /// discarded and SHOULD trigger a warning.
-    #[test]
-    fn wrong_source_initiator() {
-        let ks = KeyStore::new().unwrap();
-        let mut s = Signaling::new(Role::Initiator, ks);
-
-        let make_msg = |src: u8, dest: u8| {
             let msg = ServerHello::random().into_message();
             let cs = CombinedSequence::random();
-            let nonce = Nonce::new([0; 16], Address(src), Address(dest), cs);
+            let nonce = Nonce::new([0; 16], Address(0), Address(1), cs);
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
-            bbox
-        };
 
-        // Handling messages from initiator is always invalid
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        let actions = s.handle_message(make_msg(0x01, 0x00));
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        assert_eq!(actions, vec![]);
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            let actions = s.handle_message(bbox);
+            assert_eq!(
+                s.server.handshake_state,
+                ServerHandshakeState::Failure("invalid nonce: bad destination: Address(0x01) (our identity is Unknown)".into())
+            );
+            // TODO: Check actions for closing
+        }
 
-        // Handling messages from responder is invalid as long as identity
-        // hasn't been assigned.
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        let actions = s.handle_message(make_msg(0xff, 0x00));
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        assert_eq!(actions, vec![]);
+        /// An initiator SHALL ONLY process messages from the server (0x00). As
+        /// soon as the initiator has been assigned an identity, it MAY ALSO accept
+        /// messages from other responders (0x02..0xff). Other messages SHALL be
+        /// discarded and SHOULD trigger a warning.
+        #[test]
+        fn wrong_source_initiator() {
+            let ks = KeyStore::new().unwrap();
+            let mut s = Signaling::new(Role::Initiator, ks);
 
-        // Handling messages from the server is always valid
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        let actions = s.handle_message(make_msg(0x00, 0x00));
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            let make_msg = |src: u8, dest: u8| {
+                let msg = ServerHello::random().into_message();
+                let cs = CombinedSequence::random();
+                let nonce = Nonce::new([0; 16], Address(src), Address(dest), cs);
+                let obox = OpenBox::new(msg, nonce);
+                let bbox = obox.encode();
+                bbox
+            };
 
-        // Handling messages from responder is valid as soon as the identity
-        // has been assigned.
-        // TODO once state transition has been implemented
-//        s.server.handshake_state = ServerHandshakeState::Done;
-//        s.identity = ClientIdentity::Initiator;
-//        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
-//        let actions = s.handle_message(make_msg(0xff, 0x01));
-//        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
-//        assert_eq!(actions, vec![]);
-    }
+            // Handling messages from initiator is always invalid
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            let actions = s.handle_message(make_msg(0x01, 0x00));
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(actions, vec![]);
 
-    /// A responder SHALL ONLY process messages from the server (0x00). As soon
-    /// as the responder has been assigned an identity, it MAY ALSO accept
-    /// messages from the initiator (0x01). Other messages SHALL be discarded
-    /// and SHOULD trigger a warning.
-    #[test]
-    fn wrong_source_responder() {
-        let ks = KeyStore::new().unwrap();
-        let mut s = Signaling::new(Role::Responder, ks);
+            // Handling messages from responder is invalid as long as identity
+            // hasn't been assigned.
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            let actions = s.handle_message(make_msg(0xff, 0x00));
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(actions, vec![]);
 
-        let make_msg = |src: u8, dest: u8| {
+            // Handling messages from the server is always valid
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            let actions = s.handle_message(make_msg(0x00, 0x00));
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+
+            // Handling messages from responder is valid as soon as the identity
+            // has been assigned.
+            // TODO once state transition has been implemented
+    //        s.server.handshake_state = ServerHandshakeState::Done;
+    //        s.identity = ClientIdentity::Initiator;
+    //        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+    //        let actions = s.handle_message(make_msg(0xff, 0x01));
+    //        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+    //        assert_eq!(actions, vec![]);
+        }
+
+        /// A responder SHALL ONLY process messages from the server (0x00). As soon
+        /// as the responder has been assigned an identity, it MAY ALSO accept
+        /// messages from the initiator (0x01). Other messages SHALL be discarded
+        /// and SHOULD trigger a warning.
+        #[test]
+        fn wrong_source_responder() {
+            let ks = KeyStore::new().unwrap();
+            let mut s = Signaling::new(Role::Responder, ks);
+
+            let make_msg = |src: u8, dest: u8| {
+                let msg = ServerHello::random().into_message();
+                let cs = CombinedSequence::random();
+                let nonce = Nonce::new([0; 16], Address(src), Address(dest), cs);
+                let obox = OpenBox::new(msg, nonce);
+                let bbox = obox.encode();
+                bbox
+            };
+
+            // Handling messages from a responder is always invalid
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            let actions = s.handle_message(make_msg(0x03, 0x00));
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(actions, vec![]);
+
+            // Handling messages from initiator is invalid as long as identity
+            // hasn't been assigned.
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            let actions = s.handle_message(make_msg(0x01, 0x00));
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(actions, vec![]);
+
+            // Handling messages from the server is always valid
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            let actions = s.handle_message(make_msg(0x00, 0x00));
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+
+            // Handling messages from initiator is valid as soon as the identity
+            // has been assigned.
+            // TODO once state transition has been implemented
+    //        s.server.handshake_state = ServerHandshakeState::Done;
+    //        s.identity = ClientIdentity::Initiator;
+    //        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+    //        let actions = s.handle_message(make_msg(0x01, 0x03));
+    //        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+    //        assert_eq!(actions, vec![]);
+        }
+
+        /// In case this is the first message received from the sender, the peer
+        /// MUST check that the overflow number of the source peer is 0
+        #[test]
+        fn first_message_bad_overflow_number() {
+            let ks = KeyStore::new().unwrap();
+            let mut s = Signaling::new(Role::Initiator, ks);
+
             let msg = ServerHello::random().into_message();
-            let cs = CombinedSequence::random();
-            let nonce = Nonce::new([0; 16], Address(src), Address(dest), cs);
+            let cs = CombinedSequence::new(1, 1234);
+            let nonce = Nonce::new([0; 16], Address(0), Address(0), cs);
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
-            bbox
-        };
 
-        // Handling messages from a responder is always invalid
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        let actions = s.handle_message(make_msg(0x03, 0x00));
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        assert_eq!(actions, vec![]);
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            let actions = s.handle_message(bbox);
+            assert_eq!(
+                s.server.handshake_state,
+                ServerHandshakeState::Failure("invalid nonce: first message from server must have set the overflow number to 0".into())
+            );
+        }
 
-        // Handling messages from initiator is invalid as long as identity
-        // hasn't been assigned.
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        let actions = s.handle_message(make_msg(0x01, 0x00));
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        assert_eq!(actions, vec![]);
+        /// The peer MUST check that the combined sequence number of the source
+        /// peer has been increased by 1 and has not reset to 0.
+        #[test]
+        fn sequence_number_incremented() {
+            // TODO: Write once ServerAuth message has been implemented
+        }
 
-        // Handling messages from the server is always valid
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        let actions = s.handle_message(make_msg(0x00, 0x00));
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
-
-        // Handling messages from initiator is valid as soon as the identity
-        // has been assigned.
-        // TODO once state transition has been implemented
-//        s.server.handshake_state = ServerHandshakeState::Done;
-//        s.identity = ClientIdentity::Initiator;
-//        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
-//        let actions = s.handle_message(make_msg(0x01, 0x03));
-//        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
-//        assert_eq!(actions, vec![]);
     }
-
-    /// In case this is the first message received from the sender, the peer
-    /// MUST check that the overflow number of the source peer is 0
-    #[test]
-    fn first_message_bad_overflow_number() {
-        let ks = KeyStore::new().unwrap();
-        let mut s = Signaling::new(Role::Initiator, ks);
-
-        let msg = ServerHello::random().into_message();
-        let cs = CombinedSequence::new(1, 1234);
-        let nonce = Nonce::new([0; 16], Address(0), Address(0), cs);
-        let obox = OpenBox::new(msg, nonce);
-        let bbox = obox.encode();
-
-        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
-        let actions = s.handle_message(bbox);
-        assert_eq!(
-            s.server.handshake_state,
-            ServerHandshakeState::Failure("invalid nonce: first message from server must have set the overflow number to 0".into())
-        );
-    }
-
 
 //    #[test]
 //    fn transition_server_hello() {

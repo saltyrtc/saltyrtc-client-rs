@@ -12,6 +12,7 @@ pub trait PeerContext {
     fn permanent_key(&self) -> Option<&PublicKey>;
     fn session_key(&self) -> Option<&PublicKey>;
     fn csn_pair(&self) -> &CombinedSequencePair;
+    fn csn_pair_mut(&mut self) -> &mut CombinedSequencePair;
 }
 
 
@@ -50,6 +51,10 @@ impl PeerContext for ServerContext {
     fn csn_pair(&self) -> &CombinedSequencePair {
         &self.csn_pair
     }
+
+    fn csn_pair_mut(&mut self) -> &mut CombinedSequencePair {
+        &mut self.csn_pair
+    }
 }
 
 
@@ -87,5 +92,9 @@ impl PeerContext for ResponderContext {
 
     fn csn_pair(&self) -> &CombinedSequencePair {
         &self.csn_pair
+    }
+
+    fn csn_pair_mut(&mut self) -> &mut CombinedSequencePair {
+        &mut self.csn_pair
     }
 }

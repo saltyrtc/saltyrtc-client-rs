@@ -4,6 +4,8 @@
 //! number (CSN) in the SaltyRTC nonce consisting of the 32 bit sequence number
 //! and the 16 bit overflow number.
 
+use std::cmp;
+
 use rust_sodium::randombytes::randombytes;
 
 use errors::{Result, ErrorKind};
@@ -79,6 +81,18 @@ impl CombinedSequence {
         }
     }
 
+}
+
+impl cmp::Ord for CombinedSequence {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.combined_sequence_number().cmp(&other.combined_sequence_number())
+    }
+}
+
+impl cmp::PartialOrd for CombinedSequence {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 
