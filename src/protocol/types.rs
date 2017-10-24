@@ -52,6 +52,17 @@ impl From<Address> for Identity {
     }
 }
 
+impl fmt::Display for Identity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Identity::Unknown => write!(f, "unknown"),
+            Identity::Initiator => write!(f, "initiator"),
+            Identity::Responder(id) => write!(f, "responder {}", id),
+            Identity::Server => write!(f, "server"),
+        }
+    }
+}
+
 
 /// A client identity.
 ///

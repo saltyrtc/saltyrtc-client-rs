@@ -144,6 +144,18 @@ impl Signaling {
         };
 
         // Validate CSN
+        match peer.csn_pair().theirs {
+            None => {
+                // This is the first message from that peer,
+                // validate the overflow number and store the CSN.
+                if nonce.csn().overflow_number() != 0 {
+                    let msg = format!("first message from {} must have set the overflow number to 0", peer.identity());
+                    return ValidationResult::Fail(msg);
+                }
+            },
+            Some(ref csn) => {
+            },
+        }
 
         ValidationResult::Ok
     }
@@ -397,6 +409,27 @@ mod tests {
 //        let actions = s.handle_message(make_msg(0x01, 0x03));
 //        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
 //        assert_eq!(actions, vec![]);
+    }
+
+    /// In case this is the first message received from the sender, the peer
+    /// MUST check that the overflow number of the source peer is 0
+    #[test]
+    fn first_message_bad_overflow_number() {
+        let ks = KeyStore::new().unwrap();
+        let mut s = Signaling::new(Role::Initiator, ks);
+
+        let msg = ServerHello::random().into_message();
+        let cs = CombinedSequence::new(1, 1234);
+        let nonce = Nonce::new([0; 16], Address(0), Address(0), cs);
+        let obox = OpenBox::new(msg, nonce);
+        let bbox = obox.encode();
+
+        assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+        let actions = s.handle_message(bbox);
+        assert_eq!(
+            s.server.handshake_state,
+            ServerHandshakeState::Failure("invalid nonce: first message from server must have set the overflow number to 0".into())
+        );
     }
 
 
