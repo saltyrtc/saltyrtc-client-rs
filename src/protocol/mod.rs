@@ -7,30 +7,42 @@
 //! This allows for better decoupling between protocol logic and network code,
 //! and makes it possible to easily add tests.
 
+use std::collections::HashMap;
+
 use boxes::{ByteBox, OpenBox};
 use messages::{Message, ClientHello, ClientAuth};
-use keystore::{KeyStore, PublicKey};
+use keystore::{KeyStore};
 
+mod context;
 mod csn;
 mod nonce;
 mod state;
 mod types;
 
-use errors::{Result, ErrorKind};
-
+use self::context::{PeerContext, ServerContext, ResponderContext};
 use self::csn::{CombinedSequence};
 pub use self::nonce::{Nonce};
 pub use self::types::{Role, HandleAction};
-use self::types::{Identity, ClientIdentity, Address};
+use self::types::{ClientIdentity, Address};
 use self::state::{ServerHandshakeState, StateTransition};
 
 
 /// All signaling related data.
 pub struct Signaling {
+    /// Our role, either initiator or responder
     pub role: Role, // TODO: Redundant?
-    pub identity: ClientIdentity,
-    pub server: ServerContext,
+
+    // Our permanent keypair
     pub permanent_key: KeyStore,
+
+    // The assigned client identity
+    pub identity: ClientIdentity,
+
+    // The server context
+    pub server: ServerContext,
+
+    // The list of responders
+    pub responders: HashMap<Address, ResponderContext>,
 }
 
 /// Result of the nonce validation.
@@ -47,6 +59,7 @@ impl Signaling {
             identity: ClientIdentity::Unknown,
             server: ServerContext::new(),
             permanent_key: permanent_key,
+            responders: HashMap::new(),
         }
     }
 
@@ -61,6 +74,10 @@ impl Signaling {
         transition.actions
     }
 
+    /// Validate the nonce.
+    ///
+    /// This will also initialize peer contexts if missing (hence the mutable
+    /// reference to self).
     fn validate_nonce(&self, nonce: &Nonce) -> ValidationResult {
 		// A client MUST check that the destination address targets its
 		// assigned identity (or `0x00` during authentication).
@@ -109,8 +126,24 @@ impl Signaling {
             },
 
             // Required due to https://github.com/rust-lang/rfcs/issues/1550
-            Address(_) => { unreachable!() },
+            Address(_) => unreachable!(),
         };
+
+        // Find peer
+        // TODO: Also consider signaling state, see InitiatorSignaling.java getPeerWithId
+        let peer: &PeerContext = match nonce.source().0 {
+            0x00 => &self.server,
+            0x01 => unimplemented!(),
+            addr @ 0x02...0xff => {
+                match self.responders.get(&nonce.source()) {
+                    Some(responder) => responder,
+                    None => return ValidationResult::Fail(format!("could not find responder with address {}", addr)),
+                }
+            },
+            _ => unreachable!(),
+        };
+
+        // Validate CSN
 
         ValidationResult::Ok
     }
@@ -215,46 +248,10 @@ impl Signaling {
 }
 
 
-trait PeerContext {
-    fn identity(&self) -> Identity;
-    fn permanent_key(&self) -> Option<&PublicKey>;
-    fn session_key(&self) -> Option<&PublicKey>;
-}
-
-pub struct ServerContext {
-    handshake_state: ServerHandshakeState,
-    permanent_key: Option<PublicKey>,
-    session_key: Option<PublicKey>,
-}
-
-impl ServerContext {
-    pub fn new() -> Self {
-        ServerContext {
-            handshake_state: ServerHandshakeState::New,
-            permanent_key: None,
-            session_key: None,
-        }
-    }
-}
-
-impl PeerContext for ServerContext {
-    fn identity(&self) -> Identity {
-        Identity::Server
-    }
-
-    fn permanent_key(&self) -> Option<&PublicKey> {
-        self.permanent_key.as_ref()
-    }
-
-    fn session_key(&self) -> Option<&PublicKey> {
-        self.session_key.as_ref()
-    }
-}
-
-
 #[cfg(test)]
 mod tests {
     use ::messages::{ServerHello, ClientHello};
+    use self::types::{Identity};
     use super::*;
 
     fn create_test_nonce() -> Nonce {

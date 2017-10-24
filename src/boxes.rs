@@ -7,7 +7,6 @@
 use rust_sodium::crypto::box_::NONCEBYTES;
 
 use errors::{Result, ResultExt, ErrorKind};
-use keystore::{PublicKey, PrivateKey};
 use messages::Message;
 use protocol::Nonce;
 

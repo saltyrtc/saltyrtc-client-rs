@@ -6,7 +6,7 @@
 
 use rust_sodium::randombytes::randombytes;
 
-use errors::{Result, ResultExt, ErrorKind};
+use errors::{Result, ErrorKind};
 use helpers::libsodium_init_or_panic;
 
 
@@ -80,6 +80,25 @@ impl CombinedSequence {
     }
 
 }
+
+
+/// A pair of two [`CombinedSequence`](struct.CombinedSequence.html)s
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CombinedSequencePair {
+    pub ours: CombinedSequence,
+    pub theirs: Option<CombinedSequence>,
+}
+
+impl CombinedSequencePair {
+    /// Create a new [`CombinedSequencePair`](struct.CombinedSequencePair.html).
+    pub fn new() -> Self {
+        CombinedSequencePair {
+            ours: CombinedSequence::random(),
+            theirs: None,
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

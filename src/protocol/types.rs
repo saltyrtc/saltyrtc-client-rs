@@ -42,6 +42,16 @@ pub enum Identity {
     Server,
 }
 
+impl From<Address> for Identity {
+    fn from(val: Address) -> Self {
+        match val.0 {
+            0x00 => Identity::Server,
+            0x01 => Identity::Initiator,
+            addr @ _ => Identity::Responder(addr),
+        }
+    }
+}
+
 
 /// A client identity.
 ///
@@ -72,7 +82,7 @@ impl fmt::Display for ClientIdentity {
 ///
 /// This is an unsigned byte like the [`Identity`](enum.Identity.html),
 /// but without any semantic information attached.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash)]
 pub struct Address(pub u8);
 
 impl fmt::Display for Address {
