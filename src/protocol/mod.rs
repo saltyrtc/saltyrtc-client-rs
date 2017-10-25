@@ -142,6 +142,8 @@ impl Signaling {
             _ => unreachable!(),
         };
 
+        let peer_identity = peer.identity();
+
         // Validate CSN
         //
         // In case this is the first message received from the sender, the peer:
@@ -158,7 +160,6 @@ impl Signaling {
         // * MUST check that the combined sequence number of the source peer
         //   has been increased by 1 and has not reset to 0.
         {
-            let peer_identity = peer.identity();
             let csn_pair = peer.csn_pair_mut();
             match csn_pair.theirs {
                 None => {
@@ -187,6 +188,43 @@ impl Signaling {
                 },
             }
         }
+
+        // Validate cookie
+        //
+        // In case this is the first message received from the sender:
+        //
+        // * If the peer has already sent a message to the sender, it MUST
+        //   check that the sender's cookie is different than its own cookie, and
+        // * MUST store cookie for checks on further messages
+        // * The above number(s) SHALL be stored and updated separately for
+        //   each other peer by its identity (source address in this case).
+        //
+        // Otherwise, the peer:
+        //
+        // * MUST ensure that the 16 byte cookie of the sender has not changed
+        {
+            let cookie_pair = peer.cookie_pair_mut();
+            match cookie_pair.theirs {
+                None => {
+                    // This is the first message from that peer,
+                    // validate the cookie...
+                    if *nonce.cookie() == cookie_pair.ours {
+                        let msg = format!("cookie from {} is identical to our own cookie", peer_identity);
+                        return ValidationResult::Fail(msg);
+                    }
+                    // ...and store it.
+                    cookie_pair.theirs = Some(nonce.cookie().clone());
+                },
+                Some(ref cookie) => {
+                    // Ensure that the cookie has not changed
+                    if nonce.cookie() != cookie {
+                        let msg = format!("cookie from {} has changed", peer_identity);
+                        return ValidationResult::Fail(msg);
+                    }
+                },
+            }
+        }
+
 
         ValidationResult::Ok
     }
@@ -474,6 +512,34 @@ mod tests {
         /// peer has been increased by 1 and has not reset to 0.
         #[test]
         fn sequence_number_incremented() {
+            // TODO: Write once ServerAuth message has been implemented
+        }
+
+        /// In case this is the first message received from the sender, the
+        /// peer MUST check that the sender's cookie is different than its own
+        /// cookie.
+        #[test]
+        fn cookie_differs_from_own() {
+            let ks = KeyStore::new().unwrap();
+            let mut s = Signaling::new(Role::Initiator, ks);
+
+            let msg = ServerHello::random().into_message();
+            let cookie = s.server.cookie_pair.ours.clone();
+            let nonce = Nonce::new(cookie, Address(0), Address(0), CombinedSequence::random());
+            let obox = OpenBox::new(msg, nonce);
+            let bbox = obox.encode();
+
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            let actions = s.handle_message(bbox);
+            assert_eq!(
+                s.server.handshake_state,
+                ServerHandshakeState::Failure("invalid nonce: cookie from server is identical to our own cookie".into())
+            );
+        }
+
+        /// The peer MUST check that the cookie of the sender does not change.
+        #[test]
+        fn cookie_did_not_change() {
             // TODO: Write once ServerAuth message has been implemented
         }
 

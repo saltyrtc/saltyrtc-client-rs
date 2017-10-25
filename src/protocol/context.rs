@@ -2,6 +2,7 @@
 
 use keystore::{PublicKey};
 
+use super::cookie::{CookiePair};
 use super::csn::{CombinedSequencePair};
 use super::state::{ServerHandshakeState};
 use super::types::{Identity, Address};
@@ -13,6 +14,8 @@ pub trait PeerContext {
     fn session_key(&self) -> Option<&PublicKey>;
     fn csn_pair(&self) -> &CombinedSequencePair;
     fn csn_pair_mut(&mut self) -> &mut CombinedSequencePair;
+    fn cookie_pair(&self) -> &CookiePair;
+    fn cookie_pair_mut(&mut self) -> &mut CookiePair;
 }
 
 
@@ -22,6 +25,7 @@ pub struct ServerContext {
     pub(crate) permanent_key: Option<PublicKey>,
     pub(crate) session_key: Option<PublicKey>,
     pub(crate) csn_pair: CombinedSequencePair,
+    pub(crate) cookie_pair: CookiePair,
 }
 
 impl ServerContext {
@@ -31,6 +35,7 @@ impl ServerContext {
             permanent_key: None,
             session_key: None,
             csn_pair: CombinedSequencePair::new(),
+            cookie_pair: CookiePair::new(),
         }
     }
 }
@@ -55,6 +60,14 @@ impl PeerContext for ServerContext {
     fn csn_pair_mut(&mut self) -> &mut CombinedSequencePair {
         &mut self.csn_pair
     }
+
+    fn cookie_pair(&self) -> &CookiePair {
+        &self.cookie_pair
+    }
+
+    fn cookie_pair_mut(&mut self) -> &mut CookiePair {
+        &mut self.cookie_pair
+    }
 }
 
 
@@ -64,6 +77,7 @@ pub struct ResponderContext {
     pub(crate) permanent_key: Option<PublicKey>,
     pub(crate) session_key: Option<PublicKey>,
     pub(crate) csn_pair: CombinedSequencePair,
+    pub(crate) cookie_pair: CookiePair,
 }
 
 impl ResponderContext {
@@ -73,6 +87,7 @@ impl ResponderContext {
             permanent_key: None,
             session_key: None,
             csn_pair: CombinedSequencePair::new(),
+            cookie_pair: CookiePair::new(),
         }
     }
 }
@@ -96,5 +111,13 @@ impl PeerContext for ResponderContext {
 
     fn csn_pair_mut(&mut self) -> &mut CombinedSequencePair {
         &mut self.csn_pair
+    }
+
+    fn cookie_pair(&self) -> &CookiePair {
+        &self.cookie_pair
+    }
+
+    fn cookie_pair_mut(&mut self) -> &mut CookiePair {
+        &mut self.cookie_pair
     }
 }
