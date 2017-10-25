@@ -14,12 +14,14 @@ use messages::{Message, ClientHello, ClientAuth};
 use keystore::{KeyStore};
 
 mod context;
+mod cookie;
 mod csn;
 mod nonce;
 mod state;
 mod types;
 
 use self::context::{PeerContext, ServerContext, ResponderContext};
+use self::cookie::{Cookie};
 use self::csn::{CombinedSequence};
 pub use self::nonce::{Nonce};
 pub use self::types::{Role, HandleAction};
@@ -246,7 +248,7 @@ impl Signaling {
                 let key = self.permanent_key.public_key().clone();
                 let client_hello = ClientHello::new(key).into_message();
                 let client_hello_nonce = Nonce::new(
-                    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                    Cookie::random(),
                     Address(0),
                     Address(0),
                     CombinedSequence::random(),
@@ -262,10 +264,10 @@ impl Signaling {
                     your_key: None, // TODO
                 }.into_message();
                 let client_auth_nonce = Nonce::new(
-                    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+                    Cookie::random(), // TODO
                     Address(0),
                     Address(0),
-                    CombinedSequence::random(),
+                    self.server.csn_pair().ours.clone(),
                 );
                 let reply = OpenBox::new(client_auth, client_auth_nonce);
                 actions.push(HandleAction::Reply(reply.encode()));
@@ -300,7 +302,7 @@ mod tests {
 
     fn create_test_nonce() -> Nonce {
         Nonce::new(
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            Cookie::new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
             Address(17),
             Address(18),
             CombinedSequence::new(258, 50_595_078),
@@ -340,7 +342,7 @@ mod tests {
 
             let msg = ServerHello::random().into_message();
             let cs = CombinedSequence::random();
-            let nonce = Nonce::new([0; 16], Address(0), Address(1), cs);
+            let nonce = Nonce::new(Cookie::random(), Address(0), Address(1), cs);
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
 
@@ -365,7 +367,7 @@ mod tests {
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
                 let cs = CombinedSequence::random();
-                let nonce = Nonce::new([0; 16], Address(src), Address(dest), cs);
+                let nonce = Nonce::new(Cookie::random(), Address(src), Address(dest), cs);
                 let obox = OpenBox::new(msg, nonce);
                 let bbox = obox.encode();
                 bbox
@@ -412,7 +414,7 @@ mod tests {
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
                 let cs = CombinedSequence::random();
-                let nonce = Nonce::new([0; 16], Address(src), Address(dest), cs);
+                let nonce = Nonce::new(Cookie::random(), Address(src), Address(dest), cs);
                 let obox = OpenBox::new(msg, nonce);
                 let bbox = obox.encode();
                 bbox
@@ -456,7 +458,7 @@ mod tests {
 
             let msg = ServerHello::random().into_message();
             let cs = CombinedSequence::new(1, 1234);
-            let nonce = Nonce::new([0; 16], Address(0), Address(0), cs);
+            let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), cs);
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
 
