@@ -9,6 +9,8 @@
 
 use std::collections::HashMap;
 
+use error_chain::ChainedError;
+
 use boxes::{ByteBox, OpenBox};
 use messages::{Message, ClientHello, ClientAuth};
 use keystore::{KeyStore};
@@ -294,8 +296,16 @@ impl Signaling {
             // If we're already in `Failure` state, stay there.
             ServerHandshakeState::Failure(ref msg) => return ServerHandshakeState::Failure(msg.clone()).into(),
 
-            // Otherwise, not yet implemented!
-            _ => return ServerHandshakeState::Failure("Not yet implemented".into()).into(),
+            // Otherwise, decrypt
+            _ => {
+                match self.server.permanent_key {
+                    Some(ref pubkey) => match bbox.decrypt(&self.permanent_key, pubkey) {
+                        Ok(obox) => obox,
+                        Err(e) => return ServerHandshakeState::Failure(e.display_chain().to_string().trim().replace("\n", " -> ")).into(),
+                    },
+                    None => return ServerHandshakeState::Failure("Missing server permanent key".into()).into(),
+                }
+            }
 
         };
 
