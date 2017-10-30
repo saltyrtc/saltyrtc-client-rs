@@ -11,7 +11,7 @@ use rust_sodium::crypto::box_;
 use errors::{Result, ErrorKind};
 
 use super::cookie::Cookie;
-use super::csn::CombinedSequence;
+use super::csn::CombinedSequenceSnapshot;
 use super::types::{Address};
 
 
@@ -25,11 +25,11 @@ pub struct Nonce {
     cookie: Cookie,
     source: Address,
     destination: Address,
-    csn: CombinedSequence,
+    csn: CombinedSequenceSnapshot,
 }
 
 impl Nonce {
-    pub fn new(cookie: Cookie, source: Address, destination: Address, csn: CombinedSequence) -> Self {
+    pub fn new(cookie: Cookie, source: Address, destination: Address, csn: CombinedSequenceSnapshot) -> Self {
         Nonce {
             cookie,
             source,
@@ -49,7 +49,7 @@ impl Nonce {
         );
         let overflow = BigEndian::read_u16(&bytes[18..20]);
         let sequence = BigEndian::read_u32(&bytes[20..24]);
-        let csn = CombinedSequence::new(overflow, sequence);
+        let csn = CombinedSequenceSnapshot::new(overflow, sequence);
         Ok(Self {
             cookie: Cookie::new([
                 bytes[0], bytes[1], bytes[2],  bytes[3],  bytes[4],  bytes[5],  bytes[6],  bytes[7],
@@ -103,7 +103,7 @@ impl Nonce {
     }
 
     /// Return the combined sequence number.
-    pub fn csn(&self) -> &CombinedSequence {
+    pub fn csn(&self) -> &CombinedSequenceSnapshot {
         &self.csn
     }
 }
@@ -124,7 +124,7 @@ mod tests {
             cookie: Cookie::new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
             source: Address(17),
             destination: Address(18),
-            csn: CombinedSequence::new(258, 50_595_078),
+            csn: CombinedSequenceSnapshot::new(258, 50_595_078),
         }
     }
 

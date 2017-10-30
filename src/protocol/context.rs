@@ -1,5 +1,7 @@
 //! The context structs hold state used in signaling.
 
+use std::cell::RefCell;
+
 use keystore::{PublicKey};
 
 use super::cookie::{CookiePair};
@@ -12,19 +14,18 @@ pub trait PeerContext {
     fn identity(&self) -> Identity;
     fn permanent_key(&self) -> Option<&PublicKey>;
     fn session_key(&self) -> Option<&PublicKey>;
-    fn csn_pair(&self) -> &CombinedSequencePair;
-    fn csn_pair_mut(&mut self) -> &mut CombinedSequencePair;
+    fn csn_pair(&self) -> &RefCell<CombinedSequencePair>;
     fn cookie_pair(&self) -> &CookiePair;
     fn cookie_pair_mut(&mut self) -> &mut CookiePair;
 }
 
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ServerContext {
     pub(crate) handshake_state: ServerHandshakeState,
     pub(crate) permanent_key: Option<PublicKey>,
     pub(crate) session_key: Option<PublicKey>,
-    pub(crate) csn_pair: CombinedSequencePair,
+    pub(crate) csn_pair: RefCell<CombinedSequencePair>,
     pub(crate) cookie_pair: CookiePair,
 }
 
@@ -34,7 +35,7 @@ impl ServerContext {
             handshake_state: ServerHandshakeState::New,
             permanent_key: None,
             session_key: None,
-            csn_pair: CombinedSequencePair::new(),
+            csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
     }
@@ -53,12 +54,8 @@ impl PeerContext for ServerContext {
         self.session_key.as_ref()
     }
 
-    fn csn_pair(&self) -> &CombinedSequencePair {
+    fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
         &self.csn_pair
-    }
-
-    fn csn_pair_mut(&mut self) -> &mut CombinedSequencePair {
-        &mut self.csn_pair
     }
 
     fn cookie_pair(&self) -> &CookiePair {
@@ -71,12 +68,12 @@ impl PeerContext for ServerContext {
 }
 
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ResponderContext {
     pub(crate) address: Address,
     pub(crate) permanent_key: Option<PublicKey>,
     pub(crate) session_key: Option<PublicKey>,
-    pub(crate) csn_pair: CombinedSequencePair,
+    pub(crate) csn_pair: RefCell<CombinedSequencePair>,
     pub(crate) cookie_pair: CookiePair,
 }
 
@@ -86,7 +83,7 @@ impl ResponderContext {
             address: address,
             permanent_key: None,
             session_key: None,
-            csn_pair: CombinedSequencePair::new(),
+            csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
     }
@@ -105,12 +102,8 @@ impl PeerContext for ResponderContext {
         self.session_key.as_ref()
     }
 
-    fn csn_pair(&self) -> &CombinedSequencePair {
+    fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
         &self.csn_pair
-    }
-
-    fn csn_pair_mut(&mut self) -> &mut CombinedSequencePair {
-        &mut self.csn_pair
     }
 
     fn cookie_pair(&self) -> &CookiePair {

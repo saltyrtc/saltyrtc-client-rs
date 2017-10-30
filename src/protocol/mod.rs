@@ -159,32 +159,33 @@ impl Signaling {
         // * MUST check that the combined sequence number of the source peer
         //   has been increased by 1 and has not reset to 0.
         {
-            let csn_pair = peer.csn_pair_mut();
-            match csn_pair.theirs {
-                None => {
-                    // This is the first message from that peer,
-                    // validate the overflow number...
-                    if nonce.csn().overflow_number() != 0 {
-                        let msg = format!("first message from {} must have set the overflow number to 0", peer_identity);
-                        return ValidationResult::Fail(msg);
-                    }
-                    // ...and store the CSN.
-                    csn_pair.theirs = Some(nonce.csn().clone());
-                },
-                Some(ref mut csn) => {
-                    // Ensure that the CSN has been increased properly.
-                    let previous = csn;
-                    let current = nonce.csn();
-                    if current < previous {
-                        let msg = format!("{} CSN is lower than last time", peer_identity);
-                        return ValidationResult::Fail(msg);
-                    } else if current == previous {
-                        let msg = format!("{} CSN hasn't been incremented", peer_identity);
-                        return ValidationResult::Fail(msg);
-                    } else {
-                        *previous = current.clone();
-                    }
-                },
+            let mut csn_pair = peer.csn_pair().borrow_mut();
+
+            // If we already have the CSN of the peer,
+            // ensure that it has been increased properly.
+            if let Some(ref mut csn) = csn_pair.theirs {
+                let previous = csn;
+                let current = nonce.csn();
+                if current < previous {
+                    let msg = format!("{} CSN is lower than last time", peer_identity);
+                    return ValidationResult::Fail(msg);
+                } else if current == previous {
+                    let msg = format!("{} CSN hasn't been incremented", peer_identity);
+                    return ValidationResult::Fail(msg);
+                } else {
+                    *previous = current.clone();
+                }
+            }
+
+            // Otherwise, this is the first message from that peer.
+            if csn_pair.theirs.is_none() {
+                // Validate the overflow number...
+                if nonce.csn().overflow_number() != 0 {
+                    let msg = format!("first message from {} must have set the overflow number to 0", peer_identity);
+                    return ValidationResult::Fail(msg);
+                }
+                // ...and store the CSN.
+                csn_pair.theirs = Some(nonce.csn().clone());
             }
         }
 
@@ -292,23 +293,29 @@ impl Signaling {
                     self.server.cookie_pair().ours.clone(),
                     self.identity.into(),
                     self.server.identity().into(),
-                    self.server.csn_pair().ours.clone(),
+                    match self.server.csn_pair().borrow_mut().ours.next() {
+                        Ok(snapshot) => snapshot,
+                        Err(e) => return ServerHandshakeState::Failure(format!("Could not increment CSN: {}", e)).into(),
+                    },
                 );
                 let reply = OpenBox::new(client_hello, client_hello_nonce);
                 actions.push(HandleAction::Reply(reply.encode()));
 
                 // Send client-auth message
                 let client_auth = ClientAuth {
-                    your_cookie: self.server.cookie_pair().theirs.clone().unwrap(), // TODO
-                    subprotocols: vec!["vX.saltyrtc.org".into()], // TODO
+                    your_cookie: self.server.cookie_pair().theirs.clone().unwrap(),
+                    subprotocols: vec![::SUBPROTOCOL.into()],
                     ping_interval: 0, // TODO
                     your_key: None, // TODO
                 }.into_message();
                 let client_auth_nonce = Nonce::new(
-                    Cookie::random(), // TODO
-                    Address(0),
-                    Address(0),
-                    self.server.csn_pair().ours.clone(),
+                    self.server.cookie_pair().ours.clone(),
+                    self.identity.into(),
+                    self.server.identity().into(),
+                    match self.server.csn_pair().borrow_mut().ours.next() {
+                        Ok(snapshot) => snapshot,
+                        Err(e) => return ServerHandshakeState::Failure(format!("Could not increment CSN: {}", e)).into(),
+                    },
                 );
                 let reply = OpenBox::new(client_auth, client_auth_nonce);
                 actions.push(HandleAction::Reply(reply.encode()));
@@ -337,9 +344,9 @@ impl Signaling {
 
 #[cfg(test)]
 mod tests {
-    use ::messages::{ServerHello, ClientHello};
+    use ::messages::{ServerHello};
 
-    use self::csn::{CombinedSequence};
+    use self::csn::{CombinedSequenceSnapshot};
     use self::types::{Identity};
 
     use super::*;
@@ -349,7 +356,7 @@ mod tests {
             Cookie::new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
             Address(17),
             Address(18),
-            CombinedSequence::new(258, 50_595_078),
+            CombinedSequenceSnapshot::new(258, 50_595_078),
         )
     }
 
@@ -385,7 +392,7 @@ mod tests {
             let mut s = Signaling::new(Role::Initiator, ks);
 
             let msg = ServerHello::random().into_message();
-            let cs = CombinedSequence::random();
+            let cs = CombinedSequenceSnapshot::random();
             let nonce = Nonce::new(Cookie::random(), Address(0), Address(1), cs);
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
@@ -410,7 +417,7 @@ mod tests {
 
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
-                let cs = CombinedSequence::random();
+                let cs = CombinedSequenceSnapshot::random();
                 let nonce = Nonce::new(Cookie::random(), Address(src), Address(dest), cs);
                 let obox = OpenBox::new(msg, nonce);
                 let bbox = obox.encode();
@@ -457,7 +464,7 @@ mod tests {
 
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
-                let cs = CombinedSequence::random();
+                let cs = CombinedSequenceSnapshot::random();
                 let nonce = Nonce::new(Cookie::random(), Address(src), Address(dest), cs);
                 let obox = OpenBox::new(msg, nonce);
                 let bbox = obox.encode();
@@ -501,7 +508,7 @@ mod tests {
             let mut s = Signaling::new(Role::Initiator, ks);
 
             let msg = ServerHello::random().into_message();
-            let cs = CombinedSequence::new(1, 1234);
+            let cs = CombinedSequenceSnapshot::new(1, 1234);
             let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), cs);
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
@@ -531,7 +538,7 @@ mod tests {
 
             let msg = ServerHello::random().into_message();
             let cookie = s.server.cookie_pair.ours.clone();
-            let nonce = Nonce::new(cookie, Address(0), Address(0), CombinedSequence::random());
+            let nonce = Nonce::new(cookie, Address(0), Address(0), CombinedSequenceSnapshot::random());
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
 
