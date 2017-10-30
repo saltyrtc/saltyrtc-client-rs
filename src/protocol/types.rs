@@ -25,6 +25,15 @@ impl Role {
     }
 }
 
+impl fmt::Display for Role {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Role::Initiator => write!(f, "Initiator"),
+            &Role::Responder => write!(f, "Responder"),
+        }
+    }
+}
+
 
 /// A peer identity.
 ///
@@ -94,6 +103,28 @@ impl fmt::Display for ClientIdentity {
 /// but without any semantic information attached.
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash)]
 pub struct Address(pub u8);
+
+impl Address {
+    /// Return whether this address is a valid server address.
+    pub fn is_server(&self) -> bool {
+        self.0 == 0x00
+    }
+
+    /// Return whether this address is a valid unknown address.
+    pub fn is_unknown(&self) -> bool {
+        self.0 == 0x00
+    }
+
+    /// Return whether this address is the initiator address.
+    pub fn is_initiator(&self) -> bool {
+        self.0 == 0x01
+    }
+
+    /// Return whether this address is in the responder range.
+    pub fn is_responder(&self) -> bool {
+        self.0 >= 0x02
+    }
+}
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

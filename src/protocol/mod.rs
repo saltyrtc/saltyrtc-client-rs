@@ -82,6 +82,30 @@ impl Signaling {
     fn validate_nonce(&mut self, nonce: &Nonce) -> ValidationResult {
 		// A client MUST check that the destination address targets its
 		// assigned identity (or `0x00` during authentication).
+        if self.identity == ClientIdentity::Unknown && !nonce.destination().is_unknown() {
+            // The first message received with a destination address different
+            // to `0x00` SHALL be accepted as the client's assigned identity.
+            // However, the client MUST validate that the identity fits its
+            // role – initiators SHALL ONLY accept `0x01` and responders SHALL
+            // ONLY an identity from the range `0x02..0xff`. The identity MUST
+            // be stored as the client's assigned identity.
+            match self.role {
+                Role::Initiator => if nonce.destination().is_initiator() {
+                    self.identity = ClientIdentity::Initiator;
+                    debug!("Assigned identity: {}", &self.identity);
+                } else {
+                    let msg = format!("cannot assign address {} to a client with role {}", nonce.destination(), self.role);
+                    return ValidationResult::Fail(msg);
+                },
+                Role::Responder => if nonce.destination().is_responder() {
+                    self.identity = ClientIdentity::Responder(nonce.destination().0);
+                    debug!("Assigned identity: {}", &self.identity);
+                } else {
+                    let msg = format!("cannot assign address {} to a client with role {}", nonce.destination(), self.role);
+                    return ValidationResult::Fail(msg);
+                }
+            };
+        }
         if nonce.destination() != self.identity.into() {
             let msg = format!("bad destination: {} (our identity is {})", nonce.destination(), self.identity);
             return ValidationResult::Fail(msg);
