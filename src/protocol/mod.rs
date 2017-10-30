@@ -22,7 +22,6 @@ mod types;
 
 use self::context::{PeerContext, ServerContext, ResponderContext};
 use self::cookie::{Cookie};
-use self::csn::{CombinedSequence};
 pub use self::nonce::{Nonce};
 pub use self::types::{Role, HandleAction};
 use self::types::{ClientIdentity, Address};
@@ -290,15 +289,15 @@ impl Signaling {
                 let key = self.permanent_key.public_key().clone();
                 let client_hello = ClientHello::new(key).into_message();
                 let client_hello_nonce = Nonce::new(
-                    Cookie::random(),
-                    Address(0),
-                    Address(0),
-                    CombinedSequence::random(),
+                    self.server.cookie_pair().ours.clone(),
+                    self.identity.into(),
+                    self.server.identity().into(),
+                    self.server.csn_pair().ours.clone(),
                 );
                 let reply = OpenBox::new(client_hello, client_hello_nonce);
                 actions.push(HandleAction::Reply(reply.encode()));
 
-                // Send with client-auth message
+                // Send client-auth message
                 let client_auth = ClientAuth {
                     your_cookie: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], // TODO
                     subprotocols: vec!["vX.saltyrtc.org".into()], // TODO
@@ -339,7 +338,10 @@ impl Signaling {
 #[cfg(test)]
 mod tests {
     use ::messages::{ServerHello, ClientHello};
+
+    use self::csn::{CombinedSequence};
     use self::types::{Identity};
+
     use super::*;
 
     fn create_test_nonce() -> Nonce {
