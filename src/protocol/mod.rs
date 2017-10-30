@@ -225,7 +225,6 @@ impl Signaling {
             }
         }
 
-
         ValidationResult::Ok
     }
 
@@ -299,6 +298,7 @@ impl Signaling {
                     },
                 );
                 let reply = OpenBox::new(client_hello, client_hello_nonce);
+                debug!("Enqueuing client-hello");
                 actions.push(HandleAction::Reply(reply.encode()));
 
                 // Send client-auth message
@@ -318,7 +318,13 @@ impl Signaling {
                     },
                 );
                 let reply = OpenBox::new(client_auth, client_auth_nonce);
-                actions.push(HandleAction::Reply(reply.encode()));
+                match self.server.permanent_key {
+                    Some(ref pubkey) => {
+                        debug!("Enqueuing client-auth");
+                        actions.push(HandleAction::Reply(reply.encrypt(&self.permanent_key, pubkey)));
+                    },
+                    None => return ServerHandshakeState::Failure("Missing server permanent key".into()).into(),
+                };
 
                 // TODO: Can we prevent confusing an incoming and an outgoing nonce?
                 StateTransition {

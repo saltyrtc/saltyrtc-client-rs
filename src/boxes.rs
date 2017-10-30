@@ -7,6 +7,7 @@
 use rust_sodium::crypto::box_::NONCEBYTES;
 
 use errors::{Result, ResultExt, ErrorKind};
+use keystore::{KeyStore, PublicKey};
 use messages::Message;
 use protocol::Nonce;
 
@@ -34,7 +35,19 @@ impl OpenBox {
         ByteBox::new(bytes, self.nonce)
     }
 
-    //pub fn encrypt(self, public_key: PublicKey, private_key: PrivateKey,
+    pub fn encrypt(self, keystore: &KeyStore, other_key: &PublicKey) -> ByteBox {
+        let encrypted = keystore.encrypt(
+            // The message bytes to be encrypted
+            &self.message.to_msgpack(),
+            // The nonce. The unsafe call to `cloen()` is required because the
+            // nonce needs to be used both for encrypting, as well as being
+            // sent along with the message bytes.
+            unsafe { self.nonce.clone() },
+            // The public key of the recipient
+            other_key
+        );
+        ByteBox::new(encrypted, self.nonce)
+    }
 }
 
 

@@ -142,7 +142,7 @@ pub fn connect(
                 .filter_map(|msg| {
                     match msg {
                         OwnedMessage::Binary(bytes) => {
-                            debug!("Received binary message");
+                            debug!("Incoming binary message");
                             Some(bytes)
                         },
                         OwnedMessage::Close(close_data) => {
@@ -179,7 +179,7 @@ pub fn connect(
                     .and_then(|(bytes_option, stream)| {
                         // Unwrap bytes
                         let bytes = bytes_option.ok_or("Server message stream ended")?;
-                        info!("Received {} bytes", bytes.len());
+                        debug!("Received {} bytes", bytes.len());
 
                         // Parse into ByteBox
                         let bbox = boxes::ByteBox::from_slice(&bytes)?;
