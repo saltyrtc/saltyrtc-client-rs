@@ -82,7 +82,9 @@ impl Signaling {
     fn validate_nonce(&mut self, nonce: &Nonce) -> ValidationResult {
 		// A client MUST check that the destination address targets its
 		// assigned identity (or `0x00` during authentication).
-        if self.identity == ClientIdentity::Unknown && !nonce.destination().is_unknown() {
+        if self.identity == ClientIdentity::Unknown
+                && !nonce.destination().is_unknown()
+                && self.server.handshake_state != ServerHandshakeState::New {
             // The first message received with a destination address different
             // to `0x00` SHALL be accepted as the client's assigned identity.
             // However, the client MUST validate that the identity fits its
