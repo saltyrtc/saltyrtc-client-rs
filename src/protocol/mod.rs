@@ -13,12 +13,12 @@ use boxes::{ByteBox, OpenBox};
 use messages::{Message, ClientHello, ClientAuth};
 use keystore::{KeyStore};
 
-mod context;
-mod cookie;
-mod csn;
-mod nonce;
-mod state;
-mod types;
+pub(crate) mod context;
+pub(crate) mod cookie;
+pub(crate) mod csn;
+pub(crate) mod nonce;
+pub(crate) mod state;
+pub(crate) mod types;
 
 use self::context::{PeerContext, ServerContext, ResponderContext};
 pub use self::cookie::{Cookie};

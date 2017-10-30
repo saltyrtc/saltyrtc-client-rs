@@ -39,7 +39,7 @@ impl OpenBox {
         let encrypted = keystore.encrypt(
             // The message bytes to be encrypted
             &self.message.to_msgpack(),
-            // The nonce. The unsafe call to `cloen()` is required because the
+            // The nonce. The unsafe call to `clone()` is required because the
             // nonce needs to be used both for encrypting, as well as being
             // sent along with the message bytes.
             unsafe { self.nonce.clone() },
@@ -81,6 +81,25 @@ impl ByteBox {
         Ok(OpenBox::new(message, self.nonce))
     }
 
+    /// Decrypt an encrypted message into an [`OpenBox`](struct.OpenBox.html).
+    pub fn decrypt(self, keystore: &KeyStore, other_key: &PublicKey) -> Result<OpenBox> {
+        let decrypted = keystore.decrypt(
+            // The message bytes to be decrypted
+            &self.bytes,
+            // The nonce. The unsafe call to `clone()` is required because the
+            // nonce needs to be used both for decrypting, as well as being
+            // passed along with the message bytes.
+            unsafe { self.nonce.clone() },
+            // The public key of the recipient
+            other_key
+        ).chain_err(|| ErrorKind::Decode("cannot decode message payload".into()))?;
+
+        let message = Message::from_msgpack(&decrypted)
+            .chain_err(|| ErrorKind::Decode("cannot decode message payload".into()))?;
+
+        Ok(OpenBox::new(message, self.nonce))
+    }
+
     pub fn into_bytes(self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(NONCEBYTES + self.bytes.len());
         bytes.extend(self.nonce.into_bytes().iter());
@@ -92,7 +111,42 @@ impl ByteBox {
 
 #[cfg(test)]
 mod tests {
+    use protocol::cookie::Cookie;
+    use protocol::csn::CombinedSequenceSnapshot;
+    use protocol::types::Address;
+
     use super::*;
+
+
+    /// Return a test nonce.
+    fn create_test_nonce() -> Nonce {
+        Nonce::new(
+            Cookie::new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
+            Address(17),
+            Address(18),
+            CombinedSequenceSnapshot::new(258, 50_595_078),
+        )
+    }
+
+    /// Return bytes of a server-hello message.
+    fn create_test_msg_bytes() -> Vec<u8> {
+        vec![
+            // Fixmap with two entries
+            0x82,
+            // Key: type
+            0xa4, 0x74, 0x79, 0x70, 0x65,
+            // Val: server-hello
+            0xac, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2d, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
+            // Key: key
+            0xa3, 0x6b, 0x65, 0x79,
+            // Val: Binary 32 bytes
+            0xc4, 0x20,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
+            0x63, 0xff,
+        ]
+    }
 
     #[test]
     fn byte_box_from_slice() {
@@ -119,5 +173,25 @@ mod tests {
         let err2 = ByteBox::from_slice(&bytes_not_even_nonce).unwrap_err();
         assert_eq!(format!("{}", err1), "decoding error: message is too short");
         assert_eq!(format!("{}", err2), "decoding error: message is too short");
+    }
+
+    #[test]
+    fn byte_box_decode() {
+        let nonce = create_test_nonce();
+        let bbox = ByteBox::new(create_test_msg_bytes(), nonce);
+        let obox = bbox.decode().unwrap();
+        assert_eq!(obox.message.get_type(), "server-hello");
+    }
+
+    #[test]
+    fn byte_box_decrypt() {
+        let nonce = create_test_nonce();
+        let bytes = create_test_msg_bytes();
+        let keystore_tx = KeyStore::new().unwrap();
+        let keystore_rx = KeyStore::new().unwrap();
+        let encrypted = keystore_tx.encrypt(&bytes, unsafe { nonce.clone() }, keystore_rx.public_key());
+        let bbox = ByteBox::new(encrypted, nonce);
+        let obox = bbox.decrypt(&keystore_rx, keystore_tx.public_key()).unwrap();
+        assert_eq!(obox.message.get_type(), "server-hello");
     }
 }
