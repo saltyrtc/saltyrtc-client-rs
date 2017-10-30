@@ -4,8 +4,8 @@ use std::fmt;
 use std::result::Result as StdResult;
 
 use rust_sodium::randombytes::randombytes_into;
-use serde::ser::{Serialize, Serializer, SerializeSeq};
-use serde::de::{Deserialize, Deserializer, Visitor, SeqAccess, Error as SerdeError};
+use serde::ser::{Serialize, Serializer};
+use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
 use errors::{Result, ErrorKind};
 use helpers::libsodium_init_or_panic;
@@ -65,11 +65,7 @@ impl Cookie {
 impl Serialize for Cookie {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
             where S: Serializer {
-        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
-        for byte in self.0.iter() {
-            seq.serialize_element(byte)?;
-        }
-        seq.end()
+        serializer.serialize_bytes(&self.0)
     }
 }
 
@@ -79,28 +75,19 @@ impl<'de> Visitor<'de> for CookieVisitor {
     type Value = Cookie;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("an array of 16 bytes")
+        formatter.write_str("16 bytes of binary data")
     }
 
-    fn visit_seq<A>(self, mut seq: A) -> StdResult<Self::Value, A::Error> where A: SeqAccess<'de> {
-        Ok(Cookie::new([
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
-        ]))
+    fn visit_bytes<E>(self, v: &[u8]) -> StdResult<Self::Value, E> where E: SerdeError {
+        if v.len() != 16 {
+            return Err(SerdeError::invalid_length(v.len(), &self));
+        }
+        Ok(Cookie::new([v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7],
+                        v[8], v[9], v[10], v[11], v[12], v[13], v[14], v[15]]))
+    }
+
+    fn visit_byte_buf<E>(self, v: Vec<u8>) -> StdResult<Self::Value, E> where E: SerdeError {
+        self.visit_bytes(&v)
     }
 }
 
@@ -108,7 +95,7 @@ impl<'de> Visitor<'de> for CookieVisitor {
 impl<'de> Deserialize<'de> for Cookie {
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
             where D: Deserializer<'de> {
-        deserializer.deserialize_seq(CookieVisitor)
+        deserializer.deserialize_bytes(CookieVisitor)
     }
 }
 
@@ -153,27 +140,28 @@ mod tests {
     /// The cookie serializes to the contained raw bytes.
     #[test]
     fn cookie_serialize() {
-        let a = [1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8];
-        let b = Cookie::new(a.clone());
+        let cookie = Cookie::new([1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8]);
 
-        let a_ser = rmps::to_vec_named(&a).expect("Serialization failed");
-        let b_ser = rmps::to_vec_named(&b).expect("Serialization failed");
+        let serialized = rmps::to_vec_named(&cookie).expect("Serialization failed");
 
-        assert_eq!(a_ser, b_ser);
+        assert_eq!(serialized, [
+            0xc4, // bin 8
+            16, // 16 elements
+            1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, // bytes
+        ]);
     }
 
     /// The cookie deserializes from raw bytes.
     #[test]
     fn cookie_deserialize() {
-        let bytes = [
-            220, // array 16
-            0, 16, // 16 elements
-            1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, // array bytes
-        ];
+        let cookie = Cookie::new([1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8]);
 
-        let a_de: [u8; 16] = rmps::from_slice(&bytes).unwrap();
-        let b_de: Cookie = rmps::from_slice(&bytes).unwrap();
+        let deserialized: Cookie = rmps::from_slice(&[
+            0xc4, // bin 8
+            16, // 16 elements
+            1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, // bytes
+        ]).unwrap();
 
-        assert_eq!(a_de, b_de.bytes());
+        assert_eq!(cookie, deserialized);
     }
 }
