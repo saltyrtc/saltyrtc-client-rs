@@ -69,6 +69,9 @@ impl Signaling {
         // Do the state transition
         let transition = self.next_state(bbox);
         trace!("Server handshake state transition: {:?} -> {:?}", self.server.handshake_state, transition.state);
+        if let ServerHandshakeState::Failure(ref msg) = transition.state {
+            warn!("Server handshake failure: {}", msg);
+        }
         self.server.handshake_state = transition.state;
 
         // Return the action
