@@ -18,8 +18,8 @@ use super::types::{Address};
 /// The SaltyRTC nonce.
 ///
 /// The type is intentionally non-cloneable, to prevent accidental re-use. All
-/// transformations into other formats consume the instance. This is also known
-/// as an affine type.
+/// non-unsafe transformations into other formats consume the instance. This is
+/// also known as an affine type.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Nonce {
     cookie: Cookie,
@@ -105,6 +105,20 @@ impl Nonce {
     /// Return the combined sequence number.
     pub fn csn(&self) -> &CombinedSequenceSnapshot {
         &self.csn
+    }
+
+    /// Clone the nonce.
+    ///
+    /// This is unsafe because a `Nonce` must never be reused for two messages.
+    /// Only clone a `Nonce` if it's absolutely required and if you are sure
+    /// that it isn't reused.
+    pub unsafe fn clone(&self) -> Nonce {
+        Nonce {
+            cookie: self.cookie.clone(),
+            source: self.source.clone(),
+            destination: self.destination.clone(),
+            csn: self.csn.clone(),
+        }
     }
 }
 
