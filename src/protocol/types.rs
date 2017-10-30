@@ -2,7 +2,6 @@ use std::convert::From;
 use std::fmt;
 
 use boxes::{ByteBox};
-use keystore::{PublicKey};
 
 
 /// The role of a peer.
@@ -142,8 +141,6 @@ impl From<Identity> for Address {
 pub enum HandleAction {
     /// Send the specified message through the websocket.
     Reply(ByteBox),
-    /// Update the server key.
-    SetServerKey(PublicKey),
 }
 
 

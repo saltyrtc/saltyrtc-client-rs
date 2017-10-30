@@ -201,7 +201,6 @@ pub fn connect(
                         for action in handle_actions {
                             match action {
                                 HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
-                                HandleAction::SetServerKey(_) => {}
                             }
                         }
                         if messages.is_empty() {

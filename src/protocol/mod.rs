@@ -275,12 +275,16 @@ impl Signaling {
 
             // Valid state transitions
             (&ServerHandshakeState::New, Message::ServerHello(msg)) => {
-                info!("Hello from server");
+                debug!("Received server-hello");
 
                 let mut actions = Vec::with_capacity(3);
 
-                trace!("Server key is {:?}", msg.key);
-                actions.push(HandleAction::SetServerKey(msg.key.clone()));
+                // Set the server public permanent key
+                trace!("Server permanent key is {:?}", msg.key);
+                if self.server.permanent_key.is_some() {
+                    return ServerHandshakeState::Failure("Server permanent key is already set".into()).into();
+                }
+                self.server.permanent_key = Some(msg.key.clone());
 
                 // Reply with client-hello message
                 let key = self.permanent_key.public_key().clone();
