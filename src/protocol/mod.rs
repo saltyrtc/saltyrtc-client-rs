@@ -21,7 +21,7 @@ mod state;
 mod types;
 
 use self::context::{PeerContext, ServerContext, ResponderContext};
-use self::cookie::{Cookie};
+pub use self::cookie::{Cookie};
 pub use self::nonce::{Nonce};
 pub use self::types::{Role, HandleAction};
 use self::types::{ClientIdentity, Address};
@@ -299,7 +299,7 @@ impl Signaling {
 
                 // Send client-auth message
                 let client_auth = ClientAuth {
-                    your_cookie: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], // TODO
+                    your_cookie: self.server.cookie_pair().theirs.clone().unwrap(), // TODO
                     subprotocols: vec!["vX.saltyrtc.org".into()], // TODO
                     ping_interval: 0, // TODO
                     your_key: None, // TODO

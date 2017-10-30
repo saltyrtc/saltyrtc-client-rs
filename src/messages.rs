@@ -12,6 +12,7 @@ use rmp_serde as rmps;
 
 use errors::{Result};
 use keystore::PublicKey;
+use protocol::Cookie;
 
 
 /// The `Message` enum contains all possible message types that may be used in
@@ -124,7 +125,7 @@ impl From<ServerHello> for Message {
 /// The client-auth message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct ClientAuth {
-    pub your_cookie: [u8; 16],
+    pub your_cookie: Cookie,
     pub subprotocols: Vec<String>,
     pub ping_interval: u32,
     pub your_key: Option<PublicKey>,

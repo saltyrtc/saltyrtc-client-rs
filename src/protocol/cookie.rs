@@ -1,6 +1,11 @@
 //! Cookies.
 
+use std::fmt;
+use std::result::Result as StdResult;
+
 use rust_sodium::randombytes::randombytes_into;
+use serde::ser::{Serialize, Serializer, SerializeSeq};
+use serde::de::{Deserialize, Deserializer, Visitor, SeqAccess, Error as SerdeError};
 
 use errors::{Result, ErrorKind};
 use helpers::libsodium_init_or_panic;
@@ -56,6 +61,57 @@ impl Cookie {
     }
 }
 
+/// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
+impl Serialize for Cookie {
+    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+            where S: Serializer {
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for byte in self.0.iter() {
+            seq.serialize_element(byte)?;
+        }
+        seq.end()
+    }
+}
+
+struct CookieVisitor;
+
+impl<'de> Visitor<'de> for CookieVisitor {
+    type Value = Cookie;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("an array of 16 bytes")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> StdResult<Self::Value, A::Error> where A: SeqAccess<'de> {
+        Ok(Cookie::new([
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+            seq.next_element()?.ok_or(SerdeError::custom("could not deserialize cookie"))?,
+        ]))
+    }
+}
+
+/// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
+impl<'de> Deserialize<'de> for Cookie {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+            where D: Deserializer<'de> {
+        deserializer.deserialize_seq(CookieVisitor)
+    }
+}
+
 
 /// A pair of two [`Cookie`](struct.Cookie.html)s
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +135,8 @@ impl CookiePair {
 mod tests {
     use std::collections::HashSet;
 
+    use rmp_serde as rmps;
+
     use super::*;
 
     /// 100 generated random cookies should be different
@@ -92,4 +150,30 @@ mod tests {
         assert_eq!(cookies.len(), 100);
     }
 
+    /// The cookie serializes to the contained raw bytes.
+    #[test]
+    fn cookie_serialize() {
+        let a = [1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8];
+        let b = Cookie::new(a.clone());
+
+        let a_ser = rmps::to_vec_named(&a).expect("Serialization failed");
+        let b_ser = rmps::to_vec_named(&b).expect("Serialization failed");
+
+        assert_eq!(a_ser, b_ser);
+    }
+
+    /// The cookie deserializes from raw bytes.
+    #[test]
+    fn cookie_deserialize() {
+        let bytes = [
+            220, // array 16
+            0, 16, // 16 elements
+            1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, // array bytes
+        ];
+
+        let a_de: [u8; 16] = rmps::from_slice(&bytes).unwrap();
+        let b_de: Cookie = rmps::from_slice(&bytes).unwrap();
+
+        assert_eq!(a_de, b_de.bytes());
+    }
 }
