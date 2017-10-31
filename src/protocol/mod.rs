@@ -657,6 +657,12 @@ mod tests {
             }
         }
 
+        fn make_test_msg(msg: Message, ctx: &TestContext, address: Address) -> ByteBox {
+            let nonce = Nonce::new(ctx.server_cookie.clone(), Address(0), address, CombinedSequenceSnapshot::random());
+            let obox = OpenBox::new(msg, nonce);
+            obox.encrypt(&ctx.server_ks, ctx.our_ks.public_key())
+        }
+
         // When the client receives a 'server-auth' message, it MUST have
         // accepted and set its identity as described in the Receiving a
         // Signalling Message section.
@@ -668,10 +674,8 @@ mod tests {
                                               ServerHandshakeState::ClientInfoSent);
 
             // Prepare a ServerAuth message
-            let msg = ServerAuth::for_responder(ctx.our_cookie, None, false).into_message();
-            let nonce = Nonce::new(ctx.server_cookie, Address(0), Address(13), CombinedSequenceSnapshot::random());
-            let obox = OpenBox::new(msg, nonce);
-            let bbox = obox.encrypt(&ctx.server_ks, ctx.our_ks.public_key());
+            let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, false).into_message();
+            let bbox = make_test_msg(msg, &ctx, Address(13));
 
             // Handle message
             let mut s = ctx.signaling;
@@ -692,9 +696,7 @@ mod tests {
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(Cookie::random(), None, vec![]).into_message();
-            let nonce = Nonce::new(ctx.server_cookie, Address(0), Address(1), CombinedSequenceSnapshot::random());
-            let obox = OpenBox::new(msg, nonce);
-            let bbox = obox.encrypt(&ctx.server_ks, ctx.our_ks.public_key());
+            let bbox = make_test_msg(msg, &ctx, Address(1));
 
             // Handle message
             let mut s = ctx.signaling;
