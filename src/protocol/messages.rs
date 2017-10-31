@@ -162,6 +162,26 @@ pub struct ServerAuth {
 }
 
 impl ServerAuth {
+    /// Create a new ServerAuth message targeted at an initiator.
+    pub fn for_initiator(your_cookie: Cookie, signed_keys: Option<SignedKeys>, responders: Vec<Address>) -> Self {
+        Self {
+            your_cookie,
+            signed_keys,
+            responders: Some(responders),
+            initiator_connected: None,
+        }
+    }
+
+    /// Create a new ServerAuth message targeted at a responder.
+    pub fn for_responder(your_cookie: Cookie, signed_keys: Option<SignedKeys>, initiator_connected: bool) -> Self {
+        Self {
+            your_cookie,
+            signed_keys,
+            responders: None,
+            initiator_connected: Some(initiator_connected),
+        }
+    }
+
     pub fn into_message(self) -> Message {
         self.into()
     }

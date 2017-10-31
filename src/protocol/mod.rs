@@ -373,6 +373,31 @@ impl Signaling {
                 }
             },
 
+            (&ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) => {
+                debug!("Received server-auth");
+
+                // When the client receives a 'server-auth' message, it MUST
+                // have accepted and set its identity as described in the
+                // Receiving a Signalling Message section.
+                if self.identity == ClientIdentity::Unknown {
+                    return ServerHandshakeState::Failure("No identity assigned".into()).into();
+                }
+
+                // It MUST check that the cookie provided in the your_cookie
+                // field contains the cookie the client has used in its
+                // previous and messages to the server.
+                if msg.your_cookie != self.server.cookie_pair().ours {
+                    trace!("Our cookie as sent by server: {:?}", msg.your_cookie);
+                    trace!("Our actual cookie: {:?}", self.server.cookie_pair().ours);
+                    return ServerHandshakeState::Failure("cookie sent in server-auth message does not match our cookie".into()).into();
+                }
+
+                StateTransition {
+                    state: ServerHandshakeState::Done,
+                    actions: vec![],
+                }
+            },
+
             // A failure transition is terminal and does not change
             (&ServerHandshakeState::Failure(ref msg), _) => ServerHandshakeState::Failure(msg.clone()).into(),
 
@@ -390,8 +415,9 @@ impl Signaling {
 
 #[cfg(test)]
 mod tests {
+    use self::cookie::{Cookie, CookiePair};
     use self::csn::{CombinedSequenceSnapshot};
-    use self::messages::{ServerHello};
+    use self::messages::{ServerHello, ServerAuth};
     use self::types::{Identity};
 
     use super::*;
@@ -601,6 +627,84 @@ mod tests {
             // TODO: Write once ServerAuth message has been implemented
         }
 
+        struct TestContext {
+            pub our_ks: KeyStore,
+            pub server_ks: KeyStore,
+            pub our_cookie: Cookie,
+            pub server_cookie: Cookie,
+            pub signaling: Signaling,
+        }
+
+        fn make_test_signaling(role: Role, identity: ClientIdentity, handshake_state: ServerHandshakeState) -> TestContext {
+            let our_ks = KeyStore::new().unwrap();
+            let server_ks = KeyStore::new().unwrap();
+            let our_cookie = Cookie::random();
+            let server_cookie = Cookie::random();
+            let mut signaling = Signaling::new(role, KeyStore::from_private_key(our_ks.private_key().clone()));
+            signaling.identity = identity;
+            signaling.server.handshake_state = handshake_state;
+            signaling.server.cookie_pair = CookiePair {
+                ours: our_cookie.clone(),
+                theirs: Some(server_cookie.clone()),
+            };
+            signaling.server.permanent_key = Some(server_ks.public_key().clone());
+            TestContext {
+                our_ks: our_ks,
+                server_ks: server_ks,
+                our_cookie: our_cookie,
+                server_cookie: server_cookie,
+                signaling: signaling,
+            }
+        }
+
+        // When the client receives a 'server-auth' message, it MUST have
+        // accepted and set its identity as described in the Receiving a
+        // Signalling Message section.
+        #[test]
+        fn server_auth_no_identity() {
+            // Initialize Signaling class
+            let mut ctx = make_test_signaling(Role::Responder,
+                                              ClientIdentity::Unknown,
+                                              ServerHandshakeState::ClientInfoSent);
+
+            // Prepare a ServerAuth message
+            let msg = ServerAuth::for_responder(ctx.our_cookie, None, false).into_message();
+            let nonce = Nonce::new(ctx.server_cookie, Address(0), Address(13), CombinedSequenceSnapshot::random());
+            let obox = OpenBox::new(msg, nonce);
+            let bbox = obox.encrypt(&ctx.server_ks, ctx.our_ks.public_key());
+
+            // Handle message
+            let mut s = ctx.signaling;
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            let actions = s.handle_message(bbox);
+            assert_eq!(s.identity, ClientIdentity::Responder(13));
+        }
+
+        // The peer MUST check that the cookie provided in the your_cookie
+        // field contains the cookie the client has used in its
+        // previous and messages to the server.
+        #[test]
+        fn server_auth_your_cookie() {
+            // Initialize Signaling class
+            let mut ctx = make_test_signaling(Role::Initiator,
+                                              ClientIdentity::Initiator,
+                                              ServerHandshakeState::ClientInfoSent);
+
+            // Prepare a ServerAuth message
+            let msg = ServerAuth::for_initiator(Cookie::random(), None, vec![]).into_message();
+            let nonce = Nonce::new(ctx.server_cookie, Address(0), Address(1), CombinedSequenceSnapshot::random());
+            let obox = OpenBox::new(msg, nonce);
+            let bbox = obox.encrypt(&ctx.server_ks, ctx.our_ks.public_key());
+
+            // Handle message
+            let mut s = ctx.signaling;
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            let actions = s.handle_message(bbox);
+            assert_eq!(
+                s.server.handshake_state,
+                ServerHandshakeState::Failure("cookie sent in server-auth message does not match our cookie".into())
+            );
+        }
     }
 
 //    #[test]
