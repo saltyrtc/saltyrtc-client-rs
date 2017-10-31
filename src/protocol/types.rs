@@ -229,7 +229,7 @@ mod tests {
     #[should_panic]
     fn client_identity_invalid_responder_into_address() {
         let responder_invalid = ClientIdentity::Responder(0x01);
-        let address: Address = responder_invalid.into();
+        let _: Address = responder_invalid.into();
     }
 
     #[test]

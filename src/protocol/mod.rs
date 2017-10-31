@@ -7,7 +7,7 @@
 //! This allows for better decoupling between protocol logic and network code,
 //! and makes it possible to easily add tests.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use error_chain::ChainedError;
 
@@ -392,6 +392,67 @@ impl Signaling {
                     return ServerHandshakeState::Failure("cookie sent in server-auth message does not match our cookie".into()).into();
                 }
 
+                // If the client has knowledge of the server's public permanent
+                // key, it SHALL decrypt the signed_keys field by using the
+                // message's nonce, the client's private permanent key and the
+                // server's public permanent key. The decrypted message MUST
+                // match the concatenation of the server's public session key
+                // and the client's public permanent key (in that order). If
+                // the signed_keys is present but the client does not have
+                // knowledge of the server's permanent key, it SHALL log a
+                // warning.
+                // TODO: Implement
+
+                // Moreover, the client MUST do the following checks depending on its role:
+                match self.role {
+                    Role::Initiator => {
+                        // In case the client is the initiator, it SHALL check
+                        // that the responders field is set and contains an
+                        // Array of responder identities.
+                        if msg.initiator_connected.is_some() {
+                            let msg = "we're the initiator, but the `initiator_connected` field in the server-auth message is set".into();
+                            return ServerHandshakeState::Failure(msg).into();
+                        }
+                        let responders = match msg.responders {
+                            Some(responders) => responders,
+                            None => return ServerHandshakeState::Failure("`responders` field in server-auth message not set".into()).into(),
+                        };
+
+                        // The responder identities MUST be validated and SHALL
+                        // neither contain addresses outside the range
+                        // 0x02..0xff
+                        let responders_set: HashSet<Address> = responders.iter().cloned().collect();
+                        if responders_set.contains(&Address(0x00)) || responders_set.contains(&Address(0x01)) {
+                            return ServerHandshakeState::Failure("`responders` field in server-auth message may not contain addresses <0x02".into()).into();
+                        }
+
+                        // ...nor SHALL an address be repeated in the
+                        // Array.
+                        if responders.len() != responders_set.len() {
+                            return ServerHandshakeState::Failure("`responders` field in server-auth message may not contain duplicates".into()).into();
+                        }
+
+                        // An empty Array SHALL be considered valid. However,
+                        // Nil SHALL NOT be considered a valid value of that
+                        // field.
+                        // -> Already covered by Rust's type system.
+
+                        // It SHOULD store the responder's identities in its
+                        // internal list of responders.
+                        for address in responders_set {
+                            self.responders.insert(address, ResponderContext::new(address));
+                        }
+
+                        // Additionally, the initiator MUST keep its path clean
+                        // by following the procedure described in the Path
+                        // Cleaning section.
+                        // TODO: Implement
+                    },
+                    Role::Responder => {
+                        // TODO: Implement
+                    },
+                }
+
                 StateTransition {
                     state: ServerHandshakeState::Done,
                     actions: vec![],
@@ -512,6 +573,7 @@ mod tests {
             assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(make_msg(0x00, 0x00));
             assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            assert_eq!(actions.len(), 2);
 
             // Handling messages from responder is valid as soon as the identity
             // has been assigned.
@@ -559,6 +621,7 @@ mod tests {
             assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(make_msg(0x00, 0x00));
             assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            assert_eq!(actions.len(), 2);
 
             // Handling messages from initiator is valid as soon as the identity
             // has been assigned.
@@ -590,6 +653,7 @@ mod tests {
                 s.server.handshake_state,
                 ServerHandshakeState::Failure("invalid nonce: first message from server must have set the overflow number to 0".into())
             );
+            assert_eq!(actions, vec![]);
         }
 
         /// The peer MUST check that the combined sequence number of the source
@@ -619,6 +683,7 @@ mod tests {
                 s.server.handshake_state,
                 ServerHandshakeState::Failure("invalid nonce: cookie from server is identical to our own cookie".into())
             );
+            assert_eq!(actions, vec![]);
         }
 
         /// The peer MUST check that the cookie of the sender does not change.
@@ -663,15 +728,24 @@ mod tests {
             obox.encrypt(&ctx.server_ks, ctx.our_ks.public_key())
         }
 
+        /// Assert that handling the specified byte box fails in ClientInfoSent
+        /// state with the specified error message.
+        fn assert_client_info_sent_fail(ctx: &mut TestContext, bbox: ByteBox, msg: &str) {
+            assert_eq!(ctx.signaling.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            let actions = ctx.signaling.handle_message(bbox);
+            assert_eq!(ctx.signaling.server.handshake_state, ServerHandshakeState::Failure(msg.into()));
+            assert_eq!(actions, vec![]);
+        }
+
         // When the client receives a 'server-auth' message, it MUST have
         // accepted and set its identity as described in the Receiving a
         // Signalling Message section.
         #[test]
         fn server_auth_no_identity() {
             // Initialize Signaling class
-            let mut ctx = make_test_signaling(Role::Responder,
-                                              ClientIdentity::Unknown,
-                                              ServerHandshakeState::ClientInfoSent);
+            let ctx = make_test_signaling(Role::Responder,
+                                          ClientIdentity::Unknown,
+                                          ServerHandshakeState::ClientInfoSent);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, false).into_message();
@@ -682,6 +756,7 @@ mod tests {
             assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
             let actions = s.handle_message(bbox);
             assert_eq!(s.identity, ClientIdentity::Responder(13));
+            assert_eq!(actions, vec![]);
         }
 
         // The peer MUST check that the cookie provided in the your_cookie
@@ -699,13 +774,95 @@ mod tests {
             let bbox = make_test_msg(msg, &ctx, Address(1));
 
             // Handle message
+            assert_client_info_sent_fail(&mut ctx, bbox, "cookie sent in server-auth message does not match our cookie");
+        }
+
+        #[test]
+        fn server_auth_initiator_wrong_fields() {
+            // Initialize Signaling class
+            let mut ctx = make_test_signaling(Role::Initiator,
+                                              ClientIdentity::Initiator,
+                                              ServerHandshakeState::ClientInfoSent);
+
+            // Prepare a ServerAuth message
+            let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, true).into_message();
+            let bbox = make_test_msg(msg, &ctx, Address(1));
+
+            // Handle message
+            assert_client_info_sent_fail(&mut ctx, bbox, "we're the initiator, but the `initiator_connected` field in the server-auth message is set");
+        }
+
+        #[test]
+        fn server_auth_initiator_missing_fields() {
+            // Initialize Signaling class
+            let mut ctx = make_test_signaling(Role::Initiator,
+                                              ClientIdentity::Initiator,
+                                              ServerHandshakeState::ClientInfoSent);
+
+            // Prepare a ServerAuth message
+            let msg = ServerAuth {
+                your_cookie: ctx.our_cookie.clone(),
+                signed_keys: None,
+                responders: None,
+                initiator_connected: None,
+            }.into_message();
+            let bbox = make_test_msg(msg, &ctx, Address(1));
+
+            // Handle message
+            assert_client_info_sent_fail(&mut ctx, bbox, "`responders` field in server-auth message not set");
+        }
+
+        #[test]
+        fn server_auth_initiator_duplicate_fields() {
+            // Initialize Signaling class
+            let mut ctx = make_test_signaling(Role::Initiator,
+                                              ClientIdentity::Initiator,
+                                              ServerHandshakeState::ClientInfoSent);
+
+            // Prepare a ServerAuth message
+            let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3), Address(3)]).into_message();
+            let bbox = make_test_msg(msg, &ctx, Address(1));
+
+            // Handle message
+            assert_client_info_sent_fail(&mut ctx, bbox, "`responders` field in server-auth message may not contain duplicates");
+        }
+
+        #[test]
+        fn server_auth_initiator_invalid_fields() {
+            // Initialize Signaling class
+            let mut ctx = make_test_signaling(Role::Initiator,
+                                              ClientIdentity::Initiator,
+                                              ServerHandshakeState::ClientInfoSent);
+
+            // Prepare a ServerAuth message
+            let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(1), Address(2), Address(3)]).into_message();
+            let bbox = make_test_msg(msg, &ctx, Address(1));
+
+            // Handle message
+            assert_client_info_sent_fail(&mut ctx, bbox, "`responders` field in server-auth message may not contain addresses <0x02");
+        }
+
+        /// The client SHOULD store the responder's identities in its internal
+        /// list of responders.
+        #[test]
+        fn server_auth_initiator_stored_responder() {
+            // Initialize Signaling class
+            let ctx = make_test_signaling(Role::Initiator,
+                                          ClientIdentity::Initiator,
+                                          ServerHandshakeState::ClientInfoSent);
+
+            // Prepare a ServerAuth message
+            let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3)]).into_message();
+            let bbox = make_test_msg(msg, &ctx, Address(1));
+
+            // Handle message
             let mut s = ctx.signaling;
             assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            assert_eq!(s.responders.len(), 0);
             let actions = s.handle_message(bbox);
-            assert_eq!(
-                s.server.handshake_state,
-                ServerHandshakeState::Failure("cookie sent in server-auth message does not match our cookie".into())
-            );
+            assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+            assert_eq!(s.responders.len(), 2);
+            assert_eq!(actions, vec![]);
         }
     }
 
