@@ -26,7 +26,6 @@ mod boxes;
 pub mod errors;
 mod helpers;
 mod keystore;
-mod messages;
 mod protocol;
 
 // Rust imports
@@ -49,6 +48,7 @@ use websocket::message::OwnedMessage;
 
 // Re-exports
 pub use keystore::{KeyStore, PublicKey, PrivateKey};
+pub use protocol::messages;
 
 // Internal imports
 use errors::{Result, Error};

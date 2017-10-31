@@ -11,8 +11,9 @@ use std::convert::From;
 use rmp_serde as rmps;
 
 use errors::{Result};
-use keystore::PublicKey;
-use protocol::Cookie;
+use keystore::{PublicKey, SignedKeys};
+
+use super::{Address, Cookie};
 
 
 /// The `Message` enum contains all possible message types that may be used in
@@ -30,6 +31,8 @@ pub enum Message {
     ServerHello(ServerHello),
     #[serde(rename = "client-auth")]
     ClientAuth(ClientAuth),
+    #[serde(rename = "server-auth")]
+    ServerAuth(ServerAuth),
 }
 
 impl Message {
@@ -49,6 +52,7 @@ impl Message {
             Message::ClientHello(_) => "client-hello",
             Message::ServerHello(_) => "server-hello",
             Message::ClientAuth(_) => "client-auth",
+            Message::ServerAuth(_) => "server-auth",
         }
     }
 }
@@ -128,6 +132,7 @@ pub struct ClientAuth {
     pub your_cookie: Cookie,
     pub subprotocols: Vec<String>,
     pub ping_interval: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub your_key: Option<PublicKey>,
 }
 
@@ -144,6 +149,29 @@ impl From<ClientAuth> for Message {
 }
 
 
+/// The server-auth message received by the initiator.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct ServerAuth {
+    pub your_cookie: Cookie,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signed_keys: Option<SignedKeys>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub responders: Option<Vec<Address>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initiator_connected: Option<bool>,
+}
+
+impl ServerAuth {
+    pub fn into_message(self) -> Message {
+        self.into()
+    }
+}
+
+impl From<ServerAuth> for Message {
+    fn from(val: ServerAuth) -> Self {
+        Message::ServerAuth(val)
+    }
+}
 
 
 #[cfg(test)]

@@ -12,18 +12,19 @@ use std::collections::HashMap;
 use error_chain::ChainedError;
 
 use boxes::{ByteBox, OpenBox};
-use messages::{Message, ClientHello, ClientAuth};
 use keystore::{KeyStore};
 
 pub(crate) mod context;
 pub(crate) mod cookie;
 pub(crate) mod csn;
+pub mod messages;
 pub(crate) mod nonce;
 pub(crate) mod state;
 pub(crate) mod types;
 
 use self::context::{PeerContext, ServerContext, ResponderContext};
 pub use self::cookie::{Cookie};
+use messages::{Message, ClientHello, ClientAuth};
 pub use self::nonce::{Nonce};
 pub use self::types::{Role, HandleAction};
 use self::types::{ClientIdentity, Address};
@@ -389,9 +390,8 @@ impl Signaling {
 
 #[cfg(test)]
 mod tests {
-    use ::messages::{ServerHello};
-
     use self::csn::{CombinedSequenceSnapshot};
+    use self::messages::{ServerHello};
     use self::types::{Identity};
 
     use super::*;

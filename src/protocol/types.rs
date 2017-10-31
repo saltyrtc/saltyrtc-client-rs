@@ -1,5 +1,9 @@
 use std::convert::From;
 use std::fmt;
+use std::result::Result as StdResult;
+
+use serde::ser::{Serialize, Serializer};
+use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
 use boxes::{ByteBox};
 
@@ -157,6 +161,36 @@ impl From<Identity> for Address {
             Identity::Initiator => 0x01,
             Identity::Responder(address) => { assert!(address > 0x01); address },
         })
+    }
+}
+
+/// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
+impl Serialize for Address {
+    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+            where S: Serializer {
+        serializer.serialize_u8(self.0)
+    }
+}
+
+struct AddressVisitor;
+
+impl<'de> Visitor<'de> for AddressVisitor {
+    type Value = Address;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("an address byte")
+    }
+
+    fn visit_u8<E>(self, v: u8) -> StdResult<Self::Value, E> where E: SerdeError {
+        Ok(Address(v))
+    }
+}
+
+/// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
+impl<'de> Deserialize<'de> for Address {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+            where D: Deserializer<'de> {
+        deserializer.deserialize_u8(AddressVisitor)
     }
 }
 

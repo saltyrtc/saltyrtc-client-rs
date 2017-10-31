@@ -8,8 +8,8 @@ use rust_sodium::crypto::box_::NONCEBYTES;
 
 use errors::{Result, ResultExt, ErrorKind};
 use keystore::{KeyStore, PublicKey};
-use messages::Message;
 use protocol::Nonce;
+use protocol::messages::Message;
 
 /// An open box (unencrypted message + nonce).
 #[derive(Debug, PartialEq)]
@@ -93,6 +93,8 @@ impl ByteBox {
             // The public key of the recipient
             other_key
         ).chain_err(|| ErrorKind::Decode("cannot decode message payload".into()))?;
+
+        trace!("Decrypted bytes: {:?}", decrypted);
 
         let message = Message::from_msgpack(&decrypted)
             .chain_err(|| ErrorKind::Decode("cannot decode message payload".into()))?;

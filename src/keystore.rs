@@ -1,8 +1,14 @@
 //! Functionality related to Libsodium key management and encryption.
 
+use std::cmp;
+use std::fmt;
+use std::result::Result as StdResult;
+
 use data_encoding::HEXLOWER;
 use rust_sodium::crypto::box_;
 use rust_sodium_sys::crypto_scalarmult_base;
+use serde::ser::{Serialize, Serializer};
+use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
 use errors::{Result, ResultExt, Error, ErrorKind};
 use helpers::libsodium_init;
@@ -105,7 +111,99 @@ impl KeyStore {
         box_::open(data, &rust_sodium_nonce, other_key, &self.private_key)
             .map_err(|_| Error::from_kind(ErrorKind::Crypto("Could not decrypt data".to_string())))
     }
+
 }
+
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsignedKeys {
+    server_session_key: PublicKey,
+    client_permanent_key: PublicKey,
+}
+
+impl UnsignedKeys {
+    pub fn new(server_session_key: PublicKey, client_permanent_key: PublicKey) -> Self {
+        UnsignedKeys {
+            server_session_key: server_session_key,
+            client_permanent_key: client_permanent_key,
+        }
+    }
+}
+
+
+const SIGNED_KEYS_BYTES: usize = 2 * box_::PUBLICKEYBYTES + box_::MACBYTES;
+
+#[derive(Clone)]
+pub struct SignedKeys([u8; SIGNED_KEYS_BYTES]);
+
+impl SignedKeys {
+    pub fn new(bytes: [u8; SIGNED_KEYS_BYTES]) -> Self {
+        SignedKeys(bytes)
+    }
+}
+
+/// Implementation required because Debug cannot be derived for `[u8; 80]`.
+impl fmt::Debug for SignedKeys {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        self.0[..].fmt(formatter)
+    }
+}
+
+/// Implementation required because PartialEq cannot be derived for `[u8; 80]`.
+impl cmp::PartialEq<SignedKeys> for SignedKeys {
+    fn eq(&self, other: &SignedKeys) -> bool {
+        self.0[..].eq(&other.0[..])
+    }
+}
+
+/// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
+impl Serialize for SignedKeys {
+    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+            where S: Serializer {
+        serializer.serialize_bytes(&self.0)
+    }
+}
+
+struct SignedKeysVisitor;
+
+impl<'de> Visitor<'de> for SignedKeysVisitor {
+    type Value = SignedKeys;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("80 bytes of binary data")
+    }
+
+    fn visit_bytes<E>(self, v: &[u8]) -> StdResult<Self::Value, E> where E: SerdeError {
+        if v.len() != SIGNED_KEYS_BYTES {
+            return Err(SerdeError::invalid_length(v.len(), &self));
+        }
+        Ok(SignedKeys::new([
+            v[ 0], v[ 1], v[ 2], v[ 3], v[ 4], v[ 5], v[ 6], v[ 7],
+            v[ 8], v[ 9], v[10], v[11], v[12], v[13], v[14], v[15],
+            v[16], v[17], v[18], v[19], v[20], v[21], v[22], v[23],
+            v[24], v[25], v[26], v[27], v[28], v[29], v[30], v[31],
+            v[32], v[33], v[34], v[35], v[36], v[37], v[38], v[39],
+            v[40], v[41], v[42], v[43], v[44], v[45], v[46], v[47],
+            v[48], v[49], v[50], v[51], v[52], v[53], v[54], v[55],
+            v[56], v[57], v[58], v[59], v[60], v[61], v[62], v[63],
+            v[64], v[65], v[66], v[67], v[68], v[69], v[70], v[71],
+            v[72], v[73], v[74], v[75], v[76], v[77], v[78], v[79],
+        ]))
+    }
+
+    fn visit_byte_buf<E>(self, v: Vec<u8>) -> StdResult<Self::Value, E> where E: SerdeError {
+        self.visit_bytes(&v)
+    }
+}
+
+/// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
+impl<'de> Deserialize<'de> for SignedKeys {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+            where D: Deserializer<'de> {
+        deserializer.deserialize_bytes(SignedKeysVisitor)
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
