@@ -133,12 +133,19 @@ impl UnsignedKeys {
 
 const SIGNED_KEYS_BYTES: usize = 2 * box_::PUBLICKEYBYTES + box_::MACBYTES;
 
-#[derive(Clone)]
 pub struct SignedKeys([u8; SIGNED_KEYS_BYTES]);
 
 impl SignedKeys {
     pub fn new(bytes: [u8; SIGNED_KEYS_BYTES]) -> Self {
         SignedKeys(bytes)
+    }
+}
+
+/// Implementation required because Clone cannot be derived for `[u8; 80]` on
+/// Rust < 1.21.
+impl Clone for SignedKeys {
+    fn clone(&self) -> Self {
+        SignedKeys(self.0)
     }
 }
 

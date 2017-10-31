@@ -11,6 +11,7 @@ jobs:
           keys:
             - v1-cargo-cache-{{ arch }}-{{ .Branch }}
             - v1-cargo-cache-{{ arch }}
+      - run: rustc --version && cargo --version
       - run: cargo build && cargo test
       - run: cargo audit
       - save_cache:
