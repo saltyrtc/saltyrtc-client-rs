@@ -575,7 +575,8 @@ mod tests {
             assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(make_msg(0x00, 0x00));
             assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
-            assert_eq!(actions.len(), 2);
+            // Send only client-auth
+            assert_eq!(actions.len(), 1);
 
             // Handling messages from responder is valid as soon as the identity
             // has been assigned.
@@ -623,6 +624,7 @@ mod tests {
             assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(make_msg(0x00, 0x00));
             assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            // Send client-hello and client-auth
             assert_eq!(actions.len(), 2);
 
             // Handling messages from initiator is valid as soon as the identity

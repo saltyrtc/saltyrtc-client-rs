@@ -13,6 +13,8 @@ use std::rc::Rc;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
 
+use saltyrtc_client::{SaltyClient, Role};
+
 
 fn main() {
     env_logger::init().expect("Could not initialize env_logger");
@@ -43,7 +45,7 @@ fn main() {
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e));
 
     let path = "0123456789012345678901234567890101234567890123456789012345678901";
-    let salty = Rc::new(RefCell::new(saltyrtc_client::SaltyClient::new().unwrap()));
+    let salty = Rc::new(RefCell::new(SaltyClient::new(Role::Initiator).unwrap()));
     let task = saltyrtc_client::connect(
             &format!("wss://localhost:8765/{}", path),
             Some(tls_connector),

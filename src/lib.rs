@@ -48,12 +48,12 @@ use websocket::message::OwnedMessage;
 
 // Re-exports
 pub use keystore::{KeyStore, PublicKey, PrivateKey};
-pub use protocol::messages;
+pub use protocol::{Role, messages};
 
 // Internal imports
 use errors::{Result, Error};
 use helpers::libsodium_init;
-use protocol::{HandleAction, Role, Signaling};
+use protocol::{HandleAction, Signaling};
 
 
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
@@ -76,12 +76,12 @@ pub struct SaltyClient {
 }
 
 impl SaltyClient {
-    pub fn new() -> Result<Self> {
+    pub fn new(role: Role) -> Result<Self> {
         // Generate permanent keypair
         let permanent_key = KeyStore::new()?;
 
         Ok(SaltyClient {
-            signaling: Signaling::new(Role::Responder, permanent_key),
+            signaling: Signaling::new(role, permanent_key),
         })
     }
 
