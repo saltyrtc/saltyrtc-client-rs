@@ -325,21 +325,23 @@ impl Signaling {
                 }
                 self.server.permanent_key = Some(msg.key.clone());
 
-                // Reply with client-hello message
-                let key = self.permanent_key.public_key().clone();
-                let client_hello = ClientHello::new(key).into_message();
-                let client_hello_nonce = Nonce::new(
-                    self.server.cookie_pair().ours.clone(),
-                    self.identity.into(),
-                    self.server.identity().into(),
-                    match self.server.csn_pair().borrow_mut().ours.next() {
-                        Ok(snapshot) => snapshot,
-                        Err(e) => return ServerHandshakeState::Failure(format!("Could not increment CSN: {}", e)).into(),
-                    },
-                );
-                let reply = OpenBox::new(client_hello, client_hello_nonce);
-                debug!("Enqueuing client-hello");
-                actions.push(HandleAction::Reply(reply.encode()));
+                // Reply with client-hello message if we're a responder
+                if self.role == Role::Responder {
+                    let key = self.permanent_key.public_key().clone();
+                    let client_hello = ClientHello::new(key).into_message();
+                    let client_hello_nonce = Nonce::new(
+                        self.server.cookie_pair().ours.clone(),
+                        self.identity.into(),
+                        self.server.identity().into(),
+                        match self.server.csn_pair().borrow_mut().ours.next() {
+                            Ok(snapshot) => snapshot,
+                            Err(e) => return ServerHandshakeState::Failure(format!("Could not increment CSN: {}", e)).into(),
+                        },
+                    );
+                    let reply = OpenBox::new(client_hello, client_hello_nonce);
+                    debug!("Enqueuing client-hello");
+                    actions.push(HandleAction::Reply(reply.encode()));
+                }
 
                 // Send client-auth message
                 let client_auth = ClientAuth {
