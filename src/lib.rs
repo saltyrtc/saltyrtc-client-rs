@@ -76,13 +76,10 @@ pub struct SaltyClient {
 }
 
 impl SaltyClient {
-    pub fn new(role: Role) -> Result<Self> {
-        // Generate permanent keypair
-        let permanent_key = KeyStore::new()?;
-
-        Ok(SaltyClient {
+    pub fn new(permanent_key: KeyStore, role: Role) -> Self {
+        SaltyClient {
             signaling: Signaling::new(role, permanent_key),
-        })
+        }
     }
 
     /// Handle an incoming message.
@@ -93,6 +90,9 @@ impl SaltyClient {
 
 
 /// Connect to the specified SaltyRTC server.
+///
+/// This function returns a boxed future. The future must be run in a Tokio
+/// reactor core for something to actually happen.
 pub fn connect(
     url: &str,
     tls_config: Option<TlsConnector>,

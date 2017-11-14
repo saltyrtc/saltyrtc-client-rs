@@ -13,7 +13,7 @@ use std::rc::Rc;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
 
-use saltyrtc_client::{SaltyClient, Role};
+use saltyrtc_client::{SaltyClient, KeyStore, Role};
 
 
 fn main() {
@@ -44,8 +44,9 @@ fn main() {
     let tls_connector = tls_builder.build()
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e));
 
-    let path = "0123456789012345678901234567890101234567890123456789012345678901";
-    let salty = Rc::new(RefCell::new(SaltyClient::new(Role::Initiator).unwrap()));
+    let keystore = KeyStore::new().unwrap();
+    let path = keystore.public_key_hex();
+    let salty = Rc::new(RefCell::new(SaltyClient::new(keystore, Role::Initiator)));
     let task = saltyrtc_client::connect(
             &format!("wss://localhost:8765/{}", path),
             Some(tls_connector),
