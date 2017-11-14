@@ -216,7 +216,7 @@ pub fn connect(
                         if messages.is_empty() {
                             boxed!(future::ok(Loop::Continue(stream)))
                         } else {
-                            for message in messages.iter() {
+                            for message in &messages {
                                 debug!("Sending {} bytes", message.size());
                             }
                             let outbox = stream::iter_ok::<_, WebSocketError>(messages);

@@ -112,11 +112,12 @@ impl Nonce {
     /// This is unsafe because a `Nonce` must never be reused for two messages.
     /// Only clone a `Nonce` if it's absolutely required and if you are sure
     /// that it isn't reused.
+    #[cfg_attr(feature="clippy", allow(should_implement_trait))]
     pub unsafe fn clone(&self) -> Nonce {
         Nonce {
             cookie: self.cookie.clone(),
-            source: self.source.clone(),
-            destination: self.destination.clone(),
+            source: self.source,
+            destination: self.destination,
             csn: self.csn.clone(),
         }
     }

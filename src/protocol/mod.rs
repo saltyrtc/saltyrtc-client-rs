@@ -327,17 +327,17 @@ impl Signaling {
                 if self.server.permanent_key.is_some() {
                     return ServerHandshakeState::Failure("Server permanent key is already set".into()).into();
                 }
-                self.server.permanent_key = Some(msg.key.clone());
+                self.server.permanent_key = Some(msg.key);
 
                 // Reply with client-hello message if we're a responder
                 if self.role == Role::Responder {
-                    let key = self.permanent_key.public_key().clone();
-                    let client_hello = ClientHello::new(key).into_message();
+                    let key = self.permanent_key.public_key();
+                    let client_hello = ClientHello::new(*key).into_message();
                     let client_hello_nonce = Nonce::new(
                         self.server.cookie_pair().ours.clone(),
                         self.identity.into(),
                         self.server.identity().into(),
-                        match self.server.csn_pair().borrow_mut().ours.next() {
+                        match self.server.csn_pair().borrow_mut().ours.increment() {
                             Ok(snapshot) => snapshot,
                             Err(e) => return ServerHandshakeState::Failure(format!("Could not increment CSN: {}", e)).into(),
                         },
@@ -358,7 +358,7 @@ impl Signaling {
                     self.server.cookie_pair().ours.clone(),
                     self.identity.into(),
                     self.server.identity().into(),
-                    match self.server.csn_pair().borrow_mut().ours.next() {
+                    match self.server.csn_pair().borrow_mut().ours.increment() {
                         Ok(snapshot) => snapshot,
                         Err(e) => return ServerHandshakeState::Failure(format!("Could not increment CSN: {}", e)).into(),
                     },

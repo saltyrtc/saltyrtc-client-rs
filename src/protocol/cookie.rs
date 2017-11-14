@@ -34,9 +34,7 @@ impl Cookie {
             ErrorKind::Crypto(format!("byte slice must be exactly {} bytes, not {}", COOKIE_BYTES, bytes.len()))
         );
         let mut array = [0; COOKIE_BYTES];
-        for i in 0..COOKIE_BYTES {
-            array[i] = bytes[i];
-        }
+        array[..COOKIE_BYTES].clone_from_slice(&bytes[..COOKIE_BYTES]);
         Ok(Cookie(array))
     }
 

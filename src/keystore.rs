@@ -156,7 +156,7 @@ impl fmt::Debug for SignedKeys {
     }
 }
 
-/// Implementation required because PartialEq cannot be derived for `[u8; 80]`.
+/// Implementation required because `PartialEq` cannot be derived for `[u8; 80]`.
 impl cmp::PartialEq<SignedKeys> for SignedKeys {
     fn eq(&self, other: &SignedKeys) -> bool {
         self.0[..].eq(&other.0[..])

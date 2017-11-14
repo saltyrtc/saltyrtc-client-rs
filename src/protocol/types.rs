@@ -31,9 +31,9 @@ impl Role {
 
 impl fmt::Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Role::Initiator => write!(f, "Initiator"),
-            &Role::Responder => write!(f, "Responder"),
+        match *self {
+            Role::Initiator => write!(f, "Initiator"),
+            Role::Responder => write!(f, "Responder"),
         }
     }
 }
@@ -59,7 +59,7 @@ impl From<Address> for Identity {
         match val.0 {
             0x00 => Identity::Server,
             0x01 => Identity::Initiator,
-            addr @ _ => Identity::Responder(addr),
+            addr => Identity::Responder(addr),
         }
     }
 }
@@ -92,10 +92,10 @@ pub enum ClientIdentity {
 
 impl fmt::Display for ClientIdentity {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &ClientIdentity::Unknown => write!(f, "Unknown"),
-            &ClientIdentity::Initiator => write!(f, "Initiator"),
-            &ClientIdentity::Responder(ref val) => write!(f, "Responder[{:#04x}]", val),
+        match *self {
+            ClientIdentity::Unknown => write!(f, "Unknown"),
+            ClientIdentity::Initiator => write!(f, "Initiator"),
+            ClientIdentity::Responder(ref val) => write!(f, "Responder[{:#04x}]", val),
         }
     }
 }

@@ -44,10 +44,10 @@ impl CombinedSequence {
 
         // Create combined sequence from that data
         let overflow = 0u16;
-        let sequence = ((rand[0] as u32) << 24)
-                     + ((rand[1] as u32) << 16)
-                     + ((rand[2] as u32) << 8)
-                     + (rand[3] as u32);
+        let sequence = (u32::from(rand[0]) << 24)
+                     + (u32::from(rand[1]) << 16)
+                     + (u32::from(rand[2]) << 8)
+                     +  u32::from(rand[3]);
 
         CombinedSequence {
             overflow: overflow,
@@ -57,14 +57,14 @@ impl CombinedSequence {
 
     /// Return the 48 bit combined sequence number.
     fn combined_sequence_number(&self) -> u64 {
-        ((self.overflow as u64) << 32) + (self.sequence as u64)
+        (u64::from(self.overflow) << 32) + u64::from(self.sequence)
     }
 
     /// Increment the `CombinedSequence` and return a snapshot.
     ///
     /// This will fail if the overflow number overflows. This is extremely
     /// unlikely and must be treated as a protocol error.
-    pub fn next(&mut self) -> Result<CombinedSequenceSnapshot> {
+    pub fn increment(&mut self) -> Result<CombinedSequenceSnapshot> {
         let next_result: Result<CombinedSequence> = match self.sequence.checked_add(1) {
             Some(incremented) => {
                 Ok(CombinedSequence::new(self.overflow, incremented))
@@ -106,7 +106,7 @@ impl cmp::PartialOrd<CombinedSequenceSnapshot> for CombinedSequence {
 
 /// An immutable snapshot of a [`CombinedSequence`](struct.CombinedSequence.html).
 ///
-/// This type is returned by the [`next()`](struct.CombinedSequence.html#method.next)
+/// This type is returned by the [`increment()`](struct.CombinedSequence.html#method.increment)
 /// method on a combined sequence instance.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct CombinedSequenceSnapshot {
@@ -143,7 +143,7 @@ impl CombinedSequenceSnapshot {
 
     /// Return the 48 bit combined sequence number.
     pub fn combined_sequence_number(&self) -> u64 {
-        ((self.overflow as u64) << 32) + (self.sequence as u64)
+        (u64::from(self.overflow) << 32) + u64::from(self.sequence)
     }
 
 }
@@ -243,7 +243,7 @@ mod tests {
         let old_combined_sequence = old.combined_sequence_number();
 
         // Increment
-        let new = old.next().unwrap();
+        let new = old.increment().unwrap();
 
         assert_eq!(old_sequence + 1, new.sequence_number());
         assert_eq!(old_overflow, new.overflow_number());
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn increment_with_sequence_overflow() {
         let mut old = CombinedSequence::new(0, ::std::u32::MAX);
-        let new = old.next().unwrap();
+        let new = old.increment().unwrap();
 
         assert_eq!(new.sequence_number(), 0);
         assert_eq!(new.overflow_number(), 1);
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn increment_with_overflow_overflow() {
         let mut old = CombinedSequence::new(::std::u16::MAX, ::std::u32::MAX);
-        let new = old.next();
+        let new = old.increment();
         assert!(new.is_err());
         match new.unwrap_err().kind() {
             &ErrorKind::CsnOverflow => {},
