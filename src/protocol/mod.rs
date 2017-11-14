@@ -95,20 +95,24 @@ impl Signaling {
             // ONLY an identity from the range `0x02..0xff`. The identity MUST
             // be stored as the client's assigned identity.
             match self.role {
-                Role::Initiator => if nonce.destination().is_initiator() {
-                    self.identity = ClientIdentity::Initiator;
-                    debug!("Assigned identity: {}", &self.identity);
-                } else {
-                    let msg = format!("cannot assign address {} to a client with role {}", nonce.destination(), self.role);
-                    return ValidationResult::Fail(msg);
+                Role::Initiator => {
+                    if nonce.destination().is_initiator() {
+                        self.identity = ClientIdentity::Initiator;
+                        debug!("Assigned identity: {}", &self.identity);
+                    } else {
+                        let msg = format!("cannot assign address {} to a client with role {}", nonce.destination(), self.role);
+                        return ValidationResult::Fail(msg);
+                    }
                 },
-                Role::Responder => if nonce.destination().is_responder() {
-                    self.identity = ClientIdentity::Responder(nonce.destination().0);
-                    debug!("Assigned identity: {}", &self.identity);
-                } else {
-                    let msg = format!("cannot assign address {} to a client with role {}", nonce.destination(), self.role);
-                    return ValidationResult::Fail(msg);
-                }
+                Role::Responder => {
+                    if nonce.destination().is_responder() {
+                        self.identity = ClientIdentity::Responder(nonce.destination().0);
+                        debug!("Assigned identity: {}", &self.identity);
+                    } else {
+                        let msg = format!("cannot assign address {} to a client with role {}", nonce.destination(), self.role);
+                        return ValidationResult::Fail(msg);
+                    }
+                },
             };
         }
         if nonce.destination() != self.identity.into() {
@@ -451,7 +455,25 @@ impl Signaling {
                         // TODO: Implement
                     },
                     Role::Responder => {
-                        // TODO: Implement
+                        // In case the client is the responder, it SHALL check
+                        // that the initiator_connected field contains a
+                        // boolean value.
+                        if msg.responders.is_some() {
+                            let msg = "we're a responder, but the `responders` field in the server-auth message is set".into();
+                            return ServerHandshakeState::Failure(msg).into();
+                        }
+                        match msg.initiator_connected {
+                            Some(true) => {
+                                unimplemented!("TODO: Send token or key msg to initiator");
+                            },
+                            Some(false) => {
+                                debug!("No initiator connected so far");
+                            },
+                            None => {
+                                let msg = "we're a responder, but the `initiator_connected` field in the server-auth message is not set".into();
+                                return ServerHandshakeState::Failure(msg).into();
+                            },
+                        }
                     },
                 }
 
@@ -485,22 +507,22 @@ mod tests {
 
     use super::*;
 
-    fn create_test_nonce() -> Nonce {
-        Nonce::new(
-            Cookie::new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
-            Address(17),
-            Address(18),
-            CombinedSequenceSnapshot::new(258, 50_595_078),
-        )
-    }
-
-    fn create_test_bbox() -> ByteBox {
-        ByteBox::new(vec![1, 2, 3], create_test_nonce())
-    }
-
     mod validate_nonce {
 
         use super::*;
+
+        fn create_test_nonce() -> Nonce {
+            Nonce::new(
+                Cookie::new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
+                Address(17),
+                Address(18),
+                CombinedSequenceSnapshot::new(258, 50_595_078),
+            )
+        }
+
+        fn create_test_bbox() -> ByteBox {
+            ByteBox::new(vec![1, 2, 3], create_test_nonce())
+        }
 
         /// Test that states and tuples implement Into<ServerHandshakeState>.
         #[test]
@@ -695,6 +717,11 @@ mod tests {
         fn cookie_did_not_change() {
             // TODO: Write once ServerAuth message has been implemented
         }
+    }
+
+    mod signaling_messages {
+
+        use super::*;
 
         struct TestContext {
             pub our_ks: KeyStore,
@@ -726,8 +753,8 @@ mod tests {
             }
         }
 
-        fn make_test_msg(msg: Message, ctx: &TestContext, address: Address) -> ByteBox {
-            let nonce = Nonce::new(ctx.server_cookie.clone(), Address(0), address, CombinedSequenceSnapshot::random());
+        fn make_test_msg(msg: Message, ctx: &TestContext, dest_address: Address) -> ByteBox {
+            let nonce = Nonce::new(ctx.server_cookie.clone(), Address(0), dest_address, CombinedSequenceSnapshot::random());
             let obox = OpenBox::new(msg, nonce);
             obox.encrypt(&ctx.server_ks, ctx.our_ks.public_key())
         }
@@ -867,6 +894,28 @@ mod tests {
             assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
             assert_eq!(s.responders.len(), 2);
             assert_eq!(actions, vec![]);
+        }
+
+        /// The client SHALL check that the initiator_connected field contains
+        /// a boolean value.
+        #[test]
+        fn server_auth_responder_validate_initiator_connected() {
+            // Initialize Signaling class
+            let mut ctx = make_test_signaling(Role::Responder,
+                                              ClientIdentity::Responder(4),
+                                              ServerHandshakeState::ClientInfoSent);
+
+            // Prepare a ServerAuth message
+            let msg = ServerAuth {
+                your_cookie: ctx.our_cookie.clone(),
+                signed_keys: None,
+                responders: None,
+                initiator_connected: None,
+            }.into_message();
+            let bbox = make_test_msg(msg, &ctx, Address(4));
+
+            // Handle message
+            assert_client_info_sent_fail(&mut ctx, bbox, "we're a responder, but the `initiator_connected` field in the server-auth message is not set");
         }
     }
 
