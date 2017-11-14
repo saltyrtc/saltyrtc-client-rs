@@ -477,6 +477,8 @@ impl Signaling {
                     },
                 }
 
+                info!("Server handshake completed");
+
                 StateTransition {
                     state: ServerHandshakeState::Done,
                     actions: vec![],

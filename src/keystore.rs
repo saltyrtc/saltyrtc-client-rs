@@ -46,7 +46,7 @@ impl KeyStore {
 
         // Generate key pair
         let (pk, sk) = box_::gen_keypair();
-        debug!("Public key: {:?}", pk);
+        trace!("Public key: {:?}", pk);
 
         Ok(KeyStore {
             public_key: pk,

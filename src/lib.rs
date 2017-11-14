@@ -82,6 +82,11 @@ impl SaltyClient {
         }
     }
 
+    /// Return the assigned role.
+    pub fn role(&self) -> &Role {
+        &self.signaling.role
+    }
+
     /// Handle an incoming message.
     fn handle_message(&mut self, bbox: boxes::ByteBox) -> Vec<HandleAction> {
         self.signaling.handle_message(bbox)
@@ -134,7 +139,12 @@ pub fn connect(
     // Send message to server
     let future = client
         .and_then(move |client| {
-            info!("Connected to server!");
+            let role = salty
+                .deref()
+                .try_borrow()
+                .map(|s| s.role().to_string())
+                .unwrap_or_else(|_| "Unknown".to_string());
+            info!("Connected to server as {}", role);
 
             // We're connected to the SaltyRTC server.
             // Filter the incoming message stream. We're only interested in the binary ones.
