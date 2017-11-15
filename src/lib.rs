@@ -174,8 +174,8 @@ pub fn connect(
                     }
                 });
 
-            // Server handshake loop
-            let server_handshake = future::loop_fn(messages, move |stream| {
+            // Main loop
+            let main_loop = future::loop_fn(messages, move |stream| {
 
                 let salty = Rc::clone(&salty);
 
@@ -200,6 +200,8 @@ pub fn connect(
 
                     // Process received message
                     .and_then(move |(bbox, stream)| {
+
+                        // Handle message bytes
                         let handle_actions = match salty.deref().try_borrow_mut() {
                             Ok(mut s) => s.handle_message(bbox),
                             Err(e) => return boxed!(
@@ -207,12 +209,15 @@ pub fn connect(
                             ),
                         };
 
+                        // Extract messages that should be sent back to the server
                         let mut messages = vec![];
                         for action in handle_actions {
                             match action {
                                 HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
                             }
                         }
+
+                        // If there are enqueued messages, send them
                         if messages.is_empty() {
                             boxed!(future::ok(Loop::Continue(stream)))
                         } else {
@@ -224,22 +229,16 @@ pub fn connect(
                                 .send_all(outbox)
                                 .map(|(sink, _)| Loop::Continue(sink))
                                 .map_err(move |e| format!("Could not send message: {}", e).into()))
+//                          debug!("Sending {} bytes", messages[0].size());
+//                          boxed!(stream
+//                              .send(messages[0].clone())
+//                              .map(|sink| Loop::Continue(sink))
+//                              .map_err(move |e| format!("Could not send message: {}", e).into()))
                         }
-
-//                        if messages.is_empty() {
-//                            boxed!(future::ok(Loop::Continue(stream)))
-//                        } else {
-//                            // TODO: Send all!
-//                            debug!("Sending {} bytes", messages[0].size());
-//                            boxed!(stream
-//                                .send(messages[0].clone())
-//                                .map(|sink| Loop::Continue(sink))
-//                                .map_err(move |e| format!("Could not send message: {}", e).into()))
-//                        }
                     })
             });
 
-            boxed!(server_handshake)
+            boxed!(main_loop)
         });
 
     Ok(boxed!(future))
