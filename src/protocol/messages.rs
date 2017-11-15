@@ -57,6 +57,21 @@ impl Message {
     }
 }
 
+macro_rules! impl_message_wrapping {
+    ($type:ty, $variant:expr) => {
+        impl From<$type> for Message {
+            fn from(val: $type) -> Self {
+                $variant(val)
+            }
+        }
+    }
+}
+
+impl_message_wrapping!(ClientHello, Message::ClientHello);
+impl_message_wrapping!(ServerHello, Message::ServerHello);
+impl_message_wrapping!(ClientAuth, Message::ClientAuth);
+impl_message_wrapping!(ServerAuth, Message::ServerAuth);
+
 
 /// The client-hello message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -85,13 +100,6 @@ impl ClientHello {
     }
 }
 
-impl From<ClientHello> for Message {
-    fn from(val: ClientHello) -> Self {
-        Message::ClientHello(val)
-    }
-}
-
-
 /// The server-hello message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct ServerHello {
@@ -119,12 +127,6 @@ impl ServerHello {
     }
 }
 
-impl From<ServerHello> for Message {
-    fn from(val: ServerHello) -> Self {
-        Message::ServerHello(val)
-    }
-}
-
 
 /// The client-auth message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -139,12 +141,6 @@ pub struct ClientAuth {
 impl ClientAuth {
     pub fn into_message(self) -> Message {
         self.into()
-    }
-}
-
-impl From<ClientAuth> for Message {
-    fn from(val: ClientAuth) -> Self {
-        Message::ClientAuth(val)
     }
 }
 
@@ -184,12 +180,6 @@ impl ServerAuth {
 
     pub fn into_message(self) -> Message {
         self.into()
-    }
-}
-
-impl From<ServerAuth> for Message {
-    fn from(val: ServerAuth) -> Self {
-        Message::ServerAuth(val)
     }
 }
 
