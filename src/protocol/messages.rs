@@ -33,6 +33,10 @@ pub enum Message {
     ClientAuth(ClientAuth),
     #[serde(rename = "server-auth")]
     ServerAuth(ServerAuth),
+    #[serde(rename = "new-initiator")]
+    NewInitiator(NewInitiator),
+    #[serde(rename = "new-responder")]
+    NewResponder(NewResponder),
 }
 
 impl Message {
@@ -53,6 +57,8 @@ impl Message {
             Message::ServerHello(_) => "server-hello",
             Message::ClientAuth(_) => "client-auth",
             Message::ServerAuth(_) => "server-auth",
+            Message::NewInitiator(_) => "new-initiator",
+            Message::NewResponder(_) => "new-responder",
         }
     }
 }
@@ -78,6 +84,8 @@ impl_message_wrapping!(ClientHello, Message::ClientHello);
 impl_message_wrapping!(ServerHello, Message::ServerHello);
 impl_message_wrapping!(ClientAuth, Message::ClientAuth);
 impl_message_wrapping!(ServerAuth, Message::ServerAuth);
+impl_message_wrapping!(NewInitiator, Message::NewInitiator);
+impl_message_wrapping!(NewResponder, Message::NewResponder);
 
 
 /// The client-hello message.
@@ -169,6 +177,32 @@ impl ServerAuth {
             responders: None,
             initiator_connected: Some(initiator_connected),
         }
+    }
+}
+
+
+/// Sent by the server to all responders when a new initiator joins.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct NewInitiator;
+
+impl NewInitiator {
+    /// Create a new `NewInitiator` message.
+    pub fn new() -> Self {
+        Self { }
+    }
+}
+
+
+/// Sent by the server to the initiator when a new responder joins.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct NewResponder {
+    id: Address,
+}
+
+impl NewResponder {
+    /// Create a new `NewResponder` message.
+    pub fn new(id: Address) -> Self {
+        Self { id }
     }
 }
 
