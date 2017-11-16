@@ -37,6 +37,8 @@ pub enum Message {
     NewInitiator(NewInitiator),
     #[serde(rename = "new-responder")]
     NewResponder(NewResponder),
+    #[serde(rename = "drop-responder")]
+    DropResponder(DropResponder),
 }
 
 impl Message {
@@ -59,6 +61,7 @@ impl Message {
             Message::ServerAuth(_) => "server-auth",
             Message::NewInitiator(_) => "new-initiator",
             Message::NewResponder(_) => "new-responder",
+            Message::DropResponder(_) => "drop-responder",
         }
     }
 }
@@ -86,6 +89,7 @@ impl_message_wrapping!(ClientAuth, Message::ClientAuth);
 impl_message_wrapping!(ServerAuth, Message::ServerAuth);
 impl_message_wrapping!(NewInitiator, Message::NewInitiator);
 impl_message_wrapping!(NewResponder, Message::NewResponder);
+impl_message_wrapping!(DropResponder, Message::DropResponder);
 
 
 /// The client-hello message.
@@ -196,7 +200,7 @@ impl NewInitiator {
 /// Sent by the server to the initiator when a new responder joins.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct NewResponder {
-    id: Address,
+    pub id: Address,
 }
 
 impl NewResponder {
@@ -205,6 +209,26 @@ impl NewResponder {
         Self { id }
     }
 }
+
+
+/// Sent by the initiator to the server when requesting to drop a responder.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct DropResponder {
+    pub id: Address,
+    pub reason: Option<u16>,
+}
+
+impl DropResponder {
+    /// Create a new `DropResponder` message.
+    pub fn new(id: Address) -> Self {
+        Self { id, reason: None }
+    }
+
+    pub fn with_reason(id: Address, reason: u16) -> Self {
+        Self { id, reason: Some(reason) }
+    }
+}
+
 
 
 #[cfg(test)]
