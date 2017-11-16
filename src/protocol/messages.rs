@@ -25,6 +25,9 @@ use super::{Address, Cookie};
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type")]
 pub enum Message {
+
+    // Server to client messages
+
     #[serde(rename = "client-hello")]
     ClientHello(ClientHello),
     #[serde(rename = "server-hello")]
@@ -41,6 +44,13 @@ pub enum Message {
     DropResponder(DropResponder),
     #[serde(rename = "send-error")]
     SendError(SendError),
+
+    // Client to client messages
+
+    #[serde(rename = "token")]
+    Token(Token),
+    #[serde(rename = "key")]
+    Key(Key),
 }
 
 impl Message {
@@ -57,6 +67,7 @@ impl Message {
     /// Return the type of the contained message.
     pub fn get_type(&self) -> &'static str {
         match *self {
+            // Server to client messages
             Message::ClientHello(_) => "client-hello",
             Message::ServerHello(_) => "server-hello",
             Message::ClientAuth(_) => "client-auth",
@@ -65,6 +76,10 @@ impl Message {
             Message::NewResponder(_) => "new-responder",
             Message::DropResponder(_) => "drop-responder",
             Message::SendError(_) => "send-error",
+
+            // Client to client messages
+            Message::Token(_) => "token",
+            Message::Key(_) => "key",
         }
     }
 }
@@ -94,6 +109,8 @@ impl_message_wrapping!(NewInitiator, Message::NewInitiator);
 impl_message_wrapping!(NewResponder, Message::NewResponder);
 impl_message_wrapping!(DropResponder, Message::DropResponder);
 impl_message_wrapping!(SendError, Message::SendError);
+impl_message_wrapping!(Token, Message::Token);
+impl_message_wrapping!(Key, Message::Key);
 
 
 /// The client-hello message.
@@ -104,7 +121,7 @@ pub struct ClientHello {
 
 impl ClientHello {
     pub fn new(key: PublicKey) -> Self {
-        Self { key: key }
+        Self { key }
     }
 
     /// Create a new instance with dummy data. Used in testing.
@@ -127,7 +144,7 @@ pub struct ServerHello {
 
 impl ServerHello {
     pub fn new(key: PublicKey) -> Self {
-        Self { key: key }
+        Self { key }
     }
 
     /// Create a new instance with dummy data. Used in testing.
@@ -245,6 +262,34 @@ impl SendError {
     /// Create a new `SendError` message.
     pub fn new(id: Vec<u8>) -> Self {
         Self { id }
+    }
+}
+
+
+/// The token message.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct Token {
+    pub key: PublicKey,
+}
+
+impl Token {
+    /// Create a new `Token` message.
+    pub fn new(key: PublicKey) -> Self {
+        Self { key }
+    }
+}
+
+
+/// The key message.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct Key {
+    pub key: PublicKey,
+}
+
+impl Key {
+    /// Create a new `Key` message.
+    pub fn new(key: PublicKey) -> Self {
+        Self { key }
     }
 }
 
