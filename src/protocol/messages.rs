@@ -57,11 +57,18 @@ impl Message {
     }
 }
 
+/// Implement conversion traits to wrap a type in a `Message`.
 macro_rules! impl_message_wrapping {
     ($type:ty, $variant:expr) => {
         impl From<$type> for Message {
             fn from(val: $type) -> Self {
                 $variant(val)
+            }
+        }
+
+        impl $type {
+            pub fn into_message(self) -> Message {
+                self.into()
             }
         }
     }
@@ -94,10 +101,6 @@ impl ClientHello {
             key: PublicKey::from_slice(&bytes).unwrap(),
         }
     }
-
-    pub fn into_message(self) -> Message {
-        self.into()
-    }
 }
 
 /// The server-hello message.
@@ -121,10 +124,6 @@ impl ServerHello {
             key: PublicKey::from_slice(&bytes).unwrap(),
         }
     }
-
-    pub fn into_message(self) -> Message {
-        self.into()
-    }
 }
 
 
@@ -136,12 +135,6 @@ pub struct ClientAuth {
     pub ping_interval: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub your_key: Option<PublicKey>,
-}
-
-impl ClientAuth {
-    pub fn into_message(self) -> Message {
-        self.into()
-    }
 }
 
 
@@ -176,10 +169,6 @@ impl ServerAuth {
             responders: None,
             initiator_connected: Some(initiator_connected),
         }
-    }
-
-    pub fn into_message(self) -> Message {
-        self.into()
     }
 }
 
