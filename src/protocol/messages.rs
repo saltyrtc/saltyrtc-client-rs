@@ -39,6 +39,8 @@ pub enum Message {
     NewResponder(NewResponder),
     #[serde(rename = "drop-responder")]
     DropResponder(DropResponder),
+    #[serde(rename = "send-error")]
+    SendError(SendError),
 }
 
 impl Message {
@@ -62,6 +64,7 @@ impl Message {
             Message::NewInitiator(_) => "new-initiator",
             Message::NewResponder(_) => "new-responder",
             Message::DropResponder(_) => "drop-responder",
+            Message::SendError(_) => "send-error",
         }
     }
 }
@@ -90,6 +93,7 @@ impl_message_wrapping!(ServerAuth, Message::ServerAuth);
 impl_message_wrapping!(NewInitiator, Message::NewInitiator);
 impl_message_wrapping!(NewResponder, Message::NewResponder);
 impl_message_wrapping!(DropResponder, Message::DropResponder);
+impl_message_wrapping!(SendError, Message::SendError);
 
 
 /// The client-hello message.
@@ -219,16 +223,30 @@ pub struct DropResponder {
 }
 
 impl DropResponder {
-    /// Create a new `DropResponder` message.
+    /// Create a new `DropResponder` message without a reason code.
     pub fn new(id: Address) -> Self {
         Self { id, reason: None }
     }
 
+    /// Create a new `DropResponder` message with a reason code.
     pub fn with_reason(id: Address, reason: u16) -> Self {
         Self { id, reason: Some(reason) }
     }
 }
 
+
+/// Sent by the server if relaying a client-to-client message fails.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct SendError {
+    pub id: Vec<u8>,
+}
+
+impl SendError {
+    /// Create a new `SendError` message.
+    pub fn new(id: Vec<u8>) -> Self {
+        Self { id }
+    }
+}
 
 
 #[cfg(test)]
