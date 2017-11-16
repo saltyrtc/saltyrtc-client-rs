@@ -130,9 +130,7 @@ impl ClientHello {
         ::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 32];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
-        Self {
-            key: PublicKey::from_slice(&bytes).unwrap(),
-        }
+        Self { key: PublicKey::from_slice(&bytes).unwrap() }
     }
 }
 
@@ -153,9 +151,7 @@ impl ServerHello {
         ::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 32];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
-        Self {
-            key: PublicKey::from_slice(&bytes).unwrap(),
-        }
+        Self { key: PublicKey::from_slice(&bytes).unwrap() }
     }
 }
 
@@ -236,6 +232,7 @@ impl NewResponder {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct DropResponder {
     pub id: Address,
+//    #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<u16>,
 }
 
@@ -277,6 +274,15 @@ impl Token {
     pub fn new(key: PublicKey) -> Self {
         Self { key }
     }
+
+    /// Create a new instance with dummy data. Used in testing.
+    #[cfg(test)]
+    pub fn random() -> Self {
+        ::helpers::libsodium_init_or_panic();
+        let mut bytes = [0u8; 32];
+        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        Self { key: PublicKey::from_slice(&bytes).unwrap() }
+    }
 }
 
 
@@ -290,6 +296,15 @@ impl Key {
     /// Create a new `Key` message.
     pub fn new(key: PublicKey) -> Self {
         Self { key }
+    }
+
+    /// Create a new instance with dummy data. Used in testing.
+    #[cfg(test)]
+    pub fn random() -> Self {
+        ::helpers::libsodium_init_or_panic();
+        let mut bytes = [0u8; 32];
+        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        Self { key: PublicKey::from_slice(&bytes).unwrap() }
     }
 }
 
@@ -362,17 +377,27 @@ mod tests {
         }
     }
 
-    #[test]
-    /// Round-trip msgpack serialization for `ClientHello` message.
-    fn test_client_hello_roundtrip() {
-        let hello = ClientHello::new(PublicKey::from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 0,
-                                                             1, 2, 3, 4, 5, 6, 7, 8, 9, 0,
-                                                             1, 2, 3, 4, 5, 6, 7, 8, 9, 0,
-                                                             1, 2]).unwrap());
-        let msg: Message = hello.into();
-        let bytes = msg.to_msgpack();
-        let decoded = Message::from_msgpack(&bytes).unwrap();
-        assert_eq!(msg, decoded);
-    }
+    mod roundtrip {
+        use super::*;
 
+        macro_rules! roundtrip {
+            ($name:ident, $msg_inner:expr) => {
+                #[test]
+                fn $name() {
+                    let msg: Message = $msg_inner.into();
+                    let bytes = msg.to_msgpack();
+                    let decoded = Message::from_msgpack(&bytes).unwrap();
+                    assert_eq!(msg, decoded);
+                }
+            }
+        }
+
+        roundtrip!(client_hello, ClientHello::random());
+        roundtrip!(server_hello, ServerHello::random());
+        roundtrip!(drop_responder_no_reason, DropResponder::new(4.into()));
+        roundtrip!(drop_responder_with_reason, DropResponder::with_reason(4.into(), 3004));
+        roundtrip!(token, Token::random());
+        roundtrip!(key, Key::random());
+
+    }
 }
