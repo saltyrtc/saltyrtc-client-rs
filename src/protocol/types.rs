@@ -164,6 +164,13 @@ impl From<Identity> for Address {
     }
 }
 
+impl From<u8> for Address {
+    /// Convert an u8 into the corresponding address.
+    fn from(val: u8) -> Self {
+        Address(val)
+    }
+}
+
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl Serialize for Address {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
