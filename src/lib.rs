@@ -199,7 +199,7 @@ pub fn connect(
                     })
 
                     // Process received message
-                    .and_then(move |(bbox, stream)| {
+                    .and_then(move |(bbox, framed)| {
 
                         // Handle message bytes
                         let handle_actions = match salty.deref().try_borrow_mut() {
@@ -219,18 +219,21 @@ pub fn connect(
 
                         // If there are enqueued messages, send them
                         if messages.is_empty() {
-                            boxed!(future::ok(Loop::Continue(stream)))
+                            boxed!(future::ok(Loop::Continue(framed)))
                         } else {
                             for message in &messages {
                                 debug!("Sending {} bytes", message.size());
                             }
                             let outbox = stream::iter_ok::<_, WebSocketError>(messages);
-                            boxed!(stream
+                            boxed!(framed
                                 .send_all(outbox)
-                                .map(|(sink, _)| Loop::Continue(sink))
+                                .map(|(framed, _)| {
+                                    trace!("Sent all messages");
+                                    Loop::Continue(framed)
+                                })
                                 .map_err(move |e| format!("Could not send message: {}", e).into()))
 //                          debug!("Sending {} bytes", messages[0].size());
-//                          boxed!(stream
+//                          boxed!(framed
 //                              .send(messages[0].clone())
 //                              .map(|sink| Loop::Continue(sink))
 //                              .map_err(move |e| format!("Could not send message: {}", e).into()))
