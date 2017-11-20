@@ -178,18 +178,18 @@ pub fn connect(
                 });
 
             // Main loop
-            let main_loop = future::loop_fn(messages, move |stream| {
+            let main_loop = future::loop_fn(messages, move |client| {
 
                 let salty = Rc::clone(&salty);
 
                 // Take the next incoming message
-                stream.into_future()
+                client.into_future()
 
                     // Map errors to our custom error type
                     .map_err(|(e, _)| format!("Could not receive message from server: {}", e).into())
 
                     // Get nonce and message payload from the incoming bytes
-                    .and_then(|(bytes_option, stream)| {
+                    .and_then(|(bytes_option, client)| {
                         // Unwrap bytes
                         let bytes = bytes_option.ok_or("Server message stream ended")?;
                         debug!("Received {} bytes", bytes.len());
@@ -198,11 +198,11 @@ pub fn connect(
                         let bbox = boxes::ByteBox::from_slice(&bytes)?;
                         trace!("ByteBox: {:?}", bbox);
 
-                        Ok((bbox, stream))
+                        Ok((bbox, client))
                     })
 
                     // Process received message
-                    .and_then(move |(bbox, framed)| {
+                    .and_then(move |(bbox, client)| {
 
                         // Handle message bytes
                         let handle_actions = match salty.deref().try_borrow_mut() {
@@ -222,21 +222,21 @@ pub fn connect(
 
                         // If there are enqueued messages, send them
                         if messages.is_empty() {
-                            boxed!(future::ok(Loop::Continue(framed)))
+                            boxed!(future::ok(Loop::Continue(client)))
                         } else {
                             for message in &messages {
                                 debug!("Sending {} bytes", message.size());
                             }
                             let outbox = stream::iter_ok::<_, WebSocketError>(messages);
-                            boxed!(framed
+                            boxed!(client
                                 .send_all(outbox)
-                                .map(|(framed, _)| {
+                                .map(|(client, _)| {
                                     trace!("Sent all messages");
-                                    Loop::Continue(framed)
+                                    Loop::Continue(client)
                                 })
                                 .map_err(move |e| format!("Could not send message: {}", e).into()))
 //                          debug!("Sending {} bytes", messages[0].size());
-//                          boxed!(framed
+//                          boxed!(client
 //                              .send(messages[0].clone())
 //                              .map(|sink| Loop::Continue(sink))
 //                              .map_err(move |e| format!("Could not send message: {}", e).into()))
