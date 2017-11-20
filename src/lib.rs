@@ -44,7 +44,7 @@ use websocket::client::ClientBuilder;
 use websocket::client::builder::Url;
 use websocket::ws::dataframe::DataFrame;
 use websocket::futures::stream;
-use websocket::futures::{Future, Stream, Sink};
+use websocket::futures::{Future, Stream};
 use websocket::futures::future::{self, Loop};
 use websocket::header::WebSocketProtocol;
 use websocket::message::OwnedMessage;
@@ -228,18 +228,13 @@ pub fn connect(
                                 debug!("Sending {} bytes", message.size());
                             }
                             let outbox = stream::iter_ok::<_, WebSocketError>(messages);
-                            boxed!(client
-                                .send_all(outbox)
+                            let future = send_all::new(client, outbox)
+                                .map_err(move |e| format!("Could not send message: {}", e).into())
                                 .map(|(client, _)| {
                                     trace!("Sent all messages");
                                     Loop::Continue(client)
-                                })
-                                .map_err(move |e| format!("Could not send message: {}", e).into()))
-//                          debug!("Sending {} bytes", messages[0].size());
-//                          boxed!(client
-//                              .send(messages[0].clone())
-//                              .map(|sink| Loop::Continue(sink))
-//                              .map_err(move |e| format!("Could not send message: {}", e).into()))
+                                });
+                            boxed!(future)
                         }
                     })
             });
