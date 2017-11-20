@@ -10,6 +10,8 @@ extern crate data_encoding;
 #[macro_use]
 extern crate error_chain;
 #[macro_use]
+extern crate futures;
+#[macro_use]
 extern crate log;
 extern crate native_tls;
 extern crate rmp_serde;
@@ -27,6 +29,7 @@ pub mod errors;
 mod helpers;
 mod keystore;
 mod protocol;
+mod send_all;
 
 // Rust imports
 use std::cell::RefCell;
