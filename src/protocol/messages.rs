@@ -6,9 +6,11 @@
 //! use and implementation of the library. Some values may be optimized to take
 //! references in a future version.
 
+use std::collections::{HashMap, HashSet};
 use std::convert::From;
 
 use rmp_serde as rmps;
+use rmpv::Value;
 
 use errors::{Result};
 use keystore::{PublicKey, SignedKeys};
@@ -51,6 +53,8 @@ pub enum Message {
     Token(Token),
     #[serde(rename = "key")]
     Key(Key),
+    #[serde(rename = "auth")]
+    Auth(Auth),
 }
 
 impl Message {
@@ -80,6 +84,7 @@ impl Message {
             // Client to client messages
             Message::Token(_) => "token",
             Message::Key(_) => "key",
+            Message::Auth(_) => "auth",
         }
     }
 }
@@ -111,6 +116,7 @@ impl_message_wrapping!(DropResponder, Message::DropResponder);
 impl_message_wrapping!(SendError, Message::SendError);
 impl_message_wrapping!(Token, Message::Token);
 impl_message_wrapping!(Key, Message::Key);
+impl_message_wrapping!(Auth, Message::Auth);
 
 
 /// The client-hello message.
@@ -232,7 +238,7 @@ impl NewResponder {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct DropResponder {
     pub id: Address,
-//    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<u16>,
 }
 
@@ -306,6 +312,102 @@ impl Key {
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
         Self { key: PublicKey::from_slice(&bytes).unwrap() }
     }
+}
+
+
+/// The auth message.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct Auth {
+    pub your_cookie: Cookie,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<HashSet<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    pub data: HashMap<String, Option<HashMap<String, Value>>>,
+}
+
+struct InitiatorAuthBuilder {
+    auth: Auth,
+}
+
+struct ResponderAuthBuilder {
+    auth: Auth,
+}
+
+impl InitiatorAuthBuilder {
+
+    /// Create a new `Auth` message targeted at an initiator.
+    pub fn new(your_cookie: Cookie) -> Self {
+        Self {
+            auth: Auth {
+                your_cookie,
+                tasks: Some(HashSet::new()),
+                task: None,
+                data: HashMap::new(),
+            }
+        }
+    }
+
+    /// Add a task.
+    pub fn add_task<S: Into<String>>(mut self, name: S, data: Option<HashMap<String, Value>>) -> Self {
+        let name: String = name.into();
+        match self.auth.tasks {
+            Some(ref mut tasks) => tasks.insert(name.clone()),
+            None => panic!("tasks list not initialized!"),
+        };
+        self.auth.data.insert(name, data);
+        self
+    }
+
+    /// Return the resulting `Auth` message.
+    pub fn build(self) -> Result<Auth> {
+        if self.auth.task.is_some() {
+            panic!("task may not be set");
+        }
+        match self.auth.tasks {
+            Some(ref tasks) if tasks.len() == 0 => Err("an `Auth` message must contain at least one task".into()),
+            Some(_) => Ok(self.auth),
+            None => panic!("tasks list not initialized!"),
+        }
+    }
+
+}
+
+impl ResponderAuthBuilder {
+
+    /// Create a new `Auth` message targeted at a responder.
+    pub fn new(your_cookie: Cookie) -> Self {
+        Self {
+            auth: Auth {
+                your_cookie,
+                tasks: None,
+                task: None,
+                data: HashMap::new(),
+            }
+        }
+    }
+
+    /// Set the task.
+    pub fn set_task<S: Into<String>>(mut self, name: S, data: Option<HashMap<String, Value>>) -> Self {
+        let name: String = name.into();
+        self.auth.task = Some(name.clone());
+        self.auth.data.clear();
+        self.auth.data.insert(name, data);
+        self
+    }
+
+    /// Return the resulting `Auth` message.
+    pub fn build(self) -> Result<Auth> {
+        if self.auth.tasks.is_some() {
+            panic!("tasks may not be set");
+        }
+        if self.auth.task.is_some() {
+            Ok(self.auth)
+        } else {
+            Err("an `Auth` message must have a task set".into())
+        }
+    }
+
 }
 
 
@@ -398,6 +500,62 @@ mod tests {
         roundtrip!(drop_responder_with_reason, DropResponder::with_reason(4.into(), 3004));
         roundtrip!(token, Token::random());
         roundtrip!(key, Key::random());
+        roundtrip!(auth_initiator, InitiatorAuthBuilder::new(Cookie::random())
+                   .add_task("foo.bar.baz", None)
+                   .build().unwrap());
+        roundtrip!(auth_responder, ResponderAuthBuilder::new(Cookie::random())
+                   .set_task("foo.bar.baz", None)
+                   .build().unwrap());
+    }
 
+    mod auth {
+        use super::*;
+
+        #[test]
+        fn initiator_auth_builder_incomplete() {
+            let builder = InitiatorAuthBuilder::new(Cookie::random());
+            let result = builder.build();
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn initiator_auth_builder() {
+            let mut data = HashMap::new();
+            data.insert("foo".to_string(), Value::Boolean(true));
+            let cookie = Cookie::random();
+            let builder = InitiatorAuthBuilder::new(cookie.clone())
+                .add_task("data.none", None)
+                .add_task("data.none", None)
+                .add_task("data.some", Some(data.clone()));
+            let result = builder.build();
+            let auth = result.unwrap();
+            assert_eq!(auth.your_cookie, cookie);
+            assert!(auth.task.is_none());
+            assert!(auth.tasks.is_some());
+            assert_eq!(auth.tasks.unwrap().len(), 2);
+            assert_eq!(auth.data.len(), 2);
+        }
+
+        #[test]
+        fn responder_auth_builder_incomplete() {
+            let builder = ResponderAuthBuilder::new(Cookie::random());
+            let result = builder.build();
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn responder_auth_builder() {
+            let cookie = Cookie::random();
+            let builder = ResponderAuthBuilder::new(cookie.clone())
+                .set_task("data.none", None);
+            let result = builder.build();
+            let auth = result.unwrap();
+            assert_eq!(auth.your_cookie, cookie);
+            assert!(auth.tasks.is_none());
+            assert!(auth.task.is_some());
+            assert_eq!(auth.task.unwrap(), "data.none");
+            assert_eq!(auth.data.len(), 1);
+            assert!(auth.data.contains_key("data.none"));
+        }
     }
 }

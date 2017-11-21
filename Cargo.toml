@@ -11,6 +11,7 @@ tokio-core = "0.1.9"
 futures = "0.1.0"  # Make sure to use same version as websocket
 error-chain = "0.11.0"
 rmp-serde = "0.13"
+rmpv = { version = "0.4", features = ["with-serde"] }
 serde = "1.0"
 serde_derive = "1.0"
 rust_sodium = { version = "0.5.0", features = ["serde"] }

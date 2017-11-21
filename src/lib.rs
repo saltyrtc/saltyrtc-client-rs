@@ -15,6 +15,7 @@ extern crate futures;
 extern crate log;
 extern crate native_tls;
 extern crate rmp_serde;
+extern crate rmpv;
 extern crate rust_sodium;
 extern crate rust_sodium_sys;
 extern crate serde;

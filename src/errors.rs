@@ -47,5 +47,10 @@ error_chain!{
             description("csn overflow"),
             display("csn overflow"),
         }
+        /// A message has an invalid state.
+        InvalidMessageState(msg: String) {
+            description("invalid message state"),
+            display("invalid message state: {}", msg),
+        }
     }
 }
