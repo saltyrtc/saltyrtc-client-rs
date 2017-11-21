@@ -22,7 +22,7 @@ pub(crate) mod nonce;
 pub(crate) mod state;
 pub(crate) mod types;
 
-use self::context::{PeerContext, ServerContext, ResponderContext};
+use self::context::{PeerContext, ServerContext, ResponderContext, TmpPeer};
 pub use self::cookie::{Cookie};
 use messages::{Message, ClientHello, ClientAuth};
 pub use self::nonce::{Nonce};
@@ -33,105 +33,70 @@ use self::state::{ServerHandshakeState, StateTransition};
 
 /// A signaling implementation.
 pub trait Signaling {
+    type Peer: PeerContext;
+
     /// Our role, either initiator or responder
     fn role(&self) -> Role;
 
     /// Our assigned client identity
     fn identity(&self) -> ClientIdentity;
-}
 
-/// All signaling related data.
-pub struct TmpSignaling {
-    pub role: Role, // TODO: Redundant?
+    /// Set the client identity
+    fn set_identity(&mut self, identity: ClientIdentity);
 
-    // Our permanent keypair
-    pub permanent_key: KeyStore,
+    /// The server context
+    fn server(&self) -> &ServerContext;
 
-    // An optional auth token
-    pub auth_token: Option<AuthToken>,
+    /// The server context
+    fn server_mut(&mut self) -> &mut ServerContext;
 
-    // The assigned client identity
-    pub identity: ClientIdentity,
+    /// The list of responders. These are only relevant as long as the
+    /// client-to-client handshake is not yet finished.
+    /// TODO: Move into initiator signaling.
+    fn responder_with_address(&mut self, addr: &Address) -> Option<&mut ResponderContext>;
 
-    // The server context
-    pub server: ServerContext,
-
-    // The list of responders
-    pub responders: HashMap<Address, ResponderContext>,
-}
-
-/// Result of the nonce validation.
-enum ValidationResult {
-    Ok,
-    DropMsg(String),
-    Fail(String),
-}
-
-impl TmpSignaling {
-    pub fn new(role: Role, permanent_key: KeyStore) -> Self {
-        TmpSignaling {
-            role: role,
-            identity: ClientIdentity::Unknown,
-            server: ServerContext::new(),
-            permanent_key: permanent_key,
-            auth_token: match role {
-                Role::Initiator => Some(AuthToken::new()),
-                Role::Responder => None,
-            },
-            responders: HashMap::new(),
-        }
-    }
-
-    /// Handle an incoming message.
-    pub fn handle_message(&mut self, bbox: ByteBox) -> Vec<HandleAction> {
-        // Do the state transition
-        let transition = self.next_state(bbox);
-        trace!("Server handshake state transition: {:?} -> {:?}", self.server.handshake_state, transition.state);
-        if let ServerHandshakeState::Failure(ref msg) = transition.state {
-            warn!("Server handshake failure: {}", msg);
-        }
-        self.server.handshake_state = transition.state;
-
-        // Return the action
-        transition.actions
-    }
+    /// The peer context
+    ///
+    /// This only returns a value if the client-to-client handshake is
+    /// finished.
+    fn peer(&self) -> Option<&Self::Peer>;
 
     /// Validate the nonce.
     fn validate_nonce(&mut self, nonce: &Nonce) -> ValidationResult {
 		// A client MUST check that the destination address targets its
 		// assigned identity (or `0x00` during authentication).
-        if self.identity == ClientIdentity::Unknown
+        if self.identity() == ClientIdentity::Unknown
                 && !nonce.destination().is_unknown()
-                && self.server.handshake_state != ServerHandshakeState::New {
+                && self.server().handshake_state != ServerHandshakeState::New {
             // The first message received with a destination address different
             // to `0x00` SHALL be accepted as the client's assigned identity.
             // However, the client MUST validate that the identity fits its
             // role – initiators SHALL ONLY accept `0x01` and responders SHALL
             // ONLY an identity from the range `0x02..0xff`. The identity MUST
             // be stored as the client's assigned identity.
-            match self.role {
+            match self.role() {
                 Role::Initiator => {
                     if nonce.destination().is_initiator() {
-                        self.identity = ClientIdentity::Initiator;
-                        debug!("Assigned identity: {}", &self.identity);
+                        self.set_identity(ClientIdentity::Initiator);
+                        debug!("Assigned identity: {}", &self.identity());
                     } else {
-                        let msg = format!("cannot assign address {} to a client with role {}", nonce.destination(), self.role);
+                        let msg = format!("cannot assign address {} to a client with role {}", nonce.destination(), self.role());
                         return ValidationResult::Fail(msg);
                     }
                 },
                 Role::Responder => {
                     if nonce.destination().is_responder() {
-                        self.identity = ClientIdentity::Responder(nonce.destination().0);
-                        debug!("Assigned identity: {}", &self.identity);
+                        self.set_identity(ClientIdentity::Responder(nonce.destination().0));
+                        debug!("Assigned identity: {}", &self.identity());
                     } else {
-                        let msg = format!("cannot assign address {} to a client with role {}", nonce.destination(), self.role);
+                        let msg = format!("cannot assign address {} to a client with role {}", nonce.destination(), self.role());
                         return ValidationResult::Fail(msg);
                     }
                 },
             };
         }
-        if nonce.destination() != self.identity.into() {
-            let msg = format!("bad destination: {} (our identity is {})", nonce.destination(), self.identity);
+        if nonce.destination() != self.identity().into() {
+            let msg = format!("bad destination: {} (our identity is {})", nonce.destination(), self.identity());
             return ValidationResult::Fail(msg);
         }
 
@@ -150,12 +115,12 @@ impl TmpSignaling {
 
             // From initiator
             Address(0x01) => {
-                match self.identity {
+                match self.identity() {
                     // We're the responder: OK
                     ClientIdentity::Responder(_) => {},
                     // Otherwise: Not OK
                     _ => {
-                        let msg = format!("bad source: {} (our identity is {})", nonce.source(), self.identity);
+                        let msg = format!("bad source: {} (our identity is {})", nonce.source(), self.identity());
                         return ValidationResult::DropMsg(msg);
                     },
                 }
@@ -163,12 +128,12 @@ impl TmpSignaling {
 
             // From responder
             Address(0x02...0xff) => {
-                match self.identity {
+                match self.identity() {
                     // We're the initiator: OK
                     ClientIdentity::Initiator => {},
                     // Otherwise: Not OK
                     _ => {
-                        let msg = format!("bad source: {} (our identity is {})", nonce.source(), self.identity);
+                        let msg = format!("bad source: {} (our identity is {})", nonce.source(), self.identity());
                         return ValidationResult::DropMsg(msg);
                     },
                 }
@@ -181,10 +146,10 @@ impl TmpSignaling {
         // Find peer
         // TODO: Also consider signaling state, see InitiatorSignaling.java getPeerWithId
         let peer: &mut PeerContext = match nonce.source().0 {
-            0x00 => &mut self.server,
+            0x00 => self.server_mut(),
             0x01 => unimplemented!(),
             addr @ 0x02...0xff => {
-                match self.responders.get_mut(&nonce.source()) {
+                match self.responder_with_address(&nonce.source()) {
                     Some(responder) => responder,
                     None => return ValidationResult::Fail(format!("could not find responder with address {}", addr)),
                 }
@@ -277,6 +242,66 @@ impl TmpSignaling {
         }
 
         ValidationResult::Ok
+    }
+
+}
+
+
+/// Result of the nonce validation.
+pub enum ValidationResult {
+    Ok,
+    DropMsg(String),
+    Fail(String),
+}
+
+
+/// All signaling related data.
+pub struct TmpSignaling {
+    pub role: Role, // TODO: Redundant?
+
+    // Our permanent keypair
+    pub permanent_key: KeyStore,
+
+    // An optional auth token
+    pub auth_token: Option<AuthToken>,
+
+    // The assigned client identity
+    pub identity: ClientIdentity,
+
+    // The server context
+    pub server: ServerContext,
+
+    // The list of responders
+    pub responders: HashMap<Address, ResponderContext>,
+}
+
+impl TmpSignaling {
+    pub fn new(role: Role, permanent_key: KeyStore) -> Self {
+        TmpSignaling {
+            role: role,
+            identity: ClientIdentity::Unknown,
+            server: ServerContext::new(),
+            permanent_key: permanent_key,
+            auth_token: match role {
+                Role::Initiator => Some(AuthToken::new()),
+                Role::Responder => None,
+            },
+            responders: HashMap::new(),
+        }
+    }
+
+    /// Handle an incoming message.
+    pub fn handle_message(&mut self, bbox: ByteBox) -> Vec<HandleAction> {
+        // Do the state transition
+        let transition = self.next_state(bbox);
+        trace!("Server handshake state transition: {:?} -> {:?}", self.server.handshake_state, transition.state);
+        if let ServerHandshakeState::Failure(ref msg) = transition.state {
+            warn!("Server handshake failure: {}", msg);
+        }
+        self.server.handshake_state = transition.state;
+
+        // Return the action
+        transition.actions
     }
 
     /// Determine the next state based on the incoming message bytes and the
@@ -515,14 +540,34 @@ impl TmpSignaling {
 }
 
 impl Signaling for TmpSignaling {
-    /// Our role, either initiator or responder
+    type Peer = TmpPeer;
+
     fn role(&self) -> Role {
         self.role
     }
 
-    /// Our assigned client identity
     fn identity(&self) -> ClientIdentity {
         self.identity
+    }
+
+    fn set_identity(&mut self, identity: ClientIdentity) {
+        self.identity = identity;
+    }
+
+    fn server(&self) -> &ServerContext {
+        &self.server
+    }
+
+    fn server_mut(&mut self) -> &mut ServerContext {
+        &mut self.server
+    }
+
+    fn peer(&self) -> Option<&Self::Peer> {
+        None
+    }
+
+    fn responder_with_address(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
+        self.responders.get_mut(addr)
     }
 }
 

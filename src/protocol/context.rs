@@ -160,3 +160,56 @@ impl PeerContext for ResponderContext {
         &mut self.cookie_pair
     }
 }
+
+
+/// An enum holding all possible peer context instances.
+/// Only transitional. Will be removed in the future.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TmpPeer {
+    Initiator(InitiatorContext),
+    Responder(ResponderContext),
+}
+
+impl PeerContext for TmpPeer {
+    fn identity(&self) -> Identity {
+        match *self {
+            TmpPeer::Initiator(ref p) => Identity::Initiator,
+            TmpPeer::Responder(ref p) => Identity::Responder(p.address.0),
+        }
+    }
+
+    fn permanent_key(&self) -> Option<&PublicKey> {
+        match *self {
+            TmpPeer::Initiator(ref p) => p.permanent_key.as_ref(),
+            TmpPeer::Responder(ref p) => p.permanent_key.as_ref(),
+        }
+    }
+
+    fn session_key(&self) -> Option<&PublicKey> {
+        match *self {
+            TmpPeer::Initiator(ref p) => p.session_key.as_ref(),
+            TmpPeer::Responder(ref p) => p.session_key.as_ref(),
+        }
+    }
+
+    fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
+        match *self {
+            TmpPeer::Initiator(ref p) => &p.csn_pair,
+            TmpPeer::Responder(ref p) => &p.csn_pair,
+        }
+    }
+
+    fn cookie_pair(&self) -> &CookiePair {
+        match *self {
+            TmpPeer::Initiator(ref p) => &p.cookie_pair,
+            TmpPeer::Responder(ref p) => &p.cookie_pair,
+        }
+    }
+
+    fn cookie_pair_mut(&mut self) -> &mut CookiePair {
+        match *self {
+            TmpPeer::Initiator(ref mut p) => &mut p.cookie_pair,
+            TmpPeer::Responder(ref mut p) => &mut p.cookie_pair,
+        }
+    }
+}
