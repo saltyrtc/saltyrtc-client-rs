@@ -22,7 +22,7 @@ clippy = {version = "0.0.165", optional = true}
 
 [dev-dependencies]
 env_logger = "0.3"
-docopt = "0.8"
+clap = "2.27"
 
 [features]
 default = []

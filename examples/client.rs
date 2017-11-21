@@ -1,12 +1,10 @@
 //! Connect to a server as initiator and print the connection info.
 
+extern crate clap;
 extern crate data_encoding;
-extern crate docopt;
 extern crate env_logger;
 extern crate native_tls;
 extern crate saltyrtc_client;
-#[macro_use]
-extern crate serde_derive;
 extern crate tokio_core;
 
 use std::cell::RefCell;
@@ -17,47 +15,53 @@ use std::path::Path;
 use std::process;
 use std::rc::Rc;
 
+use clap::{Arg, App, SubCommand};
 use data_encoding::HEXLOWER;
-use docopt::Docopt;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
 
 use saltyrtc_client::{SaltyClient, KeyStore, Role};
 
 
-const USAGE: &'static str = "
-SaltyRTC test client.
-
-Usage:
-  client initiator
-  client responder -p <path> -a <auth-token>
-  client (-h | --help)
-  client --version
-
-Options:
-  -h --help     Show this screen.
-  --version     Show version.
-  -p            The websocket path (hex encoded public key of the initiator).
-  -a            The auth token (hex encoded).
-";
-
-#[derive(Debug, Deserialize)]
-struct Args {
-    cmd_initiator: bool,
-    cmd_responder: bool,
-    arg_path: String,
-    arg_auth_token: String,
-}
+pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     env_logger::init().expect("Could not initialize env_logger");
 
-    // Parse arguments
-    let args: Args = Docopt::new(USAGE)
-                        .and_then(|d| d.deserialize())
-                        .unwrap_or_else(|e| e.exit());
+    // Set up CLI arguments
+    let app = App::new("SaltyRTC Test Client")
+        .version(VERSION)
+        .author("Danilo Bargen <mail@dbrgn.ch>")
+        .about("Test client for SaltyRTC.")
+        .subcommand(SubCommand::with_name("initiator")
+            .about("Start client as initiator"))
+        .subcommand(SubCommand::with_name("responder")
+            .about("Start client as responder")
+            .arg(Arg::with_name("path")
+                .short("p")
+                .takes_value(true)
+                .value_name("PATH")
+                .required(true)
+                .help("The websocket path (hex encoded public key of the initiator)"))
+            .arg(Arg::with_name("authtoken")
+                .short("a")
+                .alias("token")
+                .alias("authtoken")
+                .takes_value(true)
+                .value_name("AUTHTOKEN")
+                .required(true)
+                .help("The auth token (hex encoded)")));
 
-    let role = if args.cmd_initiator {
+    // Parse arguments
+    let subcommand = app.get_matches().subcommand.unwrap_or_else(|| {
+        println!("Missing subcommand.");
+        println!("Use -h or --help to see usage.");
+        process::exit(1);
+    });
+    let args = &subcommand.matches;
+
+    // Determine role
+    let role = if true {
         Role::Initiator
     } else {
         Role::Responder
@@ -95,7 +99,7 @@ fn main() {
     // Determine websocket path
     let path = match role {
         Role::Initiator => keystore.public_key_hex(),
-        Role::Responder => args.arg_path,
+        Role::Responder => args.value_of("path").expect("Path not supplied").to_string(),
     };
 
     // Create new SaltyRTC client instance
@@ -107,14 +111,16 @@ fn main() {
             salty.clone(),
         ).unwrap();
 
+    // Determine auth token
+    let auth_token = match (*salty).borrow().auth_token().as_ref() {
+        Some(token) => HEXLOWER.encode(token.secret_key_bytes()),
+        None => args.value_of("auth_token").expect("Auth token not supplied").to_string(),
+    };
+
     println!("\n====================");
     println!("Connecting as {}\n", role);
     println!("Signaling path: {}", path);
-
-    match (*salty).borrow().auth_token().as_ref() {
-        Some(token) => println!("Auth token: {}", HEXLOWER.encode(token.secret_key_bytes())),
-        None => println!("Auth token: {}", args.arg_auth_token),
-    }
+    println!("Auth token: {}", auth_token);
     println!("====================\n");
 
     match core.run(task) {
