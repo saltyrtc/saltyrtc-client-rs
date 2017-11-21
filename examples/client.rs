@@ -28,6 +28,9 @@ pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 fn main() {
     env_logger::init().expect("Could not initialize env_logger");
 
+    const ARG_PATH: &'static str = "path";
+    const ARG_AUTHTOKEN: &'static str = "authtoken";
+
     // Set up CLI arguments
     let app = App::new("SaltyRTC Test Client")
         .version(VERSION)
@@ -37,13 +40,13 @@ fn main() {
             .about("Start client as initiator"))
         .subcommand(SubCommand::with_name("responder")
             .about("Start client as responder")
-            .arg(Arg::with_name("path")
+            .arg(Arg::with_name(ARG_PATH)
                 .short("p")
                 .takes_value(true)
                 .value_name("PATH")
                 .required(true)
                 .help("The websocket path (hex encoded public key of the initiator)"))
-            .arg(Arg::with_name("authtoken")
+            .arg(Arg::with_name(ARG_AUTHTOKEN)
                 .short("a")
                 .alias("token")
                 .alias("authtoken")
@@ -61,10 +64,13 @@ fn main() {
     let args = &subcommand.matches;
 
     // Determine role
-    let role = if true {
-        Role::Initiator
-    } else {
-        Role::Responder
+    let role = match &*subcommand.name {
+        "initiator" => Role::Initiator,
+        "responder" => Role::Responder,
+        other => {
+            println!("Invalid subcommand: {}", other);
+            process::exit(1);
+        },
     };
 
     // Tokio reactor core
@@ -99,7 +105,7 @@ fn main() {
     // Determine websocket path
     let path = match role {
         Role::Initiator => keystore.public_key_hex(),
-        Role::Responder => args.value_of("path").expect("Path not supplied").to_string(),
+        Role::Responder => args.value_of(ARG_PATH).expect("Path not supplied").to_string(),
     };
 
     // Create new SaltyRTC client instance
@@ -114,14 +120,21 @@ fn main() {
     // Determine auth token
     let auth_token = match (*salty).borrow().auth_token().as_ref() {
         Some(token) => HEXLOWER.encode(token.secret_key_bytes()),
-        None => args.value_of("auth_token").expect("Auth token not supplied").to_string(),
+        None => args.value_of(ARG_AUTHTOKEN).expect("Auth token not supplied").to_string(),
     };
 
-    println!("\n====================");
-    println!("Connecting as {}\n", role);
+    println!("\n\x1B[32m******************************");
+    println!("Connecting as {}", role);
+    println!("");
     println!("Signaling path: {}", path);
     println!("Auth token: {}", auth_token);
-    println!("====================\n");
+    println!("");
+    println!("To connect with a peer:");
+    match role {
+        Role::Initiator => println!("cargo run --example client -- responder \\\n    -p {} \\\n    -a {}", path, auth_token),
+        Role::Responder => println!("cargo run --example client -- initiator"),
+    }
+    println!("******************************\x1B[0m\n");
 
     match core.run(task) {
         Ok(x) => {
