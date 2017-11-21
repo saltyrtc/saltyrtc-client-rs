@@ -80,6 +80,7 @@ impl<T, U> Future for SendAll<T, U>
                 Async::Ready(Some(item)) => try_ready!(self.try_start_send(item)),
                 Async::Ready(None) => {
 //                    try_ready!(self.sink_mut().close());
+                    try_ready!(self.sink_mut().poll_complete());
                     return Ok(Async::Ready(self.take_result()));
                 }
                 Async::NotReady => {
