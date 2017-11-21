@@ -1,9 +1,12 @@
 //! Connect to a server as initiator and print the connection info.
 
 extern crate data_encoding;
+extern crate docopt;
 extern crate env_logger;
 extern crate native_tls;
 extern crate saltyrtc_client;
+#[macro_use]
+extern crate serde_derive;
 extern crate tokio_core;
 
 use std::cell::RefCell;
@@ -15,14 +18,50 @@ use std::process;
 use std::rc::Rc;
 
 use data_encoding::HEXLOWER;
+use docopt::Docopt;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
 
 use saltyrtc_client::{SaltyClient, KeyStore, Role};
 
 
+const USAGE: &'static str = "
+SaltyRTC test client.
+
+Usage:
+  client initiator
+  client responder -p <path> -a <auth-token>
+  client (-h | --help)
+  client --version
+
+Options:
+  -h --help     Show this screen.
+  --version     Show version.
+  -p            The websocket path (hex encoded public key of the initiator).
+  -a            The auth token (hex encoded).
+";
+
+#[derive(Debug, Deserialize)]
+struct Args {
+    cmd_initiator: bool,
+    cmd_responder: bool,
+    arg_path: String,
+    arg_auth_token: String,
+}
+
 fn main() {
     env_logger::init().expect("Could not initialize env_logger");
+
+    // Parse arguments
+    let args: Args = Docopt::new(USAGE)
+                        .and_then(|d| d.deserialize())
+                        .unwrap_or_else(|e| e.exit());
+
+    let role = if args.cmd_initiator {
+        Role::Initiator
+    } else {
+        Role::Responder
+    };
 
     // Tokio reactor core
     let mut core = Core::new().unwrap();
@@ -54,10 +93,13 @@ fn main() {
     let keystore = KeyStore::new().unwrap();
 
     // Determine websocket path
-    let path = keystore.public_key_hex();
+    let path = match role {
+        Role::Initiator => keystore.public_key_hex(),
+        Role::Responder => args.arg_path,
+    };
 
     // Create new SaltyRTC client instance
-    let salty = Rc::new(RefCell::new(SaltyClient::new(keystore, Role::Initiator)));
+    let salty = Rc::new(RefCell::new(SaltyClient::new(keystore, role)));
     let task = saltyrtc_client::connect(
             &format!("wss://localhost:8765/{}", path),
             Some(tls_connector),
@@ -66,9 +108,13 @@ fn main() {
         ).unwrap();
 
     println!("\n====================");
-    println!("Connecting as Initiator\n");
+    println!("Connecting as {}\n", role);
     println!("Signaling path: {}", path);
-    println!("Auth token: {}", HEXLOWER.encode((*salty).borrow().auth_token().as_ref().unwrap().secret_key_bytes()));
+
+    match (*salty).borrow().auth_token().as_ref() {
+        Some(token) => println!("Auth token: {}", HEXLOWER.encode(token.secret_key_bytes())),
+        None => println!("Auth token: {}", args.arg_auth_token),
+    }
     println!("====================\n");
 
     match core.run(task) {
