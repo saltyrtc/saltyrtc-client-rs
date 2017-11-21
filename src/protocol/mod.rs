@@ -31,9 +31,17 @@ use self::types::{ClientIdentity, Address};
 use self::state::{ServerHandshakeState, StateTransition};
 
 
-/// All signaling related data.
-pub struct Signaling {
+/// A signaling implementation.
+pub trait Signaling {
     /// Our role, either initiator or responder
+    fn role(&self) -> Role;
+
+    /// Our assigned client identity
+    fn identity(&self) -> ClientIdentity;
+}
+
+/// All signaling related data.
+pub struct TmpSignaling {
     pub role: Role, // TODO: Redundant?
 
     // Our permanent keypair
@@ -59,9 +67,9 @@ enum ValidationResult {
     Fail(String),
 }
 
-impl Signaling {
+impl TmpSignaling {
     pub fn new(role: Role, permanent_key: KeyStore) -> Self {
-        Signaling {
+        TmpSignaling {
             role: role,
             identity: ClientIdentity::Unknown,
             server: ServerContext::new(),
@@ -506,6 +514,18 @@ impl Signaling {
     }
 }
 
+impl Signaling for TmpSignaling {
+    /// Our role, either initiator or responder
+    fn role(&self) -> Role {
+        self.role
+    }
+
+    /// Our assigned client identity
+    fn identity(&self) -> ClientIdentity {
+        self.identity
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -554,7 +574,7 @@ mod tests {
         #[test]
         fn first_message_wrong_destination() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new(Role::Initiator, ks);
+            let mut s = TmpSignaling::new(Role::Initiator, ks);
 
             let msg = ServerHello::random().into_message();
             let cs = CombinedSequenceSnapshot::random();
@@ -578,7 +598,7 @@ mod tests {
         #[test]
         fn wrong_source_initiator() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new(Role::Initiator, ks);
+            let mut s = TmpSignaling::new(Role::Initiator, ks);
 
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
@@ -627,7 +647,7 @@ mod tests {
         #[test]
         fn wrong_source_responder() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new(Role::Responder, ks);
+            let mut s = TmpSignaling::new(Role::Responder, ks);
 
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
@@ -674,7 +694,7 @@ mod tests {
         #[test]
         fn first_message_bad_overflow_number() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new(Role::Initiator, ks);
+            let mut s = TmpSignaling::new(Role::Initiator, ks);
 
             let msg = ServerHello::random().into_message();
             let cs = CombinedSequenceSnapshot::new(1, 1234);
@@ -704,7 +724,7 @@ mod tests {
         #[test]
         fn cookie_differs_from_own() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new(Role::Initiator, ks);
+            let mut s = TmpSignaling::new(Role::Initiator, ks);
 
             let msg = ServerHello::random().into_message();
             let cookie = s.server.cookie_pair.ours.clone();
@@ -737,7 +757,7 @@ mod tests {
             pub server_ks: KeyStore,
             pub our_cookie: Cookie,
             pub server_cookie: Cookie,
-            pub signaling: Signaling,
+            pub signaling: TmpSignaling,
         }
 
         fn make_test_signaling(role: Role, identity: ClientIdentity, handshake_state: ServerHandshakeState) -> TestContext {
@@ -745,7 +765,7 @@ mod tests {
             let server_ks = KeyStore::new().unwrap();
             let our_cookie = Cookie::random();
             let server_cookie = Cookie::random();
-            let mut signaling = Signaling::new(role, KeyStore::from_private_key(our_ks.private_key().clone()));
+            let mut signaling = TmpSignaling::new(role, KeyStore::from_private_key(our_ks.private_key().clone()));
             signaling.identity = identity;
             signaling.server.handshake_state = handshake_state;
             signaling.server.cookie_pair = CookiePair {
@@ -782,7 +802,7 @@ mod tests {
         // Signalling Message section.
         #[test]
         fn server_auth_no_identity() {
-            // Initialize Signaling class
+            // Initialize signaling class
             let ctx = make_test_signaling(Role::Responder,
                                           ClientIdentity::Unknown,
                                           ServerHandshakeState::ClientInfoSent);
@@ -804,7 +824,7 @@ mod tests {
         // previous and messages to the server.
         #[test]
         fn server_auth_your_cookie() {
-            // Initialize Signaling class
+            // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Initiator,
                                               ClientIdentity::Initiator,
                                               ServerHandshakeState::ClientInfoSent);
@@ -819,7 +839,7 @@ mod tests {
 
         #[test]
         fn server_auth_initiator_wrong_fields() {
-            // Initialize Signaling class
+            // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Initiator,
                                               ClientIdentity::Initiator,
                                               ServerHandshakeState::ClientInfoSent);
@@ -834,7 +854,7 @@ mod tests {
 
         #[test]
         fn server_auth_initiator_missing_fields() {
-            // Initialize Signaling class
+            // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Initiator,
                                               ClientIdentity::Initiator,
                                               ServerHandshakeState::ClientInfoSent);
@@ -854,7 +874,7 @@ mod tests {
 
         #[test]
         fn server_auth_initiator_duplicate_fields() {
-            // Initialize Signaling class
+            // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Initiator,
                                               ClientIdentity::Initiator,
                                               ServerHandshakeState::ClientInfoSent);
@@ -869,7 +889,7 @@ mod tests {
 
         #[test]
         fn server_auth_initiator_invalid_fields() {
-            // Initialize Signaling class
+            // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Initiator,
                                               ClientIdentity::Initiator,
                                               ServerHandshakeState::ClientInfoSent);
@@ -886,7 +906,7 @@ mod tests {
         /// list of responders.
         #[test]
         fn server_auth_initiator_stored_responder() {
-            // Initialize Signaling class
+            // Initialize signaling class
             let ctx = make_test_signaling(Role::Initiator,
                                           ClientIdentity::Initiator,
                                           ServerHandshakeState::ClientInfoSent);
@@ -909,7 +929,7 @@ mod tests {
         /// a boolean value.
         #[test]
         fn server_auth_responder_validate_initiator_connected() {
-            // Initialize Signaling class
+            // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Responder,
                                               ClientIdentity::Responder(4),
                                               ServerHandshakeState::ClientInfoSent);
