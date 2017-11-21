@@ -12,8 +12,8 @@ use std::convert::From;
 use rmp_serde as rmps;
 use rmpv::Value;
 
+use crypto::{PublicKey, SignedKeys};
 use errors::{Result};
-use keystore::{PublicKey, SignedKeys};
 
 use super::{Address, Cookie};
 

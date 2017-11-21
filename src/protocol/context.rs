@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 
-use keystore::{PublicKey};
+use crypto::{PublicKey};
 
 use super::cookie::{CookiePair};
 use super::csn::{CombinedSequencePair};

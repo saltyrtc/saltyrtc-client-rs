@@ -26,9 +26,9 @@ extern crate websocket;
 
 // Modules
 mod boxes;
+mod crypto;
 pub mod errors;
 mod helpers;
-mod keystore;
 mod protocol;
 mod send_all;
 
@@ -51,7 +51,7 @@ use websocket::header::WebSocketProtocol;
 use websocket::message::OwnedMessage;
 
 // Re-exports
-pub use keystore::{KeyStore, PublicKey, PrivateKey};
+pub use crypto::{KeyStore, PublicKey, PrivateKey};
 pub use protocol::{Role, messages};
 
 // Internal imports

@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use error_chain::ChainedError;
 
 use boxes::{ByteBox, OpenBox};
-use keystore::{KeyStore};
+use crypto::{KeyStore};
 
 pub(crate) mod context;
 pub(crate) mod cookie;
