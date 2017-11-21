@@ -69,6 +69,52 @@ impl PeerContext for ServerContext {
 
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct InitiatorContext {
+    pub(crate) permanent_key: Option<PublicKey>,
+    pub(crate) session_key: Option<PublicKey>,
+    pub(crate) csn_pair: RefCell<CombinedSequencePair>,
+    pub(crate) cookie_pair: CookiePair,
+}
+
+impl InitiatorContext {
+    pub fn new() -> Self {
+        InitiatorContext {
+            permanent_key: None,
+            session_key: None,
+            csn_pair: RefCell::new(CombinedSequencePair::new()),
+            cookie_pair: CookiePair::new(),
+        }
+    }
+}
+
+impl PeerContext for InitiatorContext {
+    fn identity(&self) -> Identity {
+        Identity::Initiator
+    }
+
+    fn permanent_key(&self) -> Option<&PublicKey> {
+        self.permanent_key.as_ref()
+    }
+
+    fn session_key(&self) -> Option<&PublicKey> {
+        self.session_key.as_ref()
+    }
+
+    fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
+        &self.csn_pair
+    }
+
+    fn cookie_pair(&self) -> &CookiePair {
+        &self.cookie_pair
+    }
+
+    fn cookie_pair_mut(&mut self) -> &mut CookiePair {
+        &mut self.cookie_pair
+    }
+}
+
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct ResponderContext {
     pub(crate) address: Address,
     pub(crate) permanent_key: Option<PublicKey>,
