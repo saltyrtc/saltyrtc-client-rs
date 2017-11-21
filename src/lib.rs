@@ -51,7 +51,7 @@ use websocket::header::WebSocketProtocol;
 use websocket::message::OwnedMessage;
 
 // Re-exports
-pub use crypto::{KeyStore, PublicKey, PrivateKey};
+pub use crypto::{KeyStore, PublicKey, PrivateKey, AuthToken};
 pub use protocol::{Role, messages};
 
 // Internal imports
@@ -89,6 +89,11 @@ impl SaltyClient {
     /// Return the assigned role.
     pub fn role(&self) -> &Role {
         &self.signaling.role
+    }
+
+    /// Return a reference to the auth token.
+    pub fn auth_token(&self) -> &Option<AuthToken> {
+        &self.signaling.auth_token
     }
 
     /// Handle an incoming message.

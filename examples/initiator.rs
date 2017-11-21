@@ -1,5 +1,6 @@
 //! Connect to a server as initiator and print the connection info.
 
+extern crate data_encoding;
 extern crate env_logger;
 extern crate native_tls;
 extern crate saltyrtc_client;
@@ -10,8 +11,10 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::process;
 use std::rc::Rc;
 
+use data_encoding::HEXLOWER;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
 
@@ -59,8 +62,14 @@ fn main() {
             &format!("wss://localhost:8765/{}", path),
             Some(tls_connector),
             &core.handle(),
-            salty,
+            salty.clone(),
         ).unwrap();
+
+    println!("\n====================");
+    println!("Connecting as Initiator\n");
+    println!("Signaling path: {}", path);
+    println!("Auth token: {}", HEXLOWER.encode((*salty).borrow().auth_token().as_ref().unwrap().secret_key_bytes()));
+    println!("====================\n");
 
     match core.run(task) {
         Ok(x) => {
@@ -71,8 +80,7 @@ fn main() {
             if let Some(cause) = e.cause() {
                 println!("Cause: {}", cause);
             }
+            process::exit(1);
         },
     };
-    println!("\nSignaling path: {}", path);
-    println!("Auth token: {}", "TODO");
 }

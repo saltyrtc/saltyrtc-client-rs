@@ -5,13 +5,13 @@ use std::fmt;
 use std::result::Result as StdResult;
 
 use data_encoding::HEXLOWER;
-use rust_sodium::crypto::box_;
+use rust_sodium::crypto::{box_, secretbox};
 use rust_sodium_sys::crypto_scalarmult_base;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
 use errors::{Result, ResultExt, Error, ErrorKind};
-use helpers::libsodium_init;
+use helpers::{libsodium_init, libsodium_init_or_panic};
 use protocol::Nonce;
 
 /// A public key used for decrypting data.
@@ -23,6 +23,11 @@ pub type PublicKey = box_::PublicKey;
 ///
 /// Re-exported from the [`rust_sodium`](../rust_sodium/) crate.
 pub type PrivateKey = box_::SecretKey;
+
+/// A symmetric key used for both encrypting and decrypting data.
+///
+/// Re-exported from the [`rust_sodium`](../rust_sodium/) crate.
+pub type SecretKey = secretbox::Key;
 
 
 /// Wrapper for holding a keypair and encrypting / decrypting messages.
@@ -115,6 +120,58 @@ impl KeyStore {
 }
 
 
+/// Wrapper for holding an auth token and encrypting / decrypting messages.
+#[derive(Debug, PartialEq, Eq)]
+pub struct AuthToken(SecretKey);
+
+impl AuthToken {
+
+    /// Create a new auth token.
+    ///
+    /// This can fail only if libsodium initialization fails.
+    pub fn new() -> Self {
+        info!("Generating new auth token");
+
+        // Initialize libsodium if it hasn't been initialized already
+        libsodium_init_or_panic();
+
+        // Generate key pair
+        let key = secretbox::gen_key();
+
+        AuthToken(key)
+    }
+
+    /// Return a reference to the secret key.
+    pub fn secret_key(&self) -> &SecretKey {
+        &self.0
+    }
+
+    /// Return a reference to the secret key bytes.
+    pub fn secret_key_bytes(&self) -> &[u8] {
+        &(self.0).0
+    }
+
+    /// Encrypt data with the secret key.
+    pub fn encrypt(&self, plaintext: &[u8], nonce: Nonce) -> Vec<u8> {
+        let rust_sodium_nonce: secretbox::Nonce = nonce.into();
+        secretbox::seal(plaintext, &rust_sodium_nonce, self.secret_key())
+    }
+
+    /// Decrypt data with the secret key.
+    ///
+    /// If decryption succeeds, the decrypted bytes are returned. Otherwise, an
+    /// error with error kind `Crypto` is returned.
+    pub fn decrypt(&self, ciphertext: &[u8], nonce: Nonce) -> Result<Vec<u8>> {
+        let rust_sodium_nonce: secretbox::Nonce = nonce.into();
+        secretbox::open(ciphertext, &rust_sodium_nonce, self.secret_key())
+            .map_err(|_| Error::from_kind(ErrorKind::Crypto("Could not decrypt data".to_string())))
+    }
+
+}
+
+
+/// A pair of not-yet-signed keys used in the [`ServerAuth`](../messages/struct.ServerAuth.html)
+/// message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsignedKeys {
     server_session_key: PublicKey,
@@ -131,8 +188,11 @@ impl UnsignedKeys {
 }
 
 
+/// The number of bytes in the [`SignedKeys`](struct.SignedKeys.html) array.
 const SIGNED_KEYS_BYTES: usize = 2 * box_::PUBLICKEYBYTES + box_::MACBYTES;
 
+/// Concatenated signed keys used in the [`ServerAuth`](../messages/struct.ServerAuth.html)
+/// message.
 pub struct SignedKeys([u8; SIGNED_KEYS_BYTES]);
 
 impl SignedKeys {
@@ -171,6 +231,8 @@ impl Serialize for SignedKeys {
     }
 }
 
+/// Visitor used to serialize the [`SignedKeys`](struct.SignedKeys.html)
+/// struct with Serde.
 struct SignedKeysVisitor;
 
 impl<'de> Visitor<'de> for SignedKeysVisitor {

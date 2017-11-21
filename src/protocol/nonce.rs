@@ -6,7 +6,7 @@ use std::convert::Into;
 use std::io::Write;
 
 use byteorder::{BigEndian, ByteOrder};
-use rust_sodium::crypto::box_;
+use rust_sodium::crypto::{box_, secretbox};
 
 use errors::{Result, ErrorKind};
 
@@ -127,6 +127,13 @@ impl Into<box_::Nonce> for Nonce {
     fn into(self) -> box_::Nonce {
         let bytes = self.into_bytes();
         box_::Nonce(bytes)
+    }
+}
+
+impl Into<secretbox::Nonce> for Nonce {
+    fn into(self) -> secretbox::Nonce {
+        let bytes = self.into_bytes();
+        secretbox::Nonce(bytes)
     }
 }
 

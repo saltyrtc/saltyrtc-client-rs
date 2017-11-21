@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use error_chain::ChainedError;
 
 use boxes::{ByteBox, OpenBox};
-use crypto::{KeyStore};
+use crypto::{KeyStore, AuthToken};
 
 pub(crate) mod context;
 pub(crate) mod cookie;
@@ -39,6 +39,9 @@ pub struct Signaling {
     // Our permanent keypair
     pub permanent_key: KeyStore,
 
+    // An optional auth token
+    pub auth_token: Option<AuthToken>,
+
     // The assigned client identity
     pub identity: ClientIdentity,
 
@@ -63,6 +66,10 @@ impl Signaling {
             identity: ClientIdentity::Unknown,
             server: ServerContext::new(),
             permanent_key: permanent_key,
+            auth_token: match role {
+                Role::Initiator => Some(AuthToken::new()),
+                Role::Responder => None,
+            },
             responders: HashMap::new(),
         }
     }
