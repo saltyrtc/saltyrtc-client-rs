@@ -35,24 +35,25 @@ use self::state::{ServerHandshakeState, StateTransition};
 pub trait Signaling {
     type Peer: PeerContext;
 
-    /// Our role, either initiator or responder
+    /// Return our role, either initiator or responder
     fn role(&self) -> Role;
 
-    /// Our assigned client identity
+    /// Return our assigned client identity
     fn identity(&self) -> ClientIdentity;
 
     /// Set the client identity
     fn set_identity(&mut self, identity: ClientIdentity);
 
-    /// The server context
+    /// Return our permanent keypair
+    fn permanent_key(&self) -> &KeyStore;
+
+    /// Return the server context
     fn server(&self) -> &ServerContext;
 
-    /// The server context
+    /// Return the mutable server context
     fn server_mut(&mut self) -> &mut ServerContext;
 
-    /// The list of responders. These are only relevant as long as the
-    /// client-to-client handshake is not yet finished.
-    /// TODO: Move into initiator signaling.
+    /// Return the responder with the specified address (if present).
     fn responder_with_address(&mut self, addr: &Address) -> Option<&mut ResponderContext>;
 
     /// The peer context
@@ -61,7 +62,7 @@ pub trait Signaling {
     /// finished.
     fn peer(&self) -> Option<&Self::Peer>;
 
-    /// Validate the nonce.
+    /// Validate the nonce
     fn validate_nonce(&mut self, nonce: &Nonce) -> ValidationResult {
 		// A client MUST check that the destination address targets its
 		// assigned identity (or `0x00` during authentication).
@@ -244,6 +245,33 @@ pub trait Signaling {
         ValidationResult::Ok
     }
 
+    /// Decode or decrypt a binary message depending on the state
+    fn decode_msg(&self, bbox: ByteBox) -> Result<OpenBox, String> {
+        match self.server().handshake_state {
+            // If we're in state `New`, message must be unencrypted.
+            ServerHandshakeState::New => {
+                match bbox.decode() {
+                    Ok(obox) => Ok(obox),
+                    Err(e) => Err(format!("{}", e)),
+                }
+            },
+
+            // If we're already in `Failure` state, stay there.
+            ServerHandshakeState::Failure(ref msg) => Err(msg.clone()),
+
+            // Otherwise, decrypt
+            _ => {
+                match self.server().permanent_key {
+                    Some(ref pubkey) => match bbox.decrypt(&self.permanent_key(), pubkey) {
+                        Ok(obox) => Ok(obox),
+                        Err(e) => Err(e.display_chain().to_string().trim().replace("\n", " -> ")),
+                    },
+                    None => Err("Missing server permanent key".into()),
+                }
+            }
+        }
+    }
+
 }
 
 
@@ -298,6 +326,10 @@ impl Signaling for InitiatorSignaling {
 
     fn set_identity(&mut self, identity: ClientIdentity) {
         self.identity = identity;
+    }
+
+    fn permanent_key(&self) -> &KeyStore {
+        &self.permanent_key
     }
 
     fn server(&self) -> &ServerContext {
@@ -358,6 +390,10 @@ impl Signaling for ResponderSignaling {
         self.identity = identity;
     }
 
+    fn permanent_key(&self) -> &KeyStore {
+        &self.permanent_key
+    }
+
     fn server(&self) -> &ServerContext {
         &self.server
     }
@@ -414,7 +450,7 @@ impl TmpSignaling {
     pub fn handle_message(&mut self, bbox: ByteBox) -> Vec<HandleAction> {
         // Do the state transition
         let transition = self.next_state(bbox);
-        trace!("Server handshake state transition: {:?} -> {:?}", self.server.handshake_state, transition.state);
+        trace!("Server handshake state transition: {:?} -> {:?}", self.server().handshake_state, transition.state);
         if let ServerHandshakeState::Failure(ref msg) = transition.state {
             warn!("Server handshake failure: {}", msg);
         }
@@ -448,30 +484,9 @@ impl TmpSignaling {
         }
 
         // Decode message
-        let obox: OpenBox = match self.server.handshake_state {
-
-            // If we're in state `New`, message must be unencrypted.
-            ServerHandshakeState::New => {
-                match bbox.decode() {
-                    Ok(obox) => obox,
-                    Err(e) => return ServerHandshakeState::Failure(format!("{}", e)).into(),
-                }
-            },
-
-            // If we're already in `Failure` state, stay there.
-            ServerHandshakeState::Failure(ref msg) => return ServerHandshakeState::Failure(msg.clone()).into(),
-
-            // Otherwise, decrypt
-            _ => {
-                match self.server.permanent_key {
-                    Some(ref pubkey) => match bbox.decrypt(&self.permanent_key, pubkey) {
-                        Ok(obox) => obox,
-                        Err(e) => return ServerHandshakeState::Failure(e.display_chain().to_string().trim().replace("\n", " -> ")).into(),
-                    },
-                    None => return ServerHandshakeState::Failure("Missing server permanent key".into()).into(),
-                }
-            }
-
+        let obox: OpenBox = match self.decode_msg(bbox) {
+            Ok(obox) => obox,
+            Err(msg) => return ServerHandshakeState::Failure(msg).into(),
         };
 
         match (&self.server.handshake_state, obox.message) {
@@ -672,6 +687,10 @@ impl Signaling for TmpSignaling {
 
     fn set_identity(&mut self, identity: ClientIdentity) {
         self.identity = identity;
+    }
+
+    fn permanent_key(&self) -> &KeyStore {
+        &self.permanent_key
     }
 
     fn server(&self) -> &ServerContext {
