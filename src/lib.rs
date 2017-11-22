@@ -57,7 +57,7 @@ pub use protocol::{Role, messages};
 // Internal imports
 use errors::{Result, Error};
 use helpers::libsodium_init;
-use protocol::{HandleAction, Signaling, TmpSignaling};
+use protocol::{HandleAction, Signaling};
 
 
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
@@ -76,24 +76,24 @@ macro_rules! boxed {
 
 
 pub struct SaltyClient {
-    signaling: TmpSignaling,
+    signaling: Signaling,
 }
 
 impl SaltyClient {
     pub fn new(permanent_key: KeyStore, role: Role) -> Self {
         SaltyClient {
-            signaling: TmpSignaling::new(role, permanent_key),
+            signaling: Signaling::new(role, permanent_key),
         }
     }
 
     /// Return the assigned role.
-    pub fn role(&self) -> &Role {
-        &self.signaling.role
+    pub fn role(&self) -> Role {
+        self.signaling.role()
     }
 
     /// Return a reference to the auth token.
-    pub fn auth_token(&self) -> &Option<AuthToken> {
-        &self.signaling.auth_token
+    pub fn auth_token(&self) -> Option<&AuthToken> {
+        self.signaling.auth_token()
     }
 
     /// Handle an incoming message.

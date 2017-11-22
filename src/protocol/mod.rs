@@ -22,7 +22,7 @@ pub(crate) mod nonce;
 pub(crate) mod state;
 pub(crate) mod types;
 
-use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext, TmpPeer};
+use self::context::{PeerContext, ServerContext, ResponderContext};
 pub use self::cookie::{Cookie};
 use messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth};
 pub use self::nonce::{Nonce};
@@ -31,39 +31,114 @@ use self::types::{ClientIdentity, Address};
 use self::state::{ServerHandshakeState, StateTransition};
 
 
-/// A signaling implementation.
-pub trait Signaling {
-    type Peer: PeerContext;
+/// The signaling implementation.
+///
+/// This enum contains all the signaling logic. Role specific logic is
+/// delegated to the inner signaling type.
+pub enum Signaling {
+    Initiator(InitiatorSignaling),
+    Responder(ResponderSignaling),
+}
+
+impl From<InitiatorSignaling> for Signaling {
+    fn from(val: InitiatorSignaling) -> Self {
+        Signaling::Initiator(val)
+    }
+}
+
+impl From<ResponderSignaling> for Signaling {
+    fn from(val: ResponderSignaling) -> Self {
+        Signaling::Responder(val)
+    }
+}
+
+/// Make it possible to reference the enum variants directly
+use Signaling::{Initiator, Responder};
+
+impl Signaling {
+    /// Create a new signaling instance.
+    pub fn new(role: Role, permanent_key: KeyStore) -> Self {
+        match role {
+            Role::Initiator => Signaling::Initiator(InitiatorSignaling::new(permanent_key)),
+            Role::Responder => Signaling::Responder(ResponderSignaling::new(permanent_key)),
+        }
+    }
 
     /// Return our role, either initiator or responder.
-    fn role(&self) -> Role;
+    pub fn role(&self) -> Role {
+        match *self {
+            Signaling::Initiator(_) => Role::Initiator,
+            Signaling::Responder(_) => Role::Responder,
+        }
+    }
 
     /// Return our assigned client identity.
-    fn identity(&self) -> ClientIdentity;
+    fn identity(&self) -> ClientIdentity {
+        match *self {
+            Initiator(ref s) => s.identity,
+            Responder(ref s) => s.identity,
+        }
+    }
 
     /// Set the client identity.
-    fn set_identity(&mut self, identity: ClientIdentity);
+    fn set_identity(&mut self, identity: ClientIdentity) {
+        match *self {
+            Initiator(ref mut s) => s.identity = identity,
+            Responder(ref mut s) => s.identity = identity,
+        }
+    }
 
     /// Return our permanent keypair.
-    fn permanent_key(&self) -> &KeyStore;
+    fn permanent_key(&self) -> &KeyStore {
+        match *self {
+            Initiator(ref s) => &s.permanent_key,
+            Responder(ref s) => &s.permanent_key,
+        }
+    }
+
+    /// Return our auth token.
+    pub fn auth_token(&self) -> Option<&AuthToken> {
+        match *self {
+            Initiator(ref s) => s.auth_token.as_ref(),
+            Responder(ref s) => s.auth_token.as_ref(),
+        }
+    }
 
     /// Return the server context.
-    fn server(&self) -> &ServerContext;
+    fn server(&self) -> &ServerContext {
+        match *self {
+            Initiator(ref s) => &s.server,
+            Responder(ref s) => &s.server,
+        }
+    }
 
     /// Return the mutable server context.
-    fn server_mut(&mut self) -> &mut ServerContext;
+    fn server_mut(&mut self) -> &mut ServerContext {
+        match *self {
+            Initiator(ref mut s) => &mut s.server,
+            Responder(ref mut s) => &mut s.server,
+        }
+    }
 
     /// Return the responder with the specified address (if present).
-    fn responder_with_address_mut(&mut self, addr: &Address) -> Option<&mut ResponderContext>;
+    fn responder_with_address_mut(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
+        match *self {
+            Initiator(ref mut s) => s.responders.get_mut(addr),
+            Responder(_) => {
+                warn!("Called responder_with_address_mut on a responder!");
+                None
+            }
+        }
+    }
 
-    /// The peer context
-    ///
-    /// This only returns a value if the client-to-client handshake is
-    /// finished.
-    fn peer(&self) -> Option<&Self::Peer>;
+//    /// The peer context
+//    ///
+//    /// This only returns a value if the client-to-client handshake is
+//    /// finished.
+//    fn peer(&self) -> Option<&Self::Peer>;
 
     /// Handle an incoming message.
-    fn handle_message(&mut self, bbox: ByteBox) -> Vec<HandleAction> {
+    pub fn handle_message(&mut self, bbox: ByteBox) -> Vec<HandleAction> {
         // Do the state transition
         let transition = self.next_state(bbox);
         trace!("Server handshake state transition: {:?} -> {:?}", self.server().handshake_state, transition.state);
@@ -432,7 +507,10 @@ pub trait Signaling {
         // TODO: Implement
 
         // Moreover, the client MUST do some checks depending on its role
-        if let Err(errmsg) = self.handle_server_auth_by_role(&msg) {
+        if let Err(errmsg) = match *self {
+            Initiator(ref mut s) => s.handle_server_auth(&msg),
+            Responder(ref mut s) => s.handle_server_auth(&msg),
+        } {
             return ServerHandshakeState::Failure(errmsg).into();
         }
 
@@ -443,10 +521,6 @@ pub trait Signaling {
             actions: vec![],
         }
     }
-
-    /// Handle the role specific parts of an incoming
-    /// [`ServerAuth`](messages/struct.ServerAuth.html) message.
-    fn handle_server_auth_by_role(&mut self, msg: &ServerAuth) -> Result<(), String>;
 }
 
 
@@ -486,44 +560,8 @@ impl InitiatorSignaling {
             responders: HashMap::new(),
         }
     }
-}
 
-impl Signaling for InitiatorSignaling {
-    type Peer = ResponderContext;
-
-    fn role(&self) -> Role {
-        Role::Initiator
-    }
-
-    fn identity(&self) -> ClientIdentity {
-        self.identity
-    }
-
-    fn set_identity(&mut self, identity: ClientIdentity) {
-        self.identity = identity;
-    }
-
-    fn permanent_key(&self) -> &KeyStore {
-        &self.permanent_key
-    }
-
-    fn server(&self) -> &ServerContext {
-        &self.server
-    }
-
-    fn server_mut(&mut self) -> &mut ServerContext {
-        &mut self.server
-    }
-
-    fn peer(&self) -> Option<&Self::Peer> {
-        None
-    }
-
-    fn responder_with_address_mut(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
-        self.responders.get_mut(addr)
-    }
-
-    fn handle_server_auth_by_role(&mut self, msg: &ServerAuth) -> Result<(), String> {
+    fn handle_server_auth(&mut self, msg: &ServerAuth) -> Result<(), String> {
         // In case the client is the initiator, it SHALL check
         // that the responders field is set and contains an
         // Array of responder identities.
@@ -593,44 +631,8 @@ impl ResponderSignaling {
             auth_token: None,
         }
     }
-}
 
-impl Signaling for ResponderSignaling {
-    type Peer = InitiatorContext;
-
-    fn role(&self) -> Role {
-        Role::Responder
-    }
-
-    fn identity(&self) -> ClientIdentity {
-        self.identity
-    }
-
-    fn set_identity(&mut self, identity: ClientIdentity) {
-        self.identity = identity;
-    }
-
-    fn permanent_key(&self) -> &KeyStore {
-        &self.permanent_key
-    }
-
-    fn server(&self) -> &ServerContext {
-        &self.server
-    }
-
-    fn server_mut(&mut self) -> &mut ServerContext {
-        &mut self.server
-    }
-
-    fn peer(&self) -> Option<&Self::Peer> {
-        None
-    }
-
-    fn responder_with_address_mut(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
-        None
-    }
-
-    fn handle_server_auth_by_role(&mut self, msg: &ServerAuth) -> Result<(), String> {
+    fn handle_server_auth(&mut self, msg: &ServerAuth) -> Result<(), String> {
         // In case the client is the responder, it SHALL check
         // that the initiator_connected field contains a
         // boolean value.
@@ -646,145 +648,6 @@ impl Signaling for ResponderSignaling {
             },
             None => {
                 return Err("we're a responder, but the `initiator_connected` field in the server-auth message is not set".into());
-            },
-        }
-        Ok(())
-    }
-}
-
-/// All signaling related data.
-pub struct TmpSignaling {
-    pub role: Role, // TODO: Redundant?
-
-    // Our permanent keypair
-    pub permanent_key: KeyStore,
-
-    // An optional auth token
-    pub auth_token: Option<AuthToken>,
-
-    // The assigned client identity
-    pub identity: ClientIdentity,
-
-    // The server context
-    pub server: ServerContext,
-
-    // The list of responders
-    pub responders: HashMap<Address, ResponderContext>,
-}
-
-impl TmpSignaling {
-    pub fn new(role: Role, permanent_key: KeyStore) -> Self {
-        TmpSignaling {
-            role: role,
-            identity: ClientIdentity::Unknown,
-            server: ServerContext::new(),
-            permanent_key: permanent_key,
-            auth_token: match role {
-                Role::Initiator => Some(AuthToken::new()),
-                Role::Responder => None,
-            },
-            responders: HashMap::new(),
-        }
-    }
-}
-
-impl Signaling for TmpSignaling {
-    type Peer = TmpPeer;
-
-    fn role(&self) -> Role {
-        self.role
-    }
-
-    fn identity(&self) -> ClientIdentity {
-        self.identity
-    }
-
-    fn set_identity(&mut self, identity: ClientIdentity) {
-        self.identity = identity;
-    }
-
-    fn permanent_key(&self) -> &KeyStore {
-        &self.permanent_key
-    }
-
-    fn server(&self) -> &ServerContext {
-        &self.server
-    }
-
-    fn server_mut(&mut self) -> &mut ServerContext {
-        &mut self.server
-    }
-
-    fn peer(&self) -> Option<&Self::Peer> {
-        None
-    }
-
-    fn responder_with_address_mut(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
-        self.responders.get_mut(addr)
-    }
-
-    fn handle_server_auth_by_role(&mut self, msg: &ServerAuth) -> Result<(), String> {
-        match self.role {
-            Role::Initiator => {
-                // In case the client is the initiator, it SHALL check
-                // that the responders field is set and contains an
-                // Array of responder identities.
-                if msg.initiator_connected.is_some() {
-                    return Err("we're the initiator, but the `initiator_connected` field in the server-auth message is set".into());
-                }
-                let responders = match msg.responders {
-                    Some(ref responders) => responders,
-                    None => return Err("`responders` field in server-auth message not set".into()),
-                };
-
-                // The responder identities MUST be validated and SHALL
-                // neither contain addresses outside the range
-                // 0x02..0xff
-                let responders_set: HashSet<Address> = responders.iter().cloned().collect();
-                if responders_set.contains(&Address(0x00)) || responders_set.contains(&Address(0x01)) {
-                    return Err("`responders` field in server-auth message may not contain addresses <0x02".into());
-                }
-
-                // ...nor SHALL an address be repeated in the
-                // Array.
-                if responders.len() != responders_set.len() {
-                    return Err("`responders` field in server-auth message may not contain duplicates".into());
-                }
-
-                // An empty Array SHALL be considered valid. However,
-                // Nil SHALL NOT be considered a valid value of that
-                // field.
-                // -> Already covered by Rust's type system.
-
-                // It SHOULD store the responder's identities in its
-                // internal list of responders.
-                for address in responders_set {
-                    self.responders.insert(address, ResponderContext::new(address));
-                }
-
-                // Additionally, the initiator MUST keep its path clean
-                // by following the procedure described in the Path
-                // Cleaning section.
-                // TODO: Implement
-            },
-            Role::Responder => {
-                // In case the client is the responder, it SHALL check
-                // that the initiator_connected field contains a
-                // boolean value.
-                if msg.responders.is_some() {
-                    return Err("we're a responder, but the `responders` field in the server-auth message is set".into());
-                }
-                match msg.initiator_connected {
-                    Some(true) => {
-                        unimplemented!("TODO: Send token or key msg to initiator");
-                    },
-                    Some(false) => {
-                        debug!("No initiator connected so far");
-                    },
-                    None => {
-                        return Err("we're a responder, but the `initiator_connected` field in the server-auth message is not set".into());
-                    },
-                }
             },
         }
         Ok(())
@@ -839,7 +702,7 @@ mod tests {
         #[test]
         fn first_message_wrong_destination() {
             let ks = KeyStore::new().unwrap();
-            let mut s = TmpSignaling::new(Role::Initiator, ks);
+            let mut s = Signaling::new(Role::Initiator, ks);
 
             let msg = ServerHello::random().into_message();
             let cs = CombinedSequenceSnapshot::random();
@@ -847,10 +710,10 @@ mod tests {
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
 
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(bbox);
             assert_eq!(
-                s.server.handshake_state,
+                s.server().handshake_state,
                 ServerHandshakeState::Failure("invalid nonce: bad destination: Address(0x01) (our identity is Unknown)".into())
             );
             // TODO: Check actions for closing
@@ -863,7 +726,7 @@ mod tests {
         #[test]
         fn wrong_source_initiator() {
             let ks = KeyStore::new().unwrap();
-            let mut s = TmpSignaling::new(Role::Initiator, ks);
+            let mut s = Signaling::new(Role::Initiator, ks);
 
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
@@ -875,33 +738,33 @@ mod tests {
             };
 
             // Handling messages from initiator is always invalid
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(make_msg(0x01, 0x00));
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             assert_eq!(actions, vec![]);
 
             // Handling messages from responder is invalid as long as identity
             // hasn't been assigned.
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(make_msg(0xff, 0x00));
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             assert_eq!(actions, vec![]);
 
             // Handling messages from the server is always valid
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(make_msg(0x00, 0x00));
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::ClientInfoSent);
             // Send only client-auth
             assert_eq!(actions.len(), 1);
 
             // Handling messages from responder is valid as soon as the identity
             // has been assigned.
             // TODO once state transition has been implemented
-    //        s.server.handshake_state = ServerHandshakeState::Done;
+    //        s.server_mut().handshake_state = ServerHandshakeState::Done;
     //        s.identity = ClientIdentity::Initiator;
-    //        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+    //        assert_eq!(s.server().handshake_state, ServerHandshakeState::Done);
     //        let actions = s.handle_message(make_msg(0xff, 0x01));
-    //        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+    //        assert_eq!(s.server().handshake_state, ServerHandshakeState::Done);
     //        assert_eq!(actions, vec![]);
         }
 
@@ -912,7 +775,7 @@ mod tests {
         #[test]
         fn wrong_source_responder() {
             let ks = KeyStore::new().unwrap();
-            let mut s = TmpSignaling::new(Role::Responder, ks);
+            let mut s = Signaling::new(Role::Responder, ks);
 
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
@@ -924,33 +787,33 @@ mod tests {
             };
 
             // Handling messages from a responder is always invalid
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(make_msg(0x03, 0x00));
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             assert_eq!(actions, vec![]);
 
             // Handling messages from initiator is invalid as long as identity
             // hasn't been assigned.
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(make_msg(0x01, 0x00));
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             assert_eq!(actions, vec![]);
 
             // Handling messages from the server is always valid
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(make_msg(0x00, 0x00));
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::ClientInfoSent);
             // Send client-hello and client-auth
             assert_eq!(actions.len(), 2);
 
             // Handling messages from initiator is valid as soon as the identity
             // has been assigned.
             // TODO once state transition has been implemented
-    //        s.server.handshake_state = ServerHandshakeState::Done;
+    //        s.server_mut().handshake_state = ServerHandshakeState::Done;
     //        s.identity = ClientIdentity::Initiator;
-    //        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+    //        assert_eq!(s.server().handshake_state, ServerHandshakeState::Done);
     //        let actions = s.handle_message(make_msg(0x01, 0x03));
-    //        assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
+    //        assert_eq!(s.server().handshake_state, ServerHandshakeState::Done);
     //        assert_eq!(actions, vec![]);
         }
 
@@ -959,7 +822,7 @@ mod tests {
         #[test]
         fn first_message_bad_overflow_number() {
             let ks = KeyStore::new().unwrap();
-            let mut s = TmpSignaling::new(Role::Initiator, ks);
+            let mut s = Signaling::new(Role::Initiator, ks);
 
             let msg = ServerHello::random().into_message();
             let cs = CombinedSequenceSnapshot::new(1, 1234);
@@ -967,10 +830,10 @@ mod tests {
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
 
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(bbox);
             assert_eq!(
-                s.server.handshake_state,
+                s.server().handshake_state,
                 ServerHandshakeState::Failure("invalid nonce: first message from server must have set the overflow number to 0".into())
             );
             assert_eq!(actions, vec![]);
@@ -989,18 +852,18 @@ mod tests {
         #[test]
         fn cookie_differs_from_own() {
             let ks = KeyStore::new().unwrap();
-            let mut s = TmpSignaling::new(Role::Initiator, ks);
+            let mut s = Signaling::new(Role::Initiator, ks);
 
             let msg = ServerHello::random().into_message();
-            let cookie = s.server.cookie_pair.ours.clone();
+            let cookie = s.server().cookie_pair.ours.clone();
             let nonce = Nonce::new(cookie, Address(0), Address(0), CombinedSequenceSnapshot::random());
             let obox = OpenBox::new(msg, nonce);
             let bbox = obox.encode();
 
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::New);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::New);
             let actions = s.handle_message(bbox);
             assert_eq!(
-                s.server.handshake_state,
+                s.server().handshake_state,
                 ServerHandshakeState::Failure("invalid nonce: cookie from server is identical to our own cookie".into())
             );
             assert_eq!(actions, vec![]);
@@ -1022,7 +885,7 @@ mod tests {
             pub server_ks: KeyStore,
             pub our_cookie: Cookie,
             pub server_cookie: Cookie,
-            pub signaling: TmpSignaling,
+            pub signaling: Signaling,
         }
 
         fn make_test_signaling(role: Role, identity: ClientIdentity, handshake_state: ServerHandshakeState) -> TestContext {
@@ -1030,14 +893,14 @@ mod tests {
             let server_ks = KeyStore::new().unwrap();
             let our_cookie = Cookie::random();
             let server_cookie = Cookie::random();
-            let mut signaling = TmpSignaling::new(role, KeyStore::from_private_key(our_ks.private_key().clone()));
-            signaling.identity = identity;
-            signaling.server.handshake_state = handshake_state;
-            signaling.server.cookie_pair = CookiePair {
+            let mut signaling = Signaling::new(role, KeyStore::from_private_key(our_ks.private_key().clone()));
+            signaling.set_identity(identity);
+            signaling.server_mut().handshake_state = handshake_state;
+            signaling.server_mut().cookie_pair = CookiePair {
                 ours: our_cookie.clone(),
                 theirs: Some(server_cookie.clone()),
             };
-            signaling.server.permanent_key = Some(server_ks.public_key().clone());
+            signaling.server_mut().permanent_key = Some(server_ks.public_key().clone());
             TestContext {
                 our_ks: our_ks,
                 server_ks: server_ks,
@@ -1056,9 +919,9 @@ mod tests {
         /// Assert that handling the specified byte box fails in ClientInfoSent
         /// state with the specified error message.
         fn assert_client_info_sent_fail(ctx: &mut TestContext, bbox: ByteBox, msg: &str) {
-            assert_eq!(ctx.signaling.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            assert_eq!(ctx.signaling.server().handshake_state, ServerHandshakeState::ClientInfoSent);
             let actions = ctx.signaling.handle_message(bbox);
-            assert_eq!(ctx.signaling.server.handshake_state, ServerHandshakeState::Failure(msg.into()));
+            assert_eq!(ctx.signaling.server().handshake_state, ServerHandshakeState::Failure(msg.into()));
             assert_eq!(actions, vec![]);
         }
 
@@ -1078,9 +941,9 @@ mod tests {
 
             // Handle message
             let mut s = ctx.signaling;
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::ClientInfoSent);
             let actions = s.handle_message(bbox);
-            assert_eq!(s.identity, ClientIdentity::Responder(13));
+            assert_eq!(s.identity(), ClientIdentity::Responder(13));
             assert_eq!(actions, vec![]);
         }
 
@@ -1182,11 +1045,17 @@ mod tests {
 
             // Handle message
             let mut s = ctx.signaling;
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::ClientInfoSent);
-            assert_eq!(s.responders.len(), 0);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::ClientInfoSent);
+            match s {
+                Initiator(ref i) => assert_eq!(i.responders.len(), 0),
+                Responder(_) => panic!("Invalid inner signaling type"),
+            };
             let actions = s.handle_message(bbox);
-            assert_eq!(s.server.handshake_state, ServerHandshakeState::Done);
-            assert_eq!(s.responders.len(), 2);
+            assert_eq!(s.server().handshake_state, ServerHandshakeState::Done);
+            match s {
+                Initiator(ref i) => assert_eq!(i.responders.len(), 2),
+                Responder(_) => panic!("Invalid inner signaling type"),
+            };
             assert_eq!(actions, vec![]);
         }
 
