@@ -173,7 +173,7 @@ pub enum TmpPeer {
 impl PeerContext for TmpPeer {
     fn identity(&self) -> Identity {
         match *self {
-            TmpPeer::Initiator(ref p) => Identity::Initiator,
+            TmpPeer::Initiator(_) => Identity::Initiator,
             TmpPeer::Responder(ref p) => Identity::Responder(p.address.0),
         }
     }
