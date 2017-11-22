@@ -22,7 +22,7 @@ pub(crate) mod nonce;
 pub(crate) mod state;
 pub(crate) mod types;
 
-use self::context::{PeerContext, ServerContext, ResponderContext, TmpPeer};
+use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext, TmpPeer};
 pub use self::cookie::{Cookie};
 use messages::{Message, ClientHello, ClientAuth};
 pub use self::nonce::{Nonce};
@@ -254,6 +254,126 @@ pub enum ValidationResult {
     Fail(String),
 }
 
+
+/// Signaling data for the initiator.
+pub struct InitiatorSignaling {
+    // Our permanent keypair
+    pub permanent_key: KeyStore,
+
+    // An optional auth token
+    pub auth_token: Option<AuthToken>,
+
+    // The assigned client identity
+    pub identity: ClientIdentity,
+
+    // The server context
+    pub server: ServerContext,
+
+    // The list of responders
+    pub responders: HashMap<Address, ResponderContext>,
+}
+
+impl InitiatorSignaling {
+    pub fn new(permanent_key: KeyStore) -> Self {
+        InitiatorSignaling {
+            identity: ClientIdentity::Unknown,
+            server: ServerContext::new(),
+            permanent_key: permanent_key,
+            auth_token: Some(AuthToken::new()),
+            responders: HashMap::new(),
+        }
+    }
+}
+
+impl Signaling for InitiatorSignaling {
+    type Peer = ResponderContext;
+
+    fn role(&self) -> Role {
+        Role::Initiator
+    }
+
+    fn identity(&self) -> ClientIdentity {
+        self.identity
+    }
+
+    fn set_identity(&mut self, identity: ClientIdentity) {
+        self.identity = identity;
+    }
+
+    fn server(&self) -> &ServerContext {
+        &self.server
+    }
+
+    fn server_mut(&mut self) -> &mut ServerContext {
+        &mut self.server
+    }
+
+    fn peer(&self) -> Option<&Self::Peer> {
+        None
+    }
+
+    fn responder_with_address(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
+        self.responders.get_mut(addr)
+    }
+}
+
+/// Signaling data for the responder.
+pub struct ResponderSignaling {
+    // Our permanent keypair
+    pub permanent_key: KeyStore,
+
+    // An optional auth token
+    pub auth_token: Option<AuthToken>,
+
+    // The assigned client identity
+    pub identity: ClientIdentity,
+
+    // The server context
+    pub server: ServerContext,
+}
+
+impl ResponderSignaling {
+    pub fn new(permanent_key: KeyStore) -> Self {
+        ResponderSignaling {
+            identity: ClientIdentity::Unknown,
+            server: ServerContext::new(),
+            permanent_key: permanent_key,
+            auth_token: None,
+        }
+    }
+}
+
+impl Signaling for ResponderSignaling {
+    type Peer = InitiatorContext;
+
+    fn role(&self) -> Role {
+        Role::Responder
+    }
+
+    fn identity(&self) -> ClientIdentity {
+        self.identity
+    }
+
+    fn set_identity(&mut self, identity: ClientIdentity) {
+        self.identity = identity;
+    }
+
+    fn server(&self) -> &ServerContext {
+        &self.server
+    }
+
+    fn server_mut(&mut self) -> &mut ServerContext {
+        &mut self.server
+    }
+
+    fn peer(&self) -> Option<&Self::Peer> {
+        None
+    }
+
+    fn responder_with_address(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
+        None
+    }
+}
 
 /// All signaling related data.
 pub struct TmpSignaling {
