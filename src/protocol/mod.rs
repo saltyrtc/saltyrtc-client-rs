@@ -35,26 +35,26 @@ use self::state::{ServerHandshakeState, StateTransition};
 pub trait Signaling {
     type Peer: PeerContext;
 
-    /// Return our role, either initiator or responder
+    /// Return our role, either initiator or responder.
     fn role(&self) -> Role;
 
-    /// Return our assigned client identity
+    /// Return our assigned client identity.
     fn identity(&self) -> ClientIdentity;
 
-    /// Set the client identity
+    /// Set the client identity.
     fn set_identity(&mut self, identity: ClientIdentity);
 
-    /// Return our permanent keypair
+    /// Return our permanent keypair.
     fn permanent_key(&self) -> &KeyStore;
 
-    /// Return the server context
+    /// Return the server context.
     fn server(&self) -> &ServerContext;
 
-    /// Return the mutable server context
+    /// Return the mutable server context.
     fn server_mut(&mut self) -> &mut ServerContext;
 
     /// Return the responder with the specified address (if present).
-    fn responder_with_address(&mut self, addr: &Address) -> Option<&mut ResponderContext>;
+    fn responder_with_address_mut(&mut self, addr: &Address) -> Option<&mut ResponderContext>;
 
     /// The peer context
     ///
@@ -150,7 +150,7 @@ pub trait Signaling {
             0x00 => self.server_mut(),
             0x01 => unimplemented!(),
             addr @ 0x02...0xff => {
-                match self.responder_with_address(&nonce.source()) {
+                match self.responder_with_address_mut(&nonce.source()) {
                     Some(responder) => responder,
                     None => return ValidationResult::Fail(format!("could not find responder with address {}", addr)),
                 }
@@ -408,7 +408,7 @@ impl Signaling for InitiatorSignaling {
         None
     }
 
-    fn responder_with_address(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
+    fn responder_with_address_mut(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
         self.responders.get_mut(addr)
     }
 }
@@ -470,7 +470,7 @@ impl Signaling for ResponderSignaling {
         None
     }
 
-    fn responder_with_address(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
+    fn responder_with_address_mut(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
         None
     }
 }
@@ -714,7 +714,7 @@ impl Signaling for TmpSignaling {
         None
     }
 
-    fn responder_with_address(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
+    fn responder_with_address_mut(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
         self.responders.get_mut(addr)
     }
 }
