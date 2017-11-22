@@ -272,6 +272,70 @@ pub trait Signaling {
         }
     }
 
+    /// Handle an incoming [`ServerHello`](messages/struct.ServerHello.html) message.
+    fn handle_server_hello(&mut self, msg: ServerHello) -> StateTransition<ServerHandshakeState> {
+        debug!("Received server-hello");
+
+        let mut actions = Vec::with_capacity(2);
+
+        // Set the server public permanent key
+        trace!("Server permanent key is {:?}", msg.key);
+        if self.server().permanent_key.is_some() {
+            return ServerHandshakeState::Failure("Server permanent key is already set".into()).into();
+        }
+        self.server_mut().permanent_key = Some(msg.key);
+
+        // Reply with client-hello message if we're a responder
+        if self.role() == Role::Responder {
+            let key = self.permanent_key().public_key();
+            let client_hello = ClientHello::new(*key).into_message();
+            let client_hello_nonce = Nonce::new(
+                self.server().cookie_pair().ours.clone(),
+                self.identity().into(),
+                self.server().identity().into(),
+                match self.server().csn_pair().borrow_mut().ours.increment() {
+                    Ok(snapshot) => snapshot,
+                    Err(e) => return ServerHandshakeState::Failure(format!("Could not increment CSN: {}", e)).into(),
+                },
+            );
+            let reply = OpenBox::new(client_hello, client_hello_nonce);
+            debug!("Enqueuing client-hello");
+            actions.push(HandleAction::Reply(reply.encode()));
+        }
+
+        // Send client-auth message
+        let client_auth = ClientAuth {
+            your_cookie: self.server().cookie_pair().theirs.clone().unwrap(),
+            subprotocols: vec![::SUBPROTOCOL.into()],
+            ping_interval: 0, // TODO
+            your_key: None, // TODO
+        }.into_message();
+        let client_auth_nonce = Nonce::new(
+            self.server().cookie_pair().ours.clone(),
+            self.identity().into(),
+            self.server().identity().into(),
+            match self.server().csn_pair().borrow_mut().ours.increment() {
+                Ok(snapshot) => snapshot,
+                Err(e) => return ServerHandshakeState::Failure(format!("Could not increment CSN: {}", e)).into(),
+            },
+        );
+        let reply = OpenBox::new(client_auth, client_auth_nonce);
+        match self.server().permanent_key {
+            Some(ref pubkey) => {
+                debug!("Enqueuing client-auth");
+                actions.push(HandleAction::Reply(reply.encrypt(&self.permanent_key(), pubkey)));
+            },
+            None => return ServerHandshakeState::Failure("Missing server permanent key".into()).into(),
+        };
+
+        // TODO: Can we prevent confusing an incoming and an outgoing nonce?
+        StateTransition {
+            state: ServerHandshakeState::ClientInfoSent,
+            actions: actions,
+        }
+    }
+
+
 }
 
 
@@ -458,69 +522,6 @@ impl TmpSignaling {
 
         // Return the action
         transition.actions
-    }
-
-    /// Handle an incoming [`ServerHello`](messages/struct.ServerHello.html) message.
-    fn handle_server_hello(&mut self, msg: ServerHello) -> StateTransition<ServerHandshakeState> {
-        debug!("Received server-hello");
-
-        let mut actions = Vec::with_capacity(2);
-
-        // Set the server public permanent key
-        trace!("Server permanent key is {:?}", msg.key);
-        if self.server.permanent_key.is_some() {
-            return ServerHandshakeState::Failure("Server permanent key is already set".into()).into();
-        }
-        self.server.permanent_key = Some(msg.key);
-
-        // Reply with client-hello message if we're a responder
-        if self.role == Role::Responder {
-            let key = self.permanent_key.public_key();
-            let client_hello = ClientHello::new(*key).into_message();
-            let client_hello_nonce = Nonce::new(
-                self.server.cookie_pair().ours.clone(),
-                self.identity.into(),
-                self.server.identity().into(),
-                match self.server.csn_pair().borrow_mut().ours.increment() {
-                    Ok(snapshot) => snapshot,
-                    Err(e) => return ServerHandshakeState::Failure(format!("Could not increment CSN: {}", e)).into(),
-                },
-            );
-            let reply = OpenBox::new(client_hello, client_hello_nonce);
-            debug!("Enqueuing client-hello");
-            actions.push(HandleAction::Reply(reply.encode()));
-        }
-
-        // Send client-auth message
-        let client_auth = ClientAuth {
-            your_cookie: self.server.cookie_pair().theirs.clone().unwrap(),
-            subprotocols: vec![::SUBPROTOCOL.into()],
-            ping_interval: 0, // TODO
-            your_key: None, // TODO
-        }.into_message();
-        let client_auth_nonce = Nonce::new(
-            self.server.cookie_pair().ours.clone(),
-            self.identity.into(),
-            self.server.identity().into(),
-            match self.server.csn_pair().borrow_mut().ours.increment() {
-                Ok(snapshot) => snapshot,
-                Err(e) => return ServerHandshakeState::Failure(format!("Could not increment CSN: {}", e)).into(),
-            },
-        );
-        let reply = OpenBox::new(client_auth, client_auth_nonce);
-        match self.server.permanent_key {
-            Some(ref pubkey) => {
-                debug!("Enqueuing client-auth");
-                actions.push(HandleAction::Reply(reply.encrypt(&self.permanent_key, pubkey)));
-            },
-            None => return ServerHandshakeState::Failure("Missing server permanent key".into()).into(),
-        };
-
-        // TODO: Can we prevent confusing an incoming and an outgoing nonce?
-        StateTransition {
-            state: ServerHandshakeState::ClientInfoSent,
-            actions: actions,
-        }
     }
 
     /// Handle an incoming [`ServerAuth`](messages/struct.ServerAuth.html) message.
