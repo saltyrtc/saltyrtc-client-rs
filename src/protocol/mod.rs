@@ -62,6 +62,71 @@ pub trait Signaling {
     /// finished.
     fn peer(&self) -> Option<&Self::Peer>;
 
+    /// Handle an incoming message.
+    fn handle_message(&mut self, bbox: ByteBox) -> Vec<HandleAction> {
+        // Do the state transition
+        let transition = self.next_state(bbox);
+        trace!("Server handshake state transition: {:?} -> {:?}", self.server().handshake_state, transition.state);
+        if let ServerHandshakeState::Failure(ref msg) = transition.state {
+            warn!("Server handshake failure: {}", msg);
+        }
+        self.server_mut().handshake_state = transition.state;
+
+        // Return the action
+        transition.actions
+    }
+
+    /// Determine the next state based on the incoming message bytes and the
+    /// current state.
+    ///
+    /// This method call may have some side effects, like updates in the peer
+    /// context (cookie, CSN, etc).
+    fn next_state(&mut self, bbox: ByteBox) -> StateTransition<ServerHandshakeState> {
+        // Validate the nonce
+        match self.validate_nonce(&bbox.nonce) {
+            // It's valid! Carry on.
+            ValidationResult::Ok => {},
+
+            // Drop and ignore some of the messages
+            ValidationResult::DropMsg(warning) => {
+                warn!("invalid nonce: {}", warning);
+                return self.server().handshake_state.clone().into();
+            },
+
+            // Nonce is invalid, fail the signaling
+            ValidationResult::Fail(reason) => {
+                return ServerHandshakeState::Failure(format!("invalid nonce: {}", reason)).into();
+            },
+        }
+
+        // Decode message
+        let obox: OpenBox = match self.decode_msg(bbox) {
+            Ok(obox) => obox,
+            Err(msg) => return ServerHandshakeState::Failure(msg).into(),
+        };
+
+        let old_state = self.server().handshake_state.clone();
+        match (old_state, obox.message) {
+
+            // Valid state transitions
+            (ServerHandshakeState::New, Message::ServerHello(msg)) =>
+                self.handle_server_hello(msg),
+            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
+                self.handle_server_auth(msg),
+
+            // A failure transition is terminal and does not change
+            (f @ ServerHandshakeState::Failure(_), _) => f.into(),
+
+            // Any undefined state transition changes to Failure
+            (s, message) => {
+                ServerHandshakeState::Failure(
+                    format!("Invalid state transition: {:?} <- {}", s, message.get_type())
+                ).into()
+            }
+
+        }
+    }
+
     /// Validate the nonce
     fn validate_nonce(&mut self, nonce: &Nonce) -> ValidationResult {
 		// A client MUST check that the destination address targets its
@@ -619,71 +684,6 @@ impl TmpSignaling {
                 Role::Responder => None,
             },
             responders: HashMap::new(),
-        }
-    }
-
-    /// Handle an incoming message.
-    pub fn handle_message(&mut self, bbox: ByteBox) -> Vec<HandleAction> {
-        // Do the state transition
-        let transition = self.next_state(bbox);
-        trace!("Server handshake state transition: {:?} -> {:?}", self.server().handshake_state, transition.state);
-        if let ServerHandshakeState::Failure(ref msg) = transition.state {
-            warn!("Server handshake failure: {}", msg);
-        }
-        self.server.handshake_state = transition.state;
-
-        // Return the action
-        transition.actions
-    }
-
-    /// Determine the next state based on the incoming message bytes and the
-    /// current state.
-    ///
-    /// This method call may have some side effects, like updates in the peer
-    /// context (cookie, CSN, etc).
-    fn next_state(&mut self, bbox: ByteBox) -> StateTransition<ServerHandshakeState> {
-        // Validate the nonce
-        match self.validate_nonce(&bbox.nonce) {
-            // It's valid! Carry on.
-            ValidationResult::Ok => {},
-
-            // Drop and ignore some of the messages
-            ValidationResult::DropMsg(warning) => {
-                warn!("invalid nonce: {}", warning);
-                return self.server.handshake_state.clone().into();
-            },
-
-            // Nonce is invalid, fail the signaling
-            ValidationResult::Fail(reason) => {
-                return ServerHandshakeState::Failure(format!("invalid nonce: {}", reason)).into();
-            },
-        }
-
-        // Decode message
-        let obox: OpenBox = match self.decode_msg(bbox) {
-            Ok(obox) => obox,
-            Err(msg) => return ServerHandshakeState::Failure(msg).into(),
-        };
-
-        let old_state = self.server.handshake_state.clone();
-        match (old_state, obox.message) {
-
-            // Valid state transitions
-            (ServerHandshakeState::New, Message::ServerHello(msg)) =>
-                self.handle_server_hello(msg),
-            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
-                self.handle_server_auth(msg),
-
-            // A failure transition is terminal and does not change
-            (f @ ServerHandshakeState::Failure(_), _) => f.into(),
-
-            // Any undefined state transition changes to Failure
-            (s, message) => {
-                ServerHandshakeState::Failure(
-                    format!("Invalid state transition: {:?} <- {}", s, message.get_type())
-                ).into()
-            }
-
         }
     }
 }

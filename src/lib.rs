@@ -57,7 +57,7 @@ pub use protocol::{Role, messages};
 // Internal imports
 use errors::{Result, Error};
 use helpers::libsodium_init;
-use protocol::{HandleAction, TmpSignaling};
+use protocol::{HandleAction, Signaling, TmpSignaling};
 
 
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
