@@ -24,7 +24,7 @@ pub(crate) mod types;
 
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext, TmpPeer};
 pub use self::cookie::{Cookie};
-use messages::{Message, ServerHello, ClientHello, ClientAuth};
+use messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth};
 pub use self::nonce::{Nonce};
 pub use self::types::{Role, HandleAction};
 use self::types::{ClientIdentity, Address};
@@ -460,7 +460,10 @@ impl TmpSignaling {
         transition.actions
     }
 
+    /// Handle an incoming [`ServerHello`](messages/struct.ServerHello.html) message.
     fn handle_server_hello(&mut self, msg: ServerHello) -> StateTransition<ServerHandshakeState> {
+        debug!("Received server-hello");
+
         let mut actions = Vec::with_capacity(2);
 
         // Set the server public permanent key
@@ -520,6 +523,113 @@ impl TmpSignaling {
         }
     }
 
+    /// Handle an incoming [`ServerAuth`](messages/struct.ServerAuth.html) message.
+    fn handle_server_auth(&mut self, msg: ServerAuth) -> StateTransition<ServerHandshakeState> {
+        debug!("Received server-auth");
+
+        // When the client receives a 'server-auth' message, it MUST
+        // have accepted and set its identity as described in the
+        // Receiving a Signalling Message section.
+        if self.identity == ClientIdentity::Unknown {
+            return ServerHandshakeState::Failure("No identity assigned".into()).into();
+        }
+
+        // It MUST check that the cookie provided in the your_cookie
+        // field contains the cookie the client has used in its
+        // previous and messages to the server.
+        if msg.your_cookie != self.server.cookie_pair().ours {
+            trace!("Our cookie as sent by server: {:?}", msg.your_cookie);
+            trace!("Our actual cookie: {:?}", self.server.cookie_pair().ours);
+            return ServerHandshakeState::Failure("cookie sent in server-auth message does not match our cookie".into()).into();
+        }
+
+        // If the client has knowledge of the server's public permanent
+        // key, it SHALL decrypt the signed_keys field by using the
+        // message's nonce, the client's private permanent key and the
+        // server's public permanent key. The decrypted message MUST
+        // match the concatenation of the server's public session key
+        // and the client's public permanent key (in that order). If
+        // the signed_keys is present but the client does not have
+        // knowledge of the server's permanent key, it SHALL log a
+        // warning.
+        // TODO: Implement
+
+        // Moreover, the client MUST do the following checks depending on its role:
+        match self.role {
+            Role::Initiator => {
+                // In case the client is the initiator, it SHALL check
+                // that the responders field is set and contains an
+                // Array of responder identities.
+                if msg.initiator_connected.is_some() {
+                    let msg = "we're the initiator, but the `initiator_connected` field in the server-auth message is set".into();
+                    return ServerHandshakeState::Failure(msg).into();
+                }
+                let responders = match msg.responders {
+                    Some(responders) => responders,
+                    None => return ServerHandshakeState::Failure("`responders` field in server-auth message not set".into()).into(),
+                };
+
+                // The responder identities MUST be validated and SHALL
+                // neither contain addresses outside the range
+                // 0x02..0xff
+                let responders_set: HashSet<Address> = responders.iter().cloned().collect();
+                if responders_set.contains(&Address(0x00)) || responders_set.contains(&Address(0x01)) {
+                    return ServerHandshakeState::Failure("`responders` field in server-auth message may not contain addresses <0x02".into()).into();
+                }
+
+                // ...nor SHALL an address be repeated in the
+                // Array.
+                if responders.len() != responders_set.len() {
+                    return ServerHandshakeState::Failure("`responders` field in server-auth message may not contain duplicates".into()).into();
+                }
+
+                // An empty Array SHALL be considered valid. However,
+                // Nil SHALL NOT be considered a valid value of that
+                // field.
+                // -> Already covered by Rust's type system.
+
+                // It SHOULD store the responder's identities in its
+                // internal list of responders.
+                for address in responders_set {
+                    self.responders.insert(address, ResponderContext::new(address));
+                }
+
+                // Additionally, the initiator MUST keep its path clean
+                // by following the procedure described in the Path
+                // Cleaning section.
+                // TODO: Implement
+            },
+            Role::Responder => {
+                // In case the client is the responder, it SHALL check
+                // that the initiator_connected field contains a
+                // boolean value.
+                if msg.responders.is_some() {
+                    let msg = "we're a responder, but the `responders` field in the server-auth message is set".into();
+                    return ServerHandshakeState::Failure(msg).into();
+                }
+                match msg.initiator_connected {
+                    Some(true) => {
+                        unimplemented!("TODO: Send token or key msg to initiator");
+                    },
+                    Some(false) => {
+                        debug!("No initiator connected so far");
+                    },
+                    None => {
+                        let msg = "we're a responder, but the `initiator_connected` field in the server-auth message is not set".into();
+                        return ServerHandshakeState::Failure(msg).into();
+                    },
+                }
+            },
+        }
+
+        info!("Server handshake completed");
+
+        StateTransition {
+            state: ServerHandshakeState::Done,
+            actions: vec![],
+        }
+    }
+
     /// Determine the next state based on the incoming message bytes and the
     /// current state.
     ///
@@ -553,116 +663,10 @@ impl TmpSignaling {
         match (old_state, obox.message) {
 
             // Valid state transitions
-            (ServerHandshakeState::New, Message::ServerHello(msg)) => {
-                debug!("Received server-hello");
-                self.handle_server_hello(msg)
-            },
-
-            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) => {
-                debug!("Received server-auth");
-
-                // When the client receives a 'server-auth' message, it MUST
-                // have accepted and set its identity as described in the
-                // Receiving a Signalling Message section.
-                if self.identity == ClientIdentity::Unknown {
-                    return ServerHandshakeState::Failure("No identity assigned".into()).into();
-                }
-
-                // It MUST check that the cookie provided in the your_cookie
-                // field contains the cookie the client has used in its
-                // previous and messages to the server.
-                if msg.your_cookie != self.server.cookie_pair().ours {
-                    trace!("Our cookie as sent by server: {:?}", msg.your_cookie);
-                    trace!("Our actual cookie: {:?}", self.server.cookie_pair().ours);
-                    return ServerHandshakeState::Failure("cookie sent in server-auth message does not match our cookie".into()).into();
-                }
-
-                // If the client has knowledge of the server's public permanent
-                // key, it SHALL decrypt the signed_keys field by using the
-                // message's nonce, the client's private permanent key and the
-                // server's public permanent key. The decrypted message MUST
-                // match the concatenation of the server's public session key
-                // and the client's public permanent key (in that order). If
-                // the signed_keys is present but the client does not have
-                // knowledge of the server's permanent key, it SHALL log a
-                // warning.
-                // TODO: Implement
-
-                // Moreover, the client MUST do the following checks depending on its role:
-                match self.role {
-                    Role::Initiator => {
-                        // In case the client is the initiator, it SHALL check
-                        // that the responders field is set and contains an
-                        // Array of responder identities.
-                        if msg.initiator_connected.is_some() {
-                            let msg = "we're the initiator, but the `initiator_connected` field in the server-auth message is set".into();
-                            return ServerHandshakeState::Failure(msg).into();
-                        }
-                        let responders = match msg.responders {
-                            Some(responders) => responders,
-                            None => return ServerHandshakeState::Failure("`responders` field in server-auth message not set".into()).into(),
-                        };
-
-                        // The responder identities MUST be validated and SHALL
-                        // neither contain addresses outside the range
-                        // 0x02..0xff
-                        let responders_set: HashSet<Address> = responders.iter().cloned().collect();
-                        if responders_set.contains(&Address(0x00)) || responders_set.contains(&Address(0x01)) {
-                            return ServerHandshakeState::Failure("`responders` field in server-auth message may not contain addresses <0x02".into()).into();
-                        }
-
-                        // ...nor SHALL an address be repeated in the
-                        // Array.
-                        if responders.len() != responders_set.len() {
-                            return ServerHandshakeState::Failure("`responders` field in server-auth message may not contain duplicates".into()).into();
-                        }
-
-                        // An empty Array SHALL be considered valid. However,
-                        // Nil SHALL NOT be considered a valid value of that
-                        // field.
-                        // -> Already covered by Rust's type system.
-
-                        // It SHOULD store the responder's identities in its
-                        // internal list of responders.
-                        for address in responders_set {
-                            self.responders.insert(address, ResponderContext::new(address));
-                        }
-
-                        // Additionally, the initiator MUST keep its path clean
-                        // by following the procedure described in the Path
-                        // Cleaning section.
-                        // TODO: Implement
-                    },
-                    Role::Responder => {
-                        // In case the client is the responder, it SHALL check
-                        // that the initiator_connected field contains a
-                        // boolean value.
-                        if msg.responders.is_some() {
-                            let msg = "we're a responder, but the `responders` field in the server-auth message is set".into();
-                            return ServerHandshakeState::Failure(msg).into();
-                        }
-                        match msg.initiator_connected {
-                            Some(true) => {
-                                unimplemented!("TODO: Send token or key msg to initiator");
-                            },
-                            Some(false) => {
-                                debug!("No initiator connected so far");
-                            },
-                            None => {
-                                let msg = "we're a responder, but the `initiator_connected` field in the server-auth message is not set".into();
-                                return ServerHandshakeState::Failure(msg).into();
-                            },
-                        }
-                    },
-                }
-
-                info!("Server handshake completed");
-
-                StateTransition {
-                    state: ServerHandshakeState::Done,
-                    actions: vec![],
-                }
-            },
+            (ServerHandshakeState::New, Message::ServerHello(msg)) =>
+                self.handle_server_hello(msg),
+            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
+                self.handle_server_auth(msg),
 
             // A failure transition is terminal and does not change
             (f @ ServerHandshakeState::Failure(_), _) => f.into(),
@@ -670,7 +674,7 @@ impl TmpSignaling {
             // Any undefined state transition changes to Failure
             (s, message) => {
                 ServerHandshakeState::Failure(
-                    format!("Invalid event transition: {:?} <- {}", s, message.get_type())
+                    format!("Invalid state transition: {:?} <- {}", s, message.get_type())
                 ).into()
             }
 
