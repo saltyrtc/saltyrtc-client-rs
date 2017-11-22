@@ -55,6 +55,16 @@ impl From<ResponderSignaling> for Signaling {
 /// Make it possible to reference the enum variants directly
 use Signaling::{Initiator, Responder};
 
+/// Macro to simplify repetitive enum matching.
+macro_rules! on_inner {
+    ($self:expr, $var:pat, $expr:expr) => {{
+        match *$self {
+            Signaling::Initiator($var) => $expr,
+            Signaling::Responder($var) => $expr,
+        }
+    }}
+}
+
 impl Signaling {
     /// Create a new signaling instance.
     pub fn new(role: Role, permanent_key: KeyStore) -> Self {
@@ -74,50 +84,32 @@ impl Signaling {
 
     /// Return our assigned client identity.
     fn identity(&self) -> ClientIdentity {
-        match *self {
-            Initiator(ref s) => s.identity,
-            Responder(ref s) => s.identity,
-        }
+        on_inner!(self, ref s, s.identity)
     }
 
     /// Set the client identity.
     fn set_identity(&mut self, identity: ClientIdentity) {
-        match *self {
-            Initiator(ref mut s) => s.identity = identity,
-            Responder(ref mut s) => s.identity = identity,
-        }
+        on_inner!(self, ref mut s, s.identity = identity);
     }
 
     /// Return our permanent keypair.
     fn permanent_key(&self) -> &KeyStore {
-        match *self {
-            Initiator(ref s) => &s.permanent_key,
-            Responder(ref s) => &s.permanent_key,
-        }
+        on_inner!(self, ref s, &s.permanent_key)
     }
 
     /// Return our auth token.
     pub fn auth_token(&self) -> Option<&AuthToken> {
-        match *self {
-            Initiator(ref s) => s.auth_token.as_ref(),
-            Responder(ref s) => s.auth_token.as_ref(),
-        }
+        on_inner!(self, ref s, s.auth_token.as_ref())
     }
 
     /// Return the server context.
     fn server(&self) -> &ServerContext {
-        match *self {
-            Initiator(ref s) => &s.server,
-            Responder(ref s) => &s.server,
-        }
+        on_inner!(self, ref s, &s.server)
     }
 
     /// Return the mutable server context.
     fn server_mut(&mut self) -> &mut ServerContext {
-        match *self {
-            Initiator(ref mut s) => &mut s.server,
-            Responder(ref mut s) => &mut s.server,
-        }
+        on_inner!(self, ref mut s, &mut s.server)
     }
 
     /// Return the responder with the specified address (if present).
@@ -507,10 +499,7 @@ impl Signaling {
         // TODO: Implement
 
         // Moreover, the client MUST do some checks depending on its role
-        if let Err(errmsg) = match *self {
-            Initiator(ref mut s) => s.handle_server_auth(&msg),
-            Responder(ref mut s) => s.handle_server_auth(&msg),
-        } {
+        if let Err(errmsg) = on_inner!(self, ref mut s, s.handle_server_auth(&msg)) {
             return ServerHandshakeState::Failure(errmsg).into();
         }
 
