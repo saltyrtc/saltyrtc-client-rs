@@ -22,9 +22,10 @@ pub(crate) mod nonce;
 pub(crate) mod state;
 pub(crate) mod types;
 
-use self::context::{PeerContext, ServerContext, ResponderContext};
+use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub use self::cookie::{Cookie};
 use messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth};
+use messages::{Token, Key};
 pub use self::nonce::{Nonce};
 pub use self::types::{Role, HandleAction};
 use self::types::{ClientIdentity, Address};
@@ -501,15 +502,16 @@ impl Signaling {
         // TODO: Implement
 
         // Moreover, the client MUST do some checks depending on its role
-        if let Err(errmsg) = on_inner!(self, ref mut s, s.handle_server_auth(&msg)) {
-            return ServerHandshakeState::Failure(errmsg).into();
-        }
+        let actions = match on_inner!(self, ref mut s, s.handle_server_auth(&msg)) {
+            Ok(actions) => actions,
+            Err(errmsg) => return ServerHandshakeState::Failure(errmsg).into(),
+        };
 
         info!("Server handshake completed");
 
         StateTransition {
             state: ServerHandshakeState::Done,
-            actions: vec![],
+            actions: actions,
         }
     }
 }
@@ -552,7 +554,7 @@ impl InitiatorSignaling {
         }
     }
 
-    fn handle_server_auth(&mut self, msg: &ServerAuth) -> Result<(), String> {
+    fn handle_server_auth(&mut self, msg: &ServerAuth) -> Result<Vec<HandleAction>, String> {
         // In case the client is the initiator, it SHALL check
         // that the responders field is set and contains an
         // Array of responder identities.
@@ -594,7 +596,7 @@ impl InitiatorSignaling {
         // Cleaning section.
         // TODO: Implement
 
-        Ok(())
+        Ok(vec![])
     }
 }
 
@@ -611,6 +613,9 @@ pub struct ResponderSignaling {
 
     // The server context
     pub server: ServerContext,
+
+    // The initiator context
+    pub initiator: InitiatorContext,
 }
 
 impl ResponderSignaling {
@@ -618,21 +623,28 @@ impl ResponderSignaling {
         ResponderSignaling {
             identity: ClientIdentity::Unknown,
             server: ServerContext::new(),
+            initiator: InitiatorContext::new(),
             permanent_key: permanent_key,
             auth_token: auth_token,
         }
     }
 
-    fn handle_server_auth(&mut self, msg: &ServerAuth) -> Result<(), String> {
+    fn handle_server_auth(&mut self, msg: &ServerAuth) -> Result<Vec<HandleAction>, String> {
         // In case the client is the responder, it SHALL check
         // that the initiator_connected field contains a
         // boolean value.
         if msg.responders.is_some() {
             return Err("we're a responder, but the `responders` field in the server-auth message is set".into());
         }
+        let mut actions: Vec<HandleAction> = vec![];
         match msg.initiator_connected {
             Some(true) => {
-                unimplemented!("TODO: Send token or key msg to initiator");
+                if let Some(ref token) = self.auth_token {
+                    actions.push(self.send_token(&token)?);
+                } else {
+                    debug!("No auth token set");
+                }
+                debug!("TODO: Send key");
             },
             Some(false) => {
                 debug!("No initiator connected so far");
@@ -641,7 +653,30 @@ impl ResponderSignaling {
                 return Err("we're a responder, but the `initiator_connected` field in the server-auth message is not set".into());
             },
         }
-        Ok(())
+        Ok(actions)
+    }
+
+    /// Build a `Token` message.
+    ///
+    /// If everything succeeds, a `Reply` handle action is returned.
+    /// If an error occurs, a string with the error message is returned. This
+    /// should return in a protocol error.
+    fn send_token(&self, token: &AuthToken) -> Result<HandleAction, String> {
+        let msg: Message = Token::new(self.permanent_key.public_key().to_owned()).into_message();
+        let nonce = Nonce::new(
+            self.initiator.cookie_pair().ours.clone(),
+            self.identity.into(),
+            self.initiator.identity().into(),
+            match self.initiator.csn_pair().borrow_mut().ours.increment() {
+                Ok(snapshot) => snapshot,
+                Err(e) => return Err(format!("Could not increment CSN: {}", e)),
+            },
+        );
+        let obox = OpenBox::new(msg, nonce);
+        let bbox = obox.encrypt_token(&token);
+
+        debug!("Enqueuing token");
+        Ok(HandleAction::Reply(bbox))
     }
 }
 
