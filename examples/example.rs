@@ -46,7 +46,7 @@ fn main() {
 
     let keystore = KeyStore::new().unwrap();
     let path = keystore.public_key_hex();
-    let salty = Rc::new(RefCell::new(SaltyClient::new(keystore, Role::Initiator)));
+    let salty = Rc::new(RefCell::new(SaltyClient::new_initiator(keystore)));
     let task = saltyrtc_client::connect(
             &format!("wss://localhost:8765/{}", path),
             Some(tls_connector),

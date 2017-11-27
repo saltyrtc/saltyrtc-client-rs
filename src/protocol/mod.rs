@@ -66,12 +66,14 @@ macro_rules! on_inner {
 }
 
 impl Signaling {
-    /// Create a new signaling instance.
-    pub fn new(role: Role, permanent_key: KeyStore) -> Self {
-        match role {
-            Role::Initiator => Signaling::Initiator(InitiatorSignaling::new(permanent_key)),
-            Role::Responder => Signaling::Responder(ResponderSignaling::new(permanent_key)),
-        }
+    /// Create a new initiator signaling instane.
+    pub fn new_initiator(permanent_key: KeyStore) -> Self {
+        Signaling::Initiator(InitiatorSignaling::new(permanent_key))
+    }
+
+    /// Create a new responder signaling instane.
+    pub fn new_responder(permanent_key: KeyStore) -> Self {
+        Signaling::Responder(ResponderSignaling::new(permanent_key))
     }
 
     /// Return our role, either initiator or responder.
@@ -691,7 +693,7 @@ mod tests {
         #[test]
         fn first_message_wrong_destination() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new(Role::Initiator, ks);
+            let mut s = Signaling::new_initiator(ks);
 
             let msg = ServerHello::random().into_message();
             let cs = CombinedSequenceSnapshot::random();
@@ -715,7 +717,7 @@ mod tests {
         #[test]
         fn wrong_source_initiator() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new(Role::Initiator, ks);
+            let mut s = Signaling::new_initiator(ks);
 
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
@@ -764,7 +766,7 @@ mod tests {
         #[test]
         fn wrong_source_responder() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new(Role::Responder, ks);
+            let mut s = Signaling::new_responder(ks);
 
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
@@ -811,7 +813,7 @@ mod tests {
         #[test]
         fn first_message_bad_overflow_number() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new(Role::Initiator, ks);
+            let mut s = Signaling::new_initiator(ks);
 
             let msg = ServerHello::random().into_message();
             let cs = CombinedSequenceSnapshot::new(1, 1234);
@@ -841,7 +843,7 @@ mod tests {
         #[test]
         fn cookie_differs_from_own() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new(Role::Initiator, ks);
+            let mut s = Signaling::new_initiator(ks);
 
             let msg = ServerHello::random().into_message();
             let cookie = s.server().cookie_pair.ours.clone();
@@ -882,7 +884,10 @@ mod tests {
             let server_ks = KeyStore::new().unwrap();
             let our_cookie = Cookie::random();
             let server_cookie = Cookie::random();
-            let mut signaling = Signaling::new(role, KeyStore::from_private_key(our_ks.private_key().clone()));
+            let mut signaling = match role {
+                Role::Initiator => Signaling::new_initiator(KeyStore::from_private_key(our_ks.private_key().clone())),
+                Role::Responder => Signaling::new_responder(KeyStore::from_private_key(our_ks.private_key().clone())),
+            };
             signaling.set_identity(identity);
             signaling.server_mut().handshake_state = handshake_state;
             signaling.server_mut().cookie_pair = CookiePair {

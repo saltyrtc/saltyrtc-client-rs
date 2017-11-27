@@ -80,9 +80,15 @@ pub struct SaltyClient {
 }
 
 impl SaltyClient {
-    pub fn new(permanent_key: KeyStore, role: Role) -> Self {
+    pub fn new_initiator(permanent_key: KeyStore) -> Self {
         SaltyClient {
-            signaling: Signaling::new(role, permanent_key),
+            signaling: Signaling::new_initiator(permanent_key),
+        }
+    }
+
+    pub fn new_responder(permanent_key: KeyStore) -> Self {
+        SaltyClient {
+            signaling: Signaling::new_responder(permanent_key),
         }
     }
 

@@ -109,19 +109,24 @@ fn main() {
     };
 
     // Create new SaltyRTC client instance
-    let salty = Rc::new(RefCell::new(SaltyClient::new(keystore, role)));
-    let task = saltyrtc_client::connect(
-            &format!("wss://localhost:8765/{}", path),
-            Some(tls_connector),
-            &core.handle(),
-            salty.clone(),
-        ).unwrap();
+    let salty = Rc::new(RefCell::new(match role {
+        Role::Initiator => SaltyClient::new_initiator(keystore),
+        Role::Responder => SaltyClient::new_responder(keystore),
+    }));
 
     // Determine auth token
     let auth_token = match (*salty).borrow().auth_token().as_ref() {
         Some(token) => HEXLOWER.encode(token.secret_key_bytes()),
         None => args.value_of(ARG_AUTHTOKEN).expect("Auth token not supplied").to_string(),
     };
+
+    // Create connect task
+    let task = saltyrtc_client::connect(
+            &format!("wss://localhost:8765/{}", path),
+            Some(tls_connector),
+            &core.handle(),
+            salty.clone(),
+        ).unwrap();
 
     println!("\n\x1B[32m******************************");
     println!("Connecting as {}", role);
