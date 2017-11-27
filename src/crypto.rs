@@ -4,7 +4,7 @@ use std::cmp;
 use std::fmt;
 use std::result::Result as StdResult;
 
-use data_encoding::HEXLOWER;
+use data_encoding::{HEXLOWER, HEXLOWER_PERMISSIVE};
 use rust_sodium::crypto::{box_, secretbox};
 use rust_sodium_sys::crypto_scalarmult_base;
 use serde::ser::{Serialize, Serializer};
@@ -139,6 +139,18 @@ impl AuthToken {
         let key = secretbox::gen_key();
 
         AuthToken(key)
+    }
+
+    /// Create an `AuthToken` instance from hex bytes.
+    pub fn from_hex_str(hex_str: &str) -> Result<Self> {
+        let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
+            .map_err(|_| Error::from_kind(
+                ErrorKind::Decode("Could not decode auth token hex string".to_string())
+            ))?;
+        let key = SecretKey::from_slice(&bytes).ok_or(Error::from_kind(
+            ErrorKind::Decode("Invalid auth token hex string".to_string())
+        ))?;
+        Ok(AuthToken(key))
     }
 
     /// Return a reference to the secret key.
@@ -381,6 +393,28 @@ mod tests {
         assert!(decrypted_bad.is_err());
         let error = decrypted_bad.unwrap_err();
         assert_eq!(format!("{}", error), "crypto error: Could not decrypt data");
+    }
+
+    /// Test the `AuthToken::from_hex_str` method.
+    #[test]
+    fn auth_token_from_hex_str() {
+        let invalid_hex = "foobar";
+        let res1 = AuthToken::from_hex_str(&invalid_hex);
+        match res1.unwrap_err().kind() {
+            &ErrorKind::Decode(ref msg) => assert_eq!(msg, "Could not decode auth token hex string"),
+            other => panic!("Wrong error kind: {:?}", other),
+        };
+
+        let invalid_key = "012345ab";
+        let res2 = AuthToken::from_hex_str(&invalid_key);
+        match res2.unwrap_err().kind() {
+            &ErrorKind::Decode(ref msg) => assert_eq!(msg, "Invalid auth token hex string"),
+            other => panic!("Wrong error kind: {:?}", other),
+        };
+
+        let valid_key = "53459fb52fdeeb74103a2932a5eff8095ea1efbaf657f2181722c4e61e6f7e79";
+        let res3 = AuthToken::from_hex_str(&valid_key);
+        let token = res3.unwrap();
     }
 
 }
