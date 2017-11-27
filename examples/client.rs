@@ -20,7 +20,7 @@ use data_encoding::HEXLOWER;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
 
-use saltyrtc_client::{SaltyClient, KeyStore, Role};
+use saltyrtc_client::{SaltyClient, KeyStore, Role, AuthToken};
 
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -109,15 +109,23 @@ fn main() {
     };
 
     // Create new SaltyRTC client instance
-    let salty = Rc::new(RefCell::new(match role {
-        Role::Initiator => SaltyClient::new_initiator(keystore),
-        Role::Responder => SaltyClient::new_responder(keystore),
-    }));
-
-    // Determine auth token
-    let auth_token = match (*salty).borrow().auth_token().as_ref() {
-        Some(token) => HEXLOWER.encode(token.secret_key_bytes()),
-        None => args.value_of(ARG_AUTHTOKEN).expect("Auth token not supplied").to_string(),
+    let (salty, auth_token_hex) = match role {
+        Role::Initiator => {
+            let salty = SaltyClient::new_initiator(keystore);
+            let auth_token_hex = HEXLOWER.encode(salty.auth_token().unwrap().secret_key_bytes());
+            (
+                salty,
+                auth_token_hex
+            )
+        },
+        Role::Responder => {
+            let auth_token_hex = args.value_of(ARG_AUTHTOKEN).expect("Auth token not supplied").to_string();
+            let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
+            (
+                SaltyClient::new_responder(keystore, Some(auth_token)),
+                auth_token_hex
+            )
+        },
     };
 
     // Create connect task
@@ -125,18 +133,18 @@ fn main() {
             &format!("wss://localhost:8765/{}", path),
             Some(tls_connector),
             &core.handle(),
-            salty.clone(),
+            Rc::new(RefCell::new(salty)),
         ).unwrap();
 
     println!("\n\x1B[32m******************************");
     println!("Connecting as {}", role);
     println!("");
     println!("Signaling path: {}", path);
-    println!("Auth token: {}", auth_token);
+    println!("Auth token: {}", auth_token_hex);
     println!("");
     println!("To connect with a peer:");
     match role {
-        Role::Initiator => println!("cargo run --example client -- responder \\\n    -p {} \\\n    -a {}", path, auth_token),
+        Role::Initiator => println!("cargo run --example client -- responder \\\n    -p {} \\\n    -a {}", path, auth_token_hex),
         Role::Responder => println!("cargo run --example client -- initiator"),
     }
     println!("******************************\x1B[0m\n");

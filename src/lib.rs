@@ -86,9 +86,9 @@ impl SaltyClient {
         }
     }
 
-    pub fn new_responder(permanent_key: KeyStore) -> Self {
+    pub fn new_responder(permanent_key: KeyStore, auth_token: Option<AuthToken>) -> Self {
         SaltyClient {
-            signaling: Signaling::new_responder(permanent_key),
+            signaling: Signaling::new_responder(permanent_key, auth_token),
         }
     }
 

@@ -72,8 +72,8 @@ impl Signaling {
     }
 
     /// Create a new responder signaling instane.
-    pub fn new_responder(permanent_key: KeyStore) -> Self {
-        Signaling::Responder(ResponderSignaling::new(permanent_key))
+    pub fn new_responder(permanent_key: KeyStore, auth_token: Option<AuthToken>) -> Self {
+        Signaling::Responder(ResponderSignaling::new(permanent_key, auth_token))
     }
 
     /// Return our role, either initiator or responder.
@@ -614,12 +614,12 @@ pub struct ResponderSignaling {
 }
 
 impl ResponderSignaling {
-    pub fn new(permanent_key: KeyStore) -> Self {
+    pub fn new(permanent_key: KeyStore, auth_token: Option<AuthToken>) -> Self {
         ResponderSignaling {
             identity: ClientIdentity::Unknown,
             server: ServerContext::new(),
             permanent_key: permanent_key,
-            auth_token: None,
+            auth_token: auth_token,
         }
     }
 
@@ -766,7 +766,7 @@ mod tests {
         #[test]
         fn wrong_source_responder() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new_responder(ks);
+            let mut s = Signaling::new_responder(ks, None);
 
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
@@ -886,7 +886,7 @@ mod tests {
             let server_cookie = Cookie::random();
             let mut signaling = match role {
                 Role::Initiator => Signaling::new_initiator(KeyStore::from_private_key(our_ks.private_key().clone())),
-                Role::Responder => Signaling::new_responder(KeyStore::from_private_key(our_ks.private_key().clone())),
+                Role::Responder => Signaling::new_responder(KeyStore::from_private_key(our_ks.private_key().clone()), None),
             };
             signaling.set_identity(identity);
             signaling.server_mut().handshake_state = handshake_state;
