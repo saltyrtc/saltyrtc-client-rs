@@ -6,7 +6,7 @@ use crypto::{PublicKey};
 
 use super::cookie::{CookiePair};
 use super::csn::{CombinedSequencePair};
-use super::state::{ServerHandshakeState};
+use super::state::{ServerHandshakeState, InitiatorHandshakeState, ResponderHandshakeState};
 use super::types::{Identity, Address};
 
 
@@ -89,6 +89,7 @@ impl PeerContext for ServerContext {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct InitiatorContext {
+    handshake_state: InitiatorHandshakeState,
     pub(crate) permanent_key: Option<PublicKey>,
     pub(crate) session_key: Option<PublicKey>,
     pub(crate) csn_pair: RefCell<CombinedSequencePair>,
@@ -98,11 +99,26 @@ pub struct InitiatorContext {
 impl InitiatorContext {
     pub fn new() -> Self {
         InitiatorContext {
+            handshake_state: InitiatorHandshakeState::New,
             permanent_key: None,
             session_key: None,
             csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
+    }
+
+    /// Update the initiator handshake state.
+    pub fn set_handshake_state(&mut self, new_state: InitiatorHandshakeState) {
+        trace!("Initiator handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
+        if let InitiatorHandshakeState::Failure(ref msg) = new_state {
+            warn!("Initiator handshake failure: {}", msg);
+        }
+        self.handshake_state = new_state;
+    }
+
+    /// Set the initiator handshake state to `Failure` with the specified message.
+    pub fn handshake_failed<S: Into<String>>(&mut self, msg: S) {
+        self.set_handshake_state(InitiatorHandshakeState::Failure(msg.into()));
     }
 }
 
@@ -135,6 +151,7 @@ impl PeerContext for InitiatorContext {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ResponderContext {
+    handshake_state: ResponderHandshakeState,
     pub(crate) address: Address,
     pub(crate) permanent_key: Option<PublicKey>,
     pub(crate) session_key: Option<PublicKey>,
@@ -145,12 +162,27 @@ pub struct ResponderContext {
 impl ResponderContext {
     pub fn new(address: Address) -> Self {
         ResponderContext {
+            handshake_state: ResponderHandshakeState::New,
             address: address,
             permanent_key: None,
             session_key: None,
             csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
+    }
+
+    /// Update the responder handshake state.
+    pub fn set_handshake_state(&mut self, new_state: ResponderHandshakeState) {
+        trace!("Responder handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
+        if let ResponderHandshakeState::Failure(ref msg) = new_state {
+            warn!("Responder handshake failure: {}", msg);
+        }
+        self.handshake_state = new_state;
+    }
+
+    /// Set the responder handshake state to `Failure` with the specified message.
+    pub fn handshake_failed<S: Into<String>>(&mut self, msg: S) {
+        self.set_handshake_state(ResponderHandshakeState::Failure(msg.into()));
     }
 }
 

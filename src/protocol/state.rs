@@ -39,6 +39,7 @@ pub enum InitiatorHandshakeState {
     KeyReceived,
     AuthSent,
     AuthReceived,
+    Failure(String),
 }
 
 /// The responder handshake states.
@@ -50,4 +51,5 @@ pub enum ResponderHandshakeState {
     KeySent,
     AuthReceived,
     AuthSent,
+    Failure(String),
 }
