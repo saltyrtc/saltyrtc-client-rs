@@ -51,7 +51,7 @@ use websocket::header::WebSocketProtocol;
 use websocket::message::OwnedMessage;
 
 // Re-exports
-pub use crypto::{KeyStore, PublicKey, PrivateKey, AuthToken};
+pub use crypto::{KeyStore, PublicKey, PrivateKey, AuthToken, public_key_from_hex_str};
 pub use protocol::{Role, messages};
 
 // Internal imports
@@ -86,9 +86,11 @@ impl SaltyClient {
         }
     }
 
-    pub fn new_responder(permanent_key: KeyStore, auth_token: Option<AuthToken>) -> Self {
+    pub fn new_responder(permanent_key: KeyStore,
+                         initiator_pubkey: PublicKey,
+                         auth_token: Option<AuthToken>) -> Self {
         SaltyClient {
-            signaling: Signaling::new_responder(permanent_key, auth_token),
+            signaling: Signaling::new_responder(permanent_key, initiator_pubkey, auth_token),
         }
     }
 

@@ -20,7 +20,7 @@ use data_encoding::HEXLOWER;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
 
-use saltyrtc_client::{SaltyClient, KeyStore, Role, AuthToken};
+use saltyrtc_client::{SaltyClient, KeyStore, Role, AuthToken, public_key_from_hex_str};
 
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -103,9 +103,9 @@ fn main() {
     let keystore = KeyStore::new().unwrap();
 
     // Determine websocket path
-    let path = match role {
+    let path: String = match role {
         Role::Initiator => keystore.public_key_hex(),
-        Role::Responder => args.value_of(ARG_PATH).expect("Path not supplied").to_string(),
+        Role::Responder => args.value_of(ARG_PATH).expect("Path not supplied").to_lowercase(),
     };
 
     // Create new SaltyRTC client instance
@@ -121,8 +121,9 @@ fn main() {
         Role::Responder => {
             let auth_token_hex = args.value_of(ARG_AUTHTOKEN).expect("Auth token not supplied").to_string();
             let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
+            let initiator_pubkey = public_key_from_hex_str(&path).unwrap();
             (
-                SaltyClient::new_responder(keystore, Some(auth_token)),
+                SaltyClient::new_responder(keystore, initiator_pubkey, Some(auth_token)),
                 auth_token_hex
             )
         },

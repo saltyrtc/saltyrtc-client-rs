@@ -90,17 +90,17 @@ impl PeerContext for ServerContext {
 #[derive(Debug, PartialEq, Eq)]
 pub struct InitiatorContext {
     handshake_state: InitiatorHandshakeState,
-    pub(crate) permanent_key: Option<PublicKey>,
+    pub(crate) permanent_key: PublicKey,
     pub(crate) session_key: Option<PublicKey>,
     pub(crate) csn_pair: RefCell<CombinedSequencePair>,
     pub(crate) cookie_pair: CookiePair,
 }
 
 impl InitiatorContext {
-    pub fn new() -> Self {
+    pub fn new(permanent_key: PublicKey) -> Self {
         InitiatorContext {
             handshake_state: InitiatorHandshakeState::New,
-            permanent_key: None,
+            permanent_key: permanent_key,
             session_key: None,
             csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
@@ -133,7 +133,7 @@ impl PeerContext for InitiatorContext {
     }
 
     fn permanent_key(&self) -> Option<&PublicKey> {
-        self.permanent_key.as_ref()
+        Some(&self.permanent_key)
     }
 
     fn session_key(&self) -> Option<&PublicKey> {

@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use error_chain::ChainedError;
 
 use boxes::{ByteBox, OpenBox};
-use crypto::{KeyStore, AuthToken};
+use crypto::{KeyStore, AuthToken, PublicKey};
 
 pub(crate) mod context;
 pub(crate) mod cookie;
@@ -73,8 +73,10 @@ impl Signaling {
     }
 
     /// Create a new responder signaling instane.
-    pub fn new_responder(permanent_key: KeyStore, auth_token: Option<AuthToken>) -> Self {
-        Signaling::Responder(ResponderSignaling::new(permanent_key, auth_token))
+    pub fn new_responder(permanent_key: KeyStore,
+                         initiator_pubkey: PublicKey,
+                         auth_token: Option<AuthToken>) -> Self {
+        Signaling::Responder(ResponderSignaling::new(permanent_key, initiator_pubkey, auth_token))
     }
 
     /// Return our role, either initiator or responder.
@@ -662,6 +664,9 @@ pub struct ResponderSignaling {
     // Our permanent keypair
     pub permanent_key: KeyStore,
 
+    // Our session keypair
+    pub session_key: Option<KeyStore>,
+
     // An optional auth token
     pub auth_token: Option<AuthToken>,
 
@@ -676,14 +681,17 @@ pub struct ResponderSignaling {
 }
 
 impl ResponderSignaling {
-    pub fn new(permanent_key: KeyStore, auth_token: Option<AuthToken>) -> Self {
+    pub fn new(permanent_key: KeyStore,
+               initiator_pubkey: PublicKey,
+               auth_token: Option<AuthToken>) -> Self {
         ResponderSignaling {
             signaling_state: SignalingState::ServerHandshake,
+            permanent_key: permanent_key,
+            session_key: None,
+            auth_token: auth_token,
             identity: ClientIdentity::Unknown,
             server: ServerContext::new(),
-            initiator: InitiatorContext::new(),
-            permanent_key: permanent_key,
-            auth_token: auth_token,
+            initiator: InitiatorContext::new(initiator_pubkey),
         }
     }
 
@@ -711,7 +719,8 @@ impl ResponderSignaling {
                 } else {
                     debug!("No auth token set");
                 }
-                debug!("TODO: Send key");
+                self.generate_session_key()?;
+                actions.push(self.send_key()?);
                 self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
             },
             Some(false) => {
@@ -724,12 +733,35 @@ impl ResponderSignaling {
         Ok(actions)
     }
 
+    fn generate_session_key(&mut self) -> Result<(), String> {
+        if self.session_key.is_some() {
+            return Err("Cannot generate new session key: It has already been generated".into());
+        }
+
+        // The client MUST generate a session key pair (a new NaCl key pair for
+        // public key authenticated encryption) for further communication with
+        // the other client.
+        //
+        // Note: This *could* cause a panic if libsodium initialization fails, but
+        // that's not possible in practice because libsodium should already
+        // have been initialized previously.
+        let mut session_key = KeyStore::new().expect("Libsodium initialization failed");
+        while session_key == self.permanent_key {
+            warn!("Session keypair == permanent keypair! This is highly unlikely. Regenerating...");
+            session_key = KeyStore::new().expect("Libsodium initialization failed");
+        }
+        self.session_key = Some(session_key);
+        Ok(())
+    }
+
     /// Build a `Token` message.
     ///
     /// If everything succeeds, a `Reply` handle action is returned.
     /// If an error occurs, a string with the error message is returned. This
     /// should return in a protocol error.
     fn send_token(&self, token: &AuthToken) -> Result<HandleAction, String> {
+        // The responder MUST set the public key (32 bytes) of the permanent
+        // key pair in the key field of this message.
         let msg: Message = Token::new(self.permanent_key.public_key().to_owned()).into_message();
         let nonce = Nonce::new(
             self.initiator.cookie_pair().ours.clone(),
@@ -741,9 +773,46 @@ impl ResponderSignaling {
             },
         );
         let obox = OpenBox::new(msg, nonce);
+
+        // The message SHALL be NaCl secret key encrypted by the token the
+        // initiator created and issued to the responder.
         let bbox = obox.encrypt_token(&token);
 
+        // TODO: In case the initiator has successfully decrypted the 'token'
+        // message, the secret key MUST be invalidated immediately and SHALL
+        // NOT be used for any other message.
+
         debug!("Enqueuing token");
+        Ok(HandleAction::Reply(bbox))
+    }
+
+    /// Build a `Key` message.
+    ///
+    /// If everything succeeds, a `Reply` handle action is returned.
+    /// If an error occurs, a string with the error message is returned. This
+    /// should return in a protocol error.
+    fn send_key(&self) -> Result<HandleAction, String> {
+        // It MUST set the public key (32 bytes) of that key pair in the key field.
+        let msg: Message = match self.session_key {
+            Some(ref session_key) => Key::new(session_key.public_key().to_owned()).into_message(),
+            None => return Err("Missing session keypair".into()),
+        };
+        let nonce = Nonce::new(
+            self.initiator.cookie_pair().ours.clone(),
+            self.identity.into(),
+            self.initiator.identity().into(),
+            match self.initiator.csn_pair().borrow_mut().ours.increment() {
+                Ok(snapshot) => snapshot,
+                Err(e) => return Err(format!("Could not increment CSN: {}", e)),
+            },
+        );
+        let obox = OpenBox::new(msg, nonce);
+
+        // The message SHALL be NaCl public-key encrypted by the client's
+        // permanent key pair and the other client's permanent key pair.
+        let bbox = obox.encrypt(&self.permanent_key, &self.initiator.permanent_key);
+
+        debug!("Enqueuing key");
         Ok(HandleAction::Reply(bbox))
     }
 }
@@ -853,7 +922,8 @@ mod tests {
         #[test]
         fn wrong_source_responder() {
             let ks = KeyStore::new().unwrap();
-            let mut s = Signaling::new_responder(ks, None);
+            let initiator_pubkey = PublicKey::from_slice(&[0u8; 32]).unwrap();
+            let mut s = Signaling::new_responder(ks, initiator_pubkey, None);
 
             let make_msg = |src: u8, dest: u8| {
                 let msg = ServerHello::random().into_message();
@@ -966,14 +1036,20 @@ mod tests {
             pub signaling: Signaling,
         }
 
-        fn make_test_signaling(role: Role, identity: ClientIdentity, handshake_state: ServerHandshakeState) -> TestContext {
+        fn make_test_signaling(role: Role,
+                               identity: ClientIdentity,
+                               handshake_state: ServerHandshakeState,
+                               auth_token: Option<AuthToken>) -> TestContext {
             let our_ks = KeyStore::new().unwrap();
             let server_ks = KeyStore::new().unwrap();
             let our_cookie = Cookie::random();
             let server_cookie = Cookie::random();
             let mut signaling = match role {
                 Role::Initiator => Signaling::new_initiator(KeyStore::from_private_key(our_ks.private_key().clone())),
-                Role::Responder => Signaling::new_responder(KeyStore::from_private_key(our_ks.private_key().clone()), None),
+                Role::Responder => {
+                    let initiator_pubkey = PublicKey::from_slice(&[0u8; 32]).unwrap();
+                    Signaling::new_responder(KeyStore::from_private_key(our_ks.private_key().clone()), initiator_pubkey, auth_token)
+                },
             };
             signaling.set_identity(identity);
             signaling.server_mut().set_handshake_state(handshake_state);
@@ -1012,9 +1088,8 @@ mod tests {
         #[test]
         fn server_auth_no_identity() {
             // Initialize signaling class
-            let ctx = make_test_signaling(Role::Responder,
-                                          ClientIdentity::Unknown,
-                                          ServerHandshakeState::ClientInfoSent);
+            let ctx = make_test_signaling(Role::Responder, ClientIdentity::Unknown,
+                                          ServerHandshakeState::ClientInfoSent, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, false).into_message();
@@ -1034,9 +1109,8 @@ mod tests {
         #[test]
         fn server_auth_your_cookie() {
             // Initialize signaling class
-            let mut ctx = make_test_signaling(Role::Initiator,
-                                              ClientIdentity::Initiator,
-                                              ServerHandshakeState::ClientInfoSent);
+            let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
+                                              ServerHandshakeState::ClientInfoSent, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(Cookie::random(), None, vec![]).into_message();
@@ -1049,9 +1123,8 @@ mod tests {
         #[test]
         fn server_auth_initiator_wrong_fields() {
             // Initialize signaling class
-            let mut ctx = make_test_signaling(Role::Initiator,
-                                              ClientIdentity::Initiator,
-                                              ServerHandshakeState::ClientInfoSent);
+            let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
+                                              ServerHandshakeState::ClientInfoSent, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, true).into_message();
@@ -1064,9 +1137,8 @@ mod tests {
         #[test]
         fn server_auth_initiator_missing_fields() {
             // Initialize signaling class
-            let mut ctx = make_test_signaling(Role::Initiator,
-                                              ClientIdentity::Initiator,
-                                              ServerHandshakeState::ClientInfoSent);
+            let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
+                                              ServerHandshakeState::ClientInfoSent, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth {
@@ -1084,9 +1156,8 @@ mod tests {
         #[test]
         fn server_auth_initiator_duplicate_fields() {
             // Initialize signaling class
-            let mut ctx = make_test_signaling(Role::Initiator,
-                                              ClientIdentity::Initiator,
-                                              ServerHandshakeState::ClientInfoSent);
+            let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
+                                              ServerHandshakeState::ClientInfoSent, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3), Address(3)]).into_message();
@@ -1099,9 +1170,8 @@ mod tests {
         #[test]
         fn server_auth_initiator_invalid_fields() {
             // Initialize signaling class
-            let mut ctx = make_test_signaling(Role::Initiator,
-                                              ClientIdentity::Initiator,
-                                              ServerHandshakeState::ClientInfoSent);
+            let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
+                                              ServerHandshakeState::ClientInfoSent, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(1), Address(2), Address(3)]).into_message();
@@ -1116,9 +1186,8 @@ mod tests {
         #[test]
         fn server_auth_initiator_stored_responder() {
             // Initialize signaling class
-            let ctx = make_test_signaling(Role::Initiator,
-                                          ClientIdentity::Initiator,
-                                          ServerHandshakeState::ClientInfoSent);
+            let ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
+                                          ServerHandshakeState::ClientInfoSent, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3)]).into_message();
@@ -1145,9 +1214,8 @@ mod tests {
         #[test]
         fn server_auth_responder_validate_initiator_connected() {
             // Initialize signaling class
-            let mut ctx = make_test_signaling(Role::Responder,
-                                              ClientIdentity::Responder(4),
-                                              ServerHandshakeState::ClientInfoSent);
+            let mut ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(4),
+                                              ServerHandshakeState::ClientInfoSent, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth {
@@ -1168,11 +1236,10 @@ mod tests {
         /// `token` or `key` client-to-client message described in the
         /// Client-to-Client Messages section.
         #[test]
-        fn server_auth_respond_initiator() {
+        fn server_auth_respond_initiator_with_token() { // TODO: Add similar test without token
             // Initialize signaling class
-            let mut ctx = make_test_signaling(Role::Responder,
-                                              ClientIdentity::Responder(7),
-                                              ServerHandshakeState::ClientInfoSent);
+            let mut ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
+                                              ServerHandshakeState::ClientInfoSent, Some(AuthToken::new()));
 
             // Prepare a ServerAuth message
             let msg = ServerAuth {
@@ -1194,8 +1261,7 @@ mod tests {
             assert_eq!(s.as_responder().initiator.handshake_state(), &InitiatorHandshakeState::KeySent);
 
             // Send token and key
-            // TODO: Implement!
-            // assert_eq!(actions.len(), 2);
+            assert_eq!(actions.len(), 2);
         }
     }
 

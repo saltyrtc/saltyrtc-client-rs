@@ -29,6 +29,17 @@ pub type PrivateKey = box_::SecretKey;
 /// Re-exported from the [`rust_sodium`](../rust_sodium/) crate.
 pub type SecretKey = secretbox::Key;
 
+/// Create a `PublicKey` instance from hex bytes.
+pub fn public_key_from_hex_str(hex_str: &str) -> Result<PublicKey> {
+    let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
+        .map_err(|_| Error::from_kind(
+            ErrorKind::Decode("Could not decode public key hex string".to_string())
+        ))?;
+    PublicKey::from_slice(&bytes).ok_or(Error::from_kind(
+        ErrorKind::Decode("Invalid public key hex string".to_string())
+    ))
+}
+
 
 /// Wrapper for holding a keypair and encrypting / decrypting messages.
 #[derive(Debug, PartialEq, Eq)]
