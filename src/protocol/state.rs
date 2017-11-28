@@ -11,7 +11,7 @@ pub enum SignalingState {
     Task,
 }
 
-/// The server handshake states.
+/// The states when doing a handshake with the server.
 ///
 /// The `ClientHello` state is only valid for the responder role, otherwise the
 /// state will transition from `ServerHello` to `ClientAuth` directly.
@@ -30,21 +30,24 @@ pub enum ServerHandshakeState {
     Failure(String),
 }
 
-/// The initiator handshake states.
+/// The states when doing a handshake with the initiator.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum InitiatorHandshakeState {
+    /// Initial state.
     New,
-    TokenSent,
+    /// A `key` message and maybe a `token` message have been sent.
     KeySent,
+    /// A `key` message has been received.
     KeyReceived,
     AuthSent,
     AuthReceived,
     Failure(String),
 }
 
-/// The responder handshake states.
+/// The states when doing a handshake with the responder.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ResponderHandshakeState {
+    /// Initial state.
     New,
     TokenReceived,
     KeyReceived,

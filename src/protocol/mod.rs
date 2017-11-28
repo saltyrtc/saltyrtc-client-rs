@@ -29,7 +29,7 @@ use messages::{Token, Key};
 pub use self::nonce::{Nonce};
 pub use self::types::{Role, HandleAction};
 use self::types::{ClientIdentity, Address};
-use self::state::{SignalingState, ServerHandshakeState, FailureMsg};
+use self::state::{SignalingState, ServerHandshakeState, InitiatorHandshakeState, FailureMsg};
 
 
 /// The signaling implementation.
@@ -533,6 +533,28 @@ impl Signaling {
         self.server_mut().set_handshake_state(ServerHandshakeState::Done);
         Ok(actions)
     }
+
+    /// Return the inner `InitiatorSignaling` instance.
+    ///
+    /// Panics if we're not an initiator
+    #[cfg(test)]
+    fn as_initiator(&self) -> &InitiatorSignaling {
+        match *self {
+            Signaling::Initiator(ref s) => &s,
+            Signaling::Responder(_) => panic!("Called .as_initiator() on a `Signaling::Responder`"),
+        }
+    }
+
+    /// Return the inner `ResponderSignaling` instance.
+    ///
+    /// Panics if we're not an responder
+    #[cfg(test)]
+    fn as_responder(&self) -> &ResponderSignaling {
+        match *self {
+            Signaling::Responder(ref s) => &s,
+            Signaling::Initiator(_) => panic!("Called .as_responder() on a `Signaling::Initiator`"),
+        }
+    }
 }
 
 
@@ -690,6 +712,7 @@ impl ResponderSignaling {
                     debug!("No auth token set");
                 }
                 debug!("TODO: Send key");
+                self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
             },
             Some(false) => {
                 debug!("No initiator connected so far");
@@ -1138,45 +1161,43 @@ mod tests {
             // Handle message
             assert_client_info_sent_fail(&mut ctx, bbox, "we're a responder, but the `initiator_connected` field in the server-auth message is not set");
         }
+
+        /// In case the client is the responder, it SHALL check that the
+        /// initiator_connected field contains a boolean value. In case the
+        /// field's value is true, the responder MUST proceed with sending a
+        /// `token` or `key` client-to-client message described in the
+        /// Client-to-Client Messages section.
+        #[test]
+        fn server_auth_respond_initiator() {
+            // Initialize signaling class
+            let mut ctx = make_test_signaling(Role::Responder,
+                                              ClientIdentity::Responder(7),
+                                              ServerHandshakeState::ClientInfoSent);
+
+            // Prepare a ServerAuth message
+            let msg = ServerAuth {
+                your_cookie: ctx.our_cookie.clone(),
+                signed_keys: None,
+                responders: None,
+                initiator_connected: Some(true),
+            }.into_message();
+            let bbox = make_test_msg(msg, &ctx, Address(7));
+
+            // Signaling ref
+            let mut s = ctx.signaling;
+
+            // Handle message
+            assert_eq!(s.server().handshake_state(), &ServerHandshakeState::ClientInfoSent);
+            assert_eq!(s.as_responder().initiator.handshake_state(), &InitiatorHandshakeState::New);
+            let actions = s.handle_message(bbox);
+            assert_eq!(s.server().handshake_state(), &ServerHandshakeState::Done);
+            assert_eq!(s.as_responder().initiator.handshake_state(), &InitiatorHandshakeState::KeySent);
+
+            // Send token and key
+            // TODO: Implement!
+            // assert_eq!(actions.len(), 2);
+        }
     }
-
-//    #[test]
-//    fn transition_server_hello() {
-//        // Create a new initial state.
-//        let state = ServerHandshakeState::New;
-//        assert_eq!(state, ServerHandshakeState::New);
-//
-//        // Transition to `ClientInfoSent` state.
-//        let msg = Message::ServerHello(ServerHello::random());
-//        let obox = OpenBox::new(msg, Nonce::random());
-//        let StateTransition { state, action } = state.next(obox.encode(), Role::Initiator);
-//        assert_eq!(state, ServerHandshakeState::ClientInfoSent);
-//        match action {
-//            HandleAction::Reply(..) => (),
-//            a @ _ => panic!("Invalid action: {:?}", a)
-//        };
-//    }
-
-//    #[test]
-//    fn transition_failure() {
-//        // Create a new initial state.
-//        let state = ServerHandshakeState::New;
-//        assert_eq!(state, ServerHandshakeState::New);
-//
-//        // Invalid transition to client-hello state.
-//        let msg = Message::ClientHello(ClientHello::random());
-//        let obox = OpenBox::new(msg, Nonce::random());
-//        let StateTransition { state, action } = state.next(obox.encode(), Role::Initiator);
-//        assert_eq!(state, ServerHandshakeState::Failure("Invalid event transition: New <- client-hello".into()));
-//        assert_eq!(action, HandleAction::None);
-//
-//        // Another invalid transition won't change the message
-//        let msg = Message::ServerHello(ServerHello::random());
-//        let obox = OpenBox::new(msg, Nonce::random());
-//        let StateTransition { state, action } = state.next(obox.encode(), Role::Initiator);
-//        assert_eq!(state, ServerHandshakeState::Failure("Invalid event transition: New <- client-hello".into()));
-//        assert_eq!(action, HandleAction::None);
-//    }
 
     #[test]
     fn server_context_new() {

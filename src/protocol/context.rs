@@ -107,6 +107,11 @@ impl InitiatorContext {
         }
     }
 
+    /// Return the current initiator handshake state.
+    pub fn handshake_state(&self) -> &InitiatorHandshakeState {
+        &self.handshake_state
+    }
+
     /// Update the initiator handshake state.
     pub fn set_handshake_state(&mut self, new_state: InitiatorHandshakeState) {
         trace!("Initiator handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
@@ -169,6 +174,11 @@ impl ResponderContext {
             csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
+    }
+
+    /// Return the current responder handshake state.
+    pub fn handshake_state(&self) -> &ResponderHandshakeState {
+        &self.handshake_state
     }
 
     /// Update the responder handshake state.
