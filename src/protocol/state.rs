@@ -1,44 +1,14 @@
-use std::convert::From;
+/// The error message to be used inside the `Failure` state.
+///
+/// This is mostly used as an error type when returning results with a list of
+/// handle actions.
+pub type FailureMsg = String;
 
-use super::types::HandleAction;
-
-
-/// A state transition contains the new target state as well as a
-/// `HandleAction` with resulting side effects (like response messages).
-#[derive(Debug, PartialEq)]
-pub struct StateTransition<T> {
-    /// The state resulting from the state transition.
-    pub state: T,
-    /// Any actions that need to be taken as a result of this state transition.
-    pub actions: Vec<HandleAction>,
-}
-
-impl<T> StateTransition<T> {
-    pub fn new(state: T, actions: Vec<HandleAction>) -> Self {
-        Self {
-            state: state,
-            actions: actions,
-        }
-    }
-}
-
-impl<T> From<(T, HandleAction)> for StateTransition<T> {
-    fn from(val: (T, HandleAction)) -> Self {
-        StateTransition::new(val.0, vec![val.1])
-    }
-}
-
-impl<T> From<(T, Vec<HandleAction>)> for StateTransition<T> {
-    fn from(val: (T, Vec<HandleAction>)) -> Self {
-        StateTransition::new(val.0, val.1)
-    }
-}
-
-impl<T> From<T> for StateTransition<T> {
-    /// States can be converted to a `StateTransition` with no actions.
-    fn from(val: T) -> Self {
-        StateTransition::new(val, vec![])
-    }
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum SignalingState {
+    ServerHandshake,
+    PeerHandshake,
+    Task,
 }
 
 /// The server handshake states.
@@ -58,4 +28,26 @@ pub enum ServerHandshakeState {
     Done,
     /// Something went wrong. This is a terminal state.
     Failure(String),
+}
+
+/// The initiator handshake states.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum InitiatorHandshakeState {
+    New,
+    TokenSent,
+    KeySent,
+    KeyReceived,
+    AuthSent,
+    AuthReceived,
+}
+
+/// The responder handshake states.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ResponderHandshakeState {
+    New,
+    TokenReceived,
+    KeyReceived,
+    KeySent,
+    AuthReceived,
+    AuthSent,
 }

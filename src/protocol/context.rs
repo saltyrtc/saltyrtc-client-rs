@@ -22,7 +22,7 @@ pub trait PeerContext {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ServerContext {
-    pub(crate) handshake_state: ServerHandshakeState,
+    handshake_state: ServerHandshakeState,
     pub(crate) permanent_key: Option<PublicKey>,
     pub(crate) session_key: Option<PublicKey>,
     pub(crate) csn_pair: RefCell<CombinedSequencePair>,
@@ -38,6 +38,25 @@ impl ServerContext {
             csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
+    }
+
+    /// Return the current server handshake state.
+    pub fn handshake_state(&self) -> &ServerHandshakeState {
+        &self.handshake_state
+    }
+
+    /// Update the server handshake state.
+    pub fn set_handshake_state(&mut self, new_state: ServerHandshakeState) {
+        trace!("Server handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
+        if let ServerHandshakeState::Failure(ref msg) = new_state {
+            warn!("Server handshake failure: {}", msg);
+        }
+        self.handshake_state = new_state;
+    }
+
+    /// Set the server handshake state to `Failure` with the specified message.
+    pub fn handshake_failed<S: Into<String>>(&mut self, msg: S) {
+        self.set_handshake_state(ServerHandshakeState::Failure(msg.into()));
     }
 }
 
