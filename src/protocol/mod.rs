@@ -627,6 +627,9 @@ pub struct InitiatorSignaling {
 
     // The list of responders
     pub responders: HashMap<Address, ResponderContext>,
+
+    // The chosen responder
+    pub responder: Option<ResponderContext>,
 }
 
 impl InitiatorSignaling {
@@ -638,6 +641,7 @@ impl InitiatorSignaling {
             permanent_key: permanent_key,
             auth_token: Some(AuthToken::new()),
             responders: HashMap::new(),
+            responder: None,
         }
     }
 
