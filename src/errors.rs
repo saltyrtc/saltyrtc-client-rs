@@ -52,5 +52,10 @@ error_chain!{
             description("invalid message state"),
             display("invalid message state: {}", msg),
         }
+        /// An invalid state transition was attempted.
+        InvalidStateTransition(msg: String) {
+            description("invalid state transition"),
+            display("invalid state transition: {}", msg),
+        }
     }
 }

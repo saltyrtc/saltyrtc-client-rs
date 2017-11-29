@@ -8,11 +8,13 @@
 //! and makes it possible to easily add tests.
 
 use std::collections::{HashMap, HashSet};
+use std::result::Result as StdResult;
 
 use error_chain::ChainedError;
 
 use boxes::{ByteBox, OpenBox};
 use crypto::{KeyStore, AuthToken, PublicKey};
+use errors::{ErrorKind, Result};
 
 pub(crate) mod context;
 pub(crate) mod cookie;
@@ -90,6 +92,17 @@ impl Signaling {
     /// Return the signaling state.
     fn signaling_state(&self) -> SignalingState {
         on_inner!(self, ref s, s.signaling_state)
+    }
+
+    /// Set the signaling state to `PeerHandshake`.
+    fn set_signaling_state(&mut self, state: SignalingState) -> Result<()> {
+        match self.signaling_state() {
+            SignalingState::ServerHandshake => {
+                on_inner!(self, ref mut s, s.signaling_state = state);
+            },
+            _ => return Err(ErrorKind::InvalidStateTransition("foo".into()).into()),
+        }
+        Ok(())
     }
 
     /// Return our assigned client identity.
@@ -395,7 +408,7 @@ impl Signaling {
     }
 
     /// Decode or decrypt a binary message depending on the state
-    fn decode_msg(&self, bbox: ByteBox) -> Result<OpenBox, String> {
+    fn decode_msg(&self, bbox: ByteBox) -> StdResult<OpenBox, String> {
         match self.server().handshake_state() {
             // If we're in state `New`, message must be unencrypted.
             &ServerHandshakeState::New => {
@@ -422,7 +435,7 @@ impl Signaling {
     }
 
     /// Handle an incoming [`ServerHello`](messages/struct.ServerHello.html) message.
-    fn handle_server_hello(&mut self, msg: ServerHello) -> Result<Vec<HandleAction>, FailureMsg> {
+    fn handle_server_hello(&mut self, msg: ServerHello) -> StdResult<Vec<HandleAction>, FailureMsg> {
         debug!("Received server-hello");
 
         let mut actions = Vec::with_capacity(2);
@@ -493,7 +506,7 @@ impl Signaling {
     }
 
     /// Handle an incoming [`ServerAuth`](messages/struct.ServerAuth.html) message.
-    fn handle_server_auth(&mut self, msg: ServerAuth) -> Result<Vec<HandleAction>, FailureMsg> {
+    fn handle_server_auth(&mut self, msg: ServerAuth) -> StdResult<Vec<HandleAction>, FailureMsg> {
         debug!("Received server-auth");
 
         // When the client receives a 'server-auth' message, it MUST
@@ -533,6 +546,7 @@ impl Signaling {
 
         info!("Server handshake completed");
         self.server_mut().set_handshake_state(ServerHandshakeState::Done);
+        self.set_signaling_state(SignalingState::PeerHandshake).map_err(|e| e.to_string())?;
         Ok(actions)
     }
 
@@ -610,7 +624,7 @@ impl InitiatorSignaling {
         unimplemented!("initiator: handle peer message");
     }
 
-    fn handle_server_auth(&mut self, msg: &ServerAuth) -> Result<Vec<HandleAction>, String> {
+    fn handle_server_auth(&mut self, msg: &ServerAuth) -> StdResult<Vec<HandleAction>, String> {
         // In case the client is the initiator, it SHALL check
         // that the responders field is set and contains an
         // Array of responder identities.
@@ -704,7 +718,7 @@ impl ResponderSignaling {
         unimplemented!("responder: handle peer message");
     }
 
-    fn handle_server_auth(&mut self, msg: &ServerAuth) -> Result<Vec<HandleAction>, String> {
+    fn handle_server_auth(&mut self, msg: &ServerAuth) -> StdResult<Vec<HandleAction>, String> {
         // In case the client is the responder, it SHALL check
         // that the initiator_connected field contains a
         // boolean value.
@@ -733,7 +747,7 @@ impl ResponderSignaling {
         Ok(actions)
     }
 
-    fn generate_session_key(&mut self) -> Result<(), String> {
+    fn generate_session_key(&mut self) -> StdResult<(), String> {
         if self.session_key.is_some() {
             return Err("Cannot generate new session key: It has already been generated".into());
         }
@@ -759,7 +773,7 @@ impl ResponderSignaling {
     /// If everything succeeds, a `Reply` handle action is returned.
     /// If an error occurs, a string with the error message is returned. This
     /// should return in a protocol error.
-    fn send_token(&self, token: &AuthToken) -> Result<HandleAction, String> {
+    fn send_token(&self, token: &AuthToken) -> StdResult<HandleAction, String> {
         // The responder MUST set the public key (32 bytes) of the permanent
         // key pair in the key field of this message.
         let msg: Message = Token::new(self.permanent_key.public_key().to_owned()).into_message();
@@ -791,7 +805,7 @@ impl ResponderSignaling {
     /// If everything succeeds, a `Reply` handle action is returned.
     /// If an error occurs, a string with the error message is returned. This
     /// should return in a protocol error.
-    fn send_key(&self) -> Result<HandleAction, String> {
+    fn send_key(&self) -> StdResult<HandleAction, String> {
         // It MUST set the public key (32 bytes) of that key pair in the key field.
         let msg: Message = match self.session_key {
             Some(ref session_key) => Key::new(session_key.public_key().to_owned()).into_message(),
@@ -1272,6 +1286,33 @@ mod tests {
                                               ServerHandshakeState::ClientInfoSent, None);
             let actions = _server_auth_respond_initiator(ctx);
             assert_eq!(actions.len(), 1);
+        }
+
+        /// If processing the server auth message succeeds, the signaling state
+        /// should change to `PeerHandshake`.
+        #[test]
+        fn server_auth_signaling_state_transition() {
+            let mut ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
+                                              ServerHandshakeState::ClientInfoSent, None);
+
+            // Prepare a ServerAuth message
+            let msg = ServerAuth {
+                your_cookie: ctx.our_cookie.clone(),
+                signed_keys: None,
+                responders: None,
+                initiator_connected: Some(false),
+            }.into_message();
+            let bbox = make_test_msg(msg, &ctx, Address(7));
+
+            // Signaling ref
+            let mut s = ctx.signaling;
+
+            // Handle message
+            assert_eq!(s.server().handshake_state(), &ServerHandshakeState::ClientInfoSent);
+            assert_eq!(s.signaling_state(), SignalingState::ServerHandshake);
+            let actions = s.handle_message(bbox);
+            assert_eq!(s.server().handshake_state(), &ServerHandshakeState::Done);
+            assert_eq!(s.signaling_state(), SignalingState::PeerHandshake);
         }
     }
 
