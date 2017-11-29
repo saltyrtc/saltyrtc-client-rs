@@ -20,7 +20,8 @@ use data_encoding::HEXLOWER;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
 
-use saltyrtc_client::{SaltyClient, KeyStore, Role, AuthToken, public_key_from_hex_str};
+use saltyrtc_client::{SaltyClient, KeyStore, Role, AuthToken};
+use saltyrtc_client::utils::{public_key_from_hex_str};
 
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");

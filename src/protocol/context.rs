@@ -10,7 +10,7 @@ use super::state::{ServerHandshakeState, InitiatorHandshakeState, ResponderHands
 use super::types::{Identity, Address};
 
 
-pub trait PeerContext {
+pub(crate) trait PeerContext {
     fn identity(&self) -> Identity;
     fn permanent_key(&self) -> Option<&PublicKey>;
     fn session_key(&self) -> Option<&PublicKey>;
@@ -21,7 +21,7 @@ pub trait PeerContext {
 
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ServerContext {
+pub(crate) struct ServerContext {
     handshake_state: ServerHandshakeState,
     pub(crate) permanent_key: Option<PublicKey>,
     pub(crate) session_key: Option<PublicKey>,
@@ -41,22 +41,14 @@ impl ServerContext {
     }
 
     /// Return the current server handshake state.
-    pub fn handshake_state(&self) -> &ServerHandshakeState {
-        &self.handshake_state
+    pub fn handshake_state(&self) -> ServerHandshakeState {
+        self.handshake_state
     }
 
     /// Update the server handshake state.
     pub fn set_handshake_state(&mut self, new_state: ServerHandshakeState) {
         trace!("Server handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
-        if let ServerHandshakeState::Failure(ref msg) = new_state {
-            warn!("Server handshake failure: {}", msg);
-        }
         self.handshake_state = new_state;
-    }
-
-    /// Set the server handshake state to `Failure` with the specified message.
-    pub fn handshake_failed<S: Into<String>>(&mut self, msg: S) {
-        self.set_handshake_state(ServerHandshakeState::Failure(msg.into()));
     }
 }
 
@@ -88,7 +80,7 @@ impl PeerContext for ServerContext {
 
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct InitiatorContext {
+pub(crate) struct InitiatorContext {
     handshake_state: InitiatorHandshakeState,
     pub(crate) permanent_key: PublicKey,
     pub(crate) session_key: Option<PublicKey>,
@@ -108,22 +100,14 @@ impl InitiatorContext {
     }
 
     /// Return the current initiator handshake state.
-    pub fn handshake_state(&self) -> &InitiatorHandshakeState {
-        &self.handshake_state
+    pub fn handshake_state(&self) -> InitiatorHandshakeState {
+        self.handshake_state
     }
 
     /// Update the initiator handshake state.
     pub fn set_handshake_state(&mut self, new_state: InitiatorHandshakeState) {
         trace!("Initiator handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
-        if let InitiatorHandshakeState::Failure(ref msg) = new_state {
-            warn!("Initiator handshake failure: {}", msg);
-        }
         self.handshake_state = new_state;
-    }
-
-    /// Set the initiator handshake state to `Failure` with the specified message.
-    pub fn handshake_failed<S: Into<String>>(&mut self, msg: S) {
-        self.set_handshake_state(InitiatorHandshakeState::Failure(msg.into()));
     }
 }
 
@@ -155,7 +139,7 @@ impl PeerContext for InitiatorContext {
 
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ResponderContext {
+pub(crate) struct ResponderContext {
     handshake_state: ResponderHandshakeState,
     pub(crate) address: Address,
     pub(crate) permanent_key: Option<PublicKey>,
@@ -177,22 +161,14 @@ impl ResponderContext {
     }
 
     /// Return the current responder handshake state.
-    pub fn handshake_state(&self) -> &ResponderHandshakeState {
-        &self.handshake_state
+    pub fn handshake_state(&self) -> ResponderHandshakeState {
+        self.handshake_state
     }
 
     /// Update the responder handshake state.
     pub fn set_handshake_state(&mut self, new_state: ResponderHandshakeState) {
         trace!("Responder handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
-        if let ResponderHandshakeState::Failure(ref msg) = new_state {
-            warn!("Responder handshake failure: {}", msg);
-        }
         self.handshake_state = new_state;
-    }
-
-    /// Set the responder handshake state to `Failure` with the specified message.
-    pub fn handshake_failed<S: Into<String>>(&mut self, msg: S) {
-        self.set_handshake_state(ResponderHandshakeState::Failure(msg.into()));
     }
 }
 

@@ -13,7 +13,7 @@ use rmp_serde as rmps;
 use rmpv::Value;
 
 use crypto::{PublicKey, SignedKeys};
-use errors::{Result};
+use errors::{SignalingError, SignalingResult};
 
 use super::{Address, Cookie};
 
@@ -26,10 +26,8 @@ use super::{Address, Cookie};
 /// to contain a `type` field.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type")]
-pub enum Message {
-
+pub(crate) enum Message {
     // Server to client messages
-
     #[serde(rename = "client-hello")]
     ClientHello(ClientHello),
     #[serde(rename = "server-hello")]
@@ -48,7 +46,6 @@ pub enum Message {
     SendError(SendError),
 
     // Client to client messages
-
     #[serde(rename = "token")]
     Token(Token),
     #[serde(rename = "key")]
@@ -59,17 +56,17 @@ pub enum Message {
 
 impl Message {
     /// Decode a message from msgpack bytes.
-    pub fn from_msgpack(bytes: &[u8]) -> Result<Self> {
+    pub(crate) fn from_msgpack(bytes: &[u8]) -> SignalingResult<Self> {
         Ok(rmps::from_slice(bytes)?)
     }
 
     /// Convert this message to msgpack bytes.
-    pub fn to_msgpack(&self) -> Vec<u8> {
+    pub(crate) fn to_msgpack(&self) -> Vec<u8> {
         rmps::to_vec_named(&self).expect("Serialization failed")
     }
 
     /// Return the type of the contained message.
-    pub fn get_type(&self) -> &'static str {
+    pub(crate) fn get_type(&self) -> &'static str {
         match *self {
             // Server to client messages
             Message::ClientHello(_) => "client-hello",
@@ -99,7 +96,7 @@ macro_rules! impl_message_wrapping {
         }
 
         impl $type {
-            pub fn into_message(self) -> Message {
+            pub(crate) fn into_message(self) -> Message {
                 self.into()
             }
         }
@@ -121,18 +118,18 @@ impl_message_wrapping!(Auth, Message::Auth);
 
 /// The client-hello message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct ClientHello {
-    pub key: PublicKey,
+pub(crate) struct ClientHello {
+    pub(crate) key: PublicKey,
 }
 
 impl ClientHello {
-    pub fn new(key: PublicKey) -> Self {
+    pub(crate) fn new(key: PublicKey) -> Self {
         Self { key }
     }
 
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
-    pub fn random() -> Self {
+    pub(crate) fn random() -> Self {
         ::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 32];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
@@ -142,18 +139,18 @@ impl ClientHello {
 
 /// The server-hello message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct ServerHello {
-    pub key: PublicKey,
+pub(crate) struct ServerHello {
+    pub(crate) key: PublicKey,
 }
 
 impl ServerHello {
-    pub fn new(key: PublicKey) -> Self {
+    pub(crate) fn new(key: PublicKey) -> Self {
         Self { key }
     }
 
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
-    pub fn random() -> Self {
+    pub(crate) fn random() -> Self {
         ::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 32];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
@@ -164,30 +161,30 @@ impl ServerHello {
 
 /// The client-auth message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct ClientAuth {
-    pub your_cookie: Cookie,
-    pub subprotocols: Vec<String>,
-    pub ping_interval: u32,
+pub(crate) struct ClientAuth {
+    pub(crate) your_cookie: Cookie,
+    pub(crate) subprotocols: Vec<String>,
+    pub(crate) ping_interval: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub your_key: Option<PublicKey>,
+    pub(crate) your_key: Option<PublicKey>,
 }
 
 
 /// The server-auth message received by the initiator.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct ServerAuth {
-    pub your_cookie: Cookie,
+pub(crate) struct ServerAuth {
+    pub(crate) your_cookie: Cookie,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub signed_keys: Option<SignedKeys>,
+    pub(crate) signed_keys: Option<SignedKeys>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub responders: Option<Vec<Address>>,
+    pub(crate) responders: Option<Vec<Address>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub initiator_connected: Option<bool>,
+    pub(crate) initiator_connected: Option<bool>,
 }
 
 impl ServerAuth {
     /// Create a new ServerAuth message targeted at an initiator.
-    pub fn for_initiator(your_cookie: Cookie, signed_keys: Option<SignedKeys>, responders: Vec<Address>) -> Self {
+    pub(crate) fn for_initiator(your_cookie: Cookie, signed_keys: Option<SignedKeys>, responders: Vec<Address>) -> Self {
         Self {
             your_cookie,
             signed_keys,
@@ -197,7 +194,7 @@ impl ServerAuth {
     }
 
     /// Create a new ServerAuth message targeted at a responder.
-    pub fn for_responder(your_cookie: Cookie, signed_keys: Option<SignedKeys>, initiator_connected: bool) -> Self {
+    pub(crate) fn for_responder(your_cookie: Cookie, signed_keys: Option<SignedKeys>, initiator_connected: bool) -> Self {
         Self {
             your_cookie,
             signed_keys,
@@ -210,11 +207,11 @@ impl ServerAuth {
 
 /// Sent by the server to all responders when a new initiator joins.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct NewInitiator;
+pub(crate) struct NewInitiator;
 
 impl NewInitiator {
     /// Create a new `NewInitiator` message.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { }
     }
 }
@@ -222,13 +219,13 @@ impl NewInitiator {
 
 /// Sent by the server to the initiator when a new responder joins.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct NewResponder {
-    pub id: Address,
+pub(crate) struct NewResponder {
+    pub(crate) id: Address,
 }
 
 impl NewResponder {
     /// Create a new `NewResponder` message.
-    pub fn new(id: Address) -> Self {
+    pub(crate) fn new(id: Address) -> Self {
         Self { id }
     }
 }
@@ -236,20 +233,20 @@ impl NewResponder {
 
 /// Sent by the initiator to the server when requesting to drop a responder.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct DropResponder {
-    pub id: Address,
+pub(crate) struct DropResponder {
+    pub(crate) id: Address,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<u16>,
+    pub(crate) reason: Option<u16>,
 }
 
 impl DropResponder {
     /// Create a new `DropResponder` message without a reason code.
-    pub fn new(id: Address) -> Self {
+    pub(crate) fn new(id: Address) -> Self {
         Self { id, reason: None }
     }
 
     /// Create a new `DropResponder` message with a reason code.
-    pub fn with_reason(id: Address, reason: u16) -> Self {
+    pub(crate) fn with_reason(id: Address, reason: u16) -> Self {
         Self { id, reason: Some(reason) }
     }
 }
@@ -257,13 +254,13 @@ impl DropResponder {
 
 /// Sent by the server if relaying a client-to-client message fails.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct SendError {
-    pub id: Vec<u8>,
+pub(crate) struct SendError {
+    pub(crate) id: Vec<u8>,
 }
 
 impl SendError {
     /// Create a new `SendError` message.
-    pub fn new(id: Vec<u8>) -> Self {
+    pub(crate) fn new(id: Vec<u8>) -> Self {
         Self { id }
     }
 }
@@ -271,19 +268,19 @@ impl SendError {
 
 /// The token message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct Token {
-    pub key: PublicKey,
+pub(crate) struct Token {
+    pub(crate) key: PublicKey,
 }
 
 impl Token {
     /// Create a new `Token` message.
-    pub fn new(key: PublicKey) -> Self {
+    pub(crate) fn new(key: PublicKey) -> Self {
         Self { key }
     }
 
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
-    pub fn random() -> Self {
+    pub(crate) fn random() -> Self {
         ::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 32];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
@@ -294,19 +291,19 @@ impl Token {
 
 /// The key message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct Key {
-    pub key: PublicKey,
+pub(crate) struct Key {
+    pub(crate) key: PublicKey,
 }
 
 impl Key {
     /// Create a new `Key` message.
-    pub fn new(key: PublicKey) -> Self {
+    pub(crate) fn new(key: PublicKey) -> Self {
         Self { key }
     }
 
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
-    pub fn random() -> Self {
+    pub(crate) fn random() -> Self {
         ::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 32];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
@@ -317,27 +314,27 @@ impl Key {
 
 /// The auth message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct Auth {
-    pub your_cookie: Cookie,
+pub(crate) struct Auth {
+    pub(crate) your_cookie: Cookie,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tasks: Option<HashSet<String>>,
+    pub(crate) tasks: Option<HashSet<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub task: Option<String>,
-    pub data: HashMap<String, Option<HashMap<String, Value>>>,
+    pub(crate) task: Option<String>,
+    pub(crate) data: HashMap<String, Option<HashMap<String, Value>>>,
 }
 
-struct InitiatorAuthBuilder {
+pub(crate) struct InitiatorAuthBuilder {
     auth: Auth,
 }
 
-struct ResponderAuthBuilder {
+pub(crate) struct ResponderAuthBuilder {
     auth: Auth,
 }
 
 impl InitiatorAuthBuilder {
 
     /// Create a new `Auth` message targeted at an initiator.
-    pub fn new(your_cookie: Cookie) -> Self {
+    pub(crate) fn new(your_cookie: Cookie) -> Self {
         Self {
             auth: Auth {
                 your_cookie,
@@ -349,7 +346,7 @@ impl InitiatorAuthBuilder {
     }
 
     /// Add a task.
-    pub fn add_task<S: Into<String>>(mut self, name: S, data: Option<HashMap<String, Value>>) -> Self {
+    pub(crate) fn add_task<S: Into<String>>(mut self, name: S, data: Option<HashMap<String, Value>>) -> Self {
         let name: String = name.into();
         match self.auth.tasks {
             Some(ref mut tasks) => tasks.insert(name.clone()),
@@ -360,12 +357,14 @@ impl InitiatorAuthBuilder {
     }
 
     /// Return the resulting `Auth` message.
-    pub fn build(self) -> Result<Auth> {
+    pub(crate) fn build(self) -> SignalingResult<Auth> {
         if self.auth.task.is_some() {
             panic!("task may not be set");
         }
         match self.auth.tasks {
-            Some(ref tasks) if tasks.len() == 0 => Err("an `Auth` message must contain at least one task".into()),
+            Some(ref tasks) if tasks.len() == 0 => Err(
+                SignalingError::InvalidMessage("An `Auth` message must contain at least one task".to_string())
+            ),
             Some(_) => Ok(self.auth),
             None => panic!("tasks list not initialized!"),
         }
@@ -376,7 +375,7 @@ impl InitiatorAuthBuilder {
 impl ResponderAuthBuilder {
 
     /// Create a new `Auth` message targeted at a responder.
-    pub fn new(your_cookie: Cookie) -> Self {
+    pub(crate) fn new(your_cookie: Cookie) -> Self {
         Self {
             auth: Auth {
                 your_cookie,
@@ -388,7 +387,7 @@ impl ResponderAuthBuilder {
     }
 
     /// Set the task.
-    pub fn set_task<S: Into<String>>(mut self, name: S, data: Option<HashMap<String, Value>>) -> Self {
+    pub(crate) fn set_task<S: Into<String>>(mut self, name: S, data: Option<HashMap<String, Value>>) -> Self {
         let name: String = name.into();
         self.auth.task = Some(name.clone());
         self.auth.data.clear();
@@ -397,14 +396,14 @@ impl ResponderAuthBuilder {
     }
 
     /// Return the resulting `Auth` message.
-    pub fn build(self) -> Result<Auth> {
+    pub(crate) fn build(self) -> SignalingResult<Auth> {
         if self.auth.tasks.is_some() {
             panic!("tasks may not be set");
         }
         if self.auth.task.is_some() {
             Ok(self.auth)
         } else {
-            Err("an `Auth` message must have a task set".into())
+            Err(SignalingError::InvalidMessage("An `Auth` message must have a task set".into()))
         }
     }
 

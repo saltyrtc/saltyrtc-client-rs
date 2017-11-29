@@ -6,20 +6,20 @@
 
 use rust_sodium::crypto::box_::NONCEBYTES;
 
-use errors::{Result, ResultExt, ErrorKind, SignalingError, SignalingResult};
+use errors::{SignalingError, SignalingResult};
 use crypto::{KeyStore, PublicKey, AuthToken};
 use protocol::Nonce;
 use protocol::messages::Message;
 
 /// An open box (unencrypted message + nonce).
 #[derive(Debug, PartialEq)]
-pub struct OpenBox {
-    pub message: Message,
-    pub nonce: Nonce,
+pub(crate) struct OpenBox {
+    pub(crate) message: Message,
+    pub(crate) nonce: Nonce,
 }
 
 impl OpenBox {
-    pub fn new(message: Message, nonce: Nonce) -> Self {
+    pub(crate) fn new(message: Message, nonce: Nonce) -> Self {
         OpenBox { message, nonce }
     }
 }
@@ -30,13 +30,13 @@ impl OpenBox {
     ///
     /// This should only be necessary for the server-hello message. All other
     /// messages are encrypted.
-    pub fn encode(self) -> ByteBox {
+    pub(crate) fn encode(self) -> ByteBox {
         let bytes = self.message.to_msgpack();
         ByteBox::new(bytes, self.nonce)
     }
 
     /// Encrypt message for the `other_key` using public key cryptography.
-    pub fn encrypt(self, keystore: &KeyStore, other_key: &PublicKey) -> ByteBox {
+    pub(crate) fn encrypt(self, keystore: &KeyStore, other_key: &PublicKey) -> ByteBox {
         let encrypted = keystore.encrypt(
             // The message bytes to be encrypted
             &self.message.to_msgpack(),
@@ -51,7 +51,7 @@ impl OpenBox {
     }
 
     /// Encrypt token message using the `auth_token` using secret key cryptography.
-    pub fn encrypt_token(self, auth_token: &AuthToken) -> ByteBox {
+    pub(crate) fn encrypt_token(self, auth_token: &AuthToken) -> ByteBox {
         let encrypted = auth_token.encrypt(
             // The message bytes to be encrypted
             &self.message.to_msgpack(),
@@ -67,17 +67,17 @@ impl OpenBox {
 
 /// A byte box (message bytes + nonce). The bytes may or may not be encrypted.
 #[derive(Debug, PartialEq)]
-pub struct ByteBox {
-    pub bytes: Vec<u8>,
-    pub nonce: Nonce,
+pub(crate) struct ByteBox {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) nonce: Nonce,
 }
 
 impl ByteBox {
-    pub fn new(bytes: Vec<u8>, nonce: Nonce) -> Self {
+    pub(crate) fn new(bytes: Vec<u8>, nonce: Nonce) -> Self {
         ByteBox { bytes, nonce }
     }
 
-    pub fn from_slice(bytes: &[u8]) -> SignalingResult<Self> {
+    pub(crate) fn from_slice(bytes: &[u8]) -> SignalingResult<Self> {
         if bytes.len() <= NONCEBYTES {
             return Err(SignalingError::Decode("Message is too short".into()));
         }
@@ -91,14 +91,14 @@ impl ByteBox {
     ///
     /// This should only be necessary for the server-hello message. All other
     /// messages are encrypted.
-    pub fn decode(self) -> Result<OpenBox> {
+    pub(crate) fn decode(self) -> SignalingResult<OpenBox> {
         let message = Message::from_msgpack(&self.bytes)
-            .chain_err(|| ErrorKind::Decode("cannot decode message payload".into()))?;
+            .map_err(|e| SignalingError::Decode(format!("Cannot decode message payload: {}", e)))?;
         Ok(OpenBox::new(message, self.nonce))
     }
 
     /// Decrypt an encrypted message into an [`OpenBox`](struct.OpenBox.html).
-    pub fn decrypt(self, keystore: &KeyStore, other_key: &PublicKey) -> Result<OpenBox> {
+    pub(crate) fn decrypt(self, keystore: &KeyStore, other_key: &PublicKey) -> SignalingResult<OpenBox> {
         let decrypted = keystore.decrypt(
             // The message bytes to be decrypted
             &self.bytes,
@@ -108,17 +108,17 @@ impl ByteBox {
             unsafe { self.nonce.clone() },
             // The public key of the recipient
             other_key
-        ).chain_err(|| ErrorKind::Decode("cannot decode message payload".into()))?;
+        ).map_err(|e| SignalingError::Decode(format!("Cannot decode message payload: {}", e)))?;
 
         trace!("Decrypted bytes: {:?}", decrypted);
 
         let message = Message::from_msgpack(&decrypted)
-            .chain_err(|| ErrorKind::Decode("cannot decode message payload".into()))?;
+            .map_err(|e| SignalingError::Decode(format!("Cannot decode message payload: {}", e)))?;
 
         Ok(OpenBox::new(message, self.nonce))
     }
 
-    pub fn into_bytes(self) -> Vec<u8> {
+    pub(crate) fn into_bytes(self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(NONCEBYTES + self.bytes.len());
         bytes.extend(self.nonce.into_bytes().iter());
         bytes.extend(self.bytes.iter());

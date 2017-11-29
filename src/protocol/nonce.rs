@@ -8,7 +8,7 @@ use std::io::Write;
 use byteorder::{BigEndian, ByteOrder};
 use rust_sodium::crypto::{box_, secretbox};
 
-use errors::{Result, ErrorKind};
+use errors::{SignalingError, SignalingResult};
 
 use super::cookie::Cookie;
 use super::csn::CombinedSequenceSnapshot;
@@ -21,7 +21,7 @@ use super::types::{Address};
 /// non-unsafe transformations into other formats consume the instance. This is
 /// also known as an affine type.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Nonce {
+pub(crate) struct Nonce {
     cookie: Cookie,
     source: Address,
     destination: Address,
@@ -29,7 +29,7 @@ pub struct Nonce {
 }
 
 impl Nonce {
-    pub fn new(cookie: Cookie, source: Address, destination: Address, csn: CombinedSequenceSnapshot) -> Self {
+    pub(crate) fn new(cookie: Cookie, source: Address, destination: Address, csn: CombinedSequenceSnapshot) -> Self {
         Nonce {
             cookie,
             source,
@@ -42,11 +42,12 @@ impl Nonce {
     ///
     /// This will fail if the byte slice does not contain exactly 24 bytes of
     /// data.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        ensure!(
-            bytes.len() == 24,
-            ErrorKind::Crypto(format!("byte slice must be exactly 24 bytes, not {}", bytes.len()))
-        );
+    pub(crate) fn from_bytes(bytes: &[u8]) -> SignalingResult<Self> {
+        if bytes.len() != 24 {
+            return Err(SignalingError::Decode(
+                format!("Byte slice must be exactly 24 bytes, not {}", bytes.len())
+            ));
+        }
         let overflow = BigEndian::read_u16(&bytes[18..20]);
         let sequence = BigEndian::read_u32(&bytes[20..24]);
         let csn = CombinedSequenceSnapshot::new(overflow, sequence);
@@ -65,7 +66,7 @@ impl Nonce {
     ///
     /// This conversion consumes the nonce, so that it cannot be accidentally
     /// reused.
-    pub fn into_bytes(self) -> [u8; 24] {
+    pub(crate) fn into_bytes(self) -> [u8; 24] {
         let mut bytes = [0u8; 24];
         (&mut bytes[0..16]).write_all(self.cookie.bytes()).expect("Writing cookie to nonce failed");
         bytes[16] = self.source.0;
@@ -77,7 +78,7 @@ impl Nonce {
 
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
-    pub fn random() -> Self {
+    pub(crate) fn random() -> Self {
         ::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 24];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
@@ -85,7 +86,7 @@ impl Nonce {
     }
 
     /// Return a reference to the cookie bytes.
-    pub fn cookie(&self) -> &Cookie {
+    pub(crate) fn cookie(&self) -> &Cookie {
         &self.cookie
     }
 
@@ -93,17 +94,17 @@ impl Nonce {
     ///
     /// TODO: Does it make sense to provide these accessors instead of making
     /// the fields public?
-    pub fn source(&self) -> Address {
+    pub(crate) fn source(&self) -> Address {
         self.source
     }
 
     /// Return the destination.
-    pub fn destination(&self) -> Address {
+    pub(crate) fn destination(&self) -> Address {
         self.destination
     }
 
     /// Return the combined sequence number.
-    pub fn csn(&self) -> &CombinedSequenceSnapshot {
+    pub(crate) fn csn(&self) -> &CombinedSequenceSnapshot {
         &self.csn
     }
 
@@ -113,7 +114,7 @@ impl Nonce {
     /// Only clone a `Nonce` if it's absolutely required and if you are sure
     /// that it isn't reused.
     #[cfg_attr(feature="clippy", allow(should_implement_trait))]
-    pub unsafe fn clone(&self) -> Nonce {
+    pub(crate) unsafe fn clone(&self) -> Nonce {
         Nonce {
             cookie: self.cookie.clone(),
             source: self.source,

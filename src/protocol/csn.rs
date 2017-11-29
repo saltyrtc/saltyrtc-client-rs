@@ -8,7 +8,7 @@ use std::cmp;
 
 use rust_sodium::randombytes::randombytes;
 
-use errors::{Result, ErrorKind};
+use errors::{SignalingError, SignalingResult};
 use helpers::libsodium_init_or_panic;
 
 
@@ -64,17 +64,14 @@ impl CombinedSequence {
     ///
     /// This will fail if the overflow number overflows. This is extremely
     /// unlikely and must be treated as a protocol error.
-    pub fn increment(&mut self) -> Result<CombinedSequenceSnapshot> {
-        let next_result: Result<CombinedSequence> = match self.sequence.checked_add(1) {
-            Some(incremented) => {
-                Ok(CombinedSequence::new(self.overflow, incremented))
-            },
+    pub fn increment(&mut self) -> SignalingResult<CombinedSequenceSnapshot> {
+        let next = match self.sequence.checked_add(1) {
+            Some(incremented) => CombinedSequence::new(self.overflow, incremented),
             None => match self.overflow.checked_add(1) {
-                Some(incremented) => Ok(CombinedSequence::new(incremented, 0)),
-                None => Err(ErrorKind::CsnOverflow.into()),
+                Some(incremented) => CombinedSequence::new(incremented, 0),
+                None => return Err(SignalingError::CsnOverflow),
             }
         };
-        let next = next_result?;
         let snapshot = (&next).into();
         *self = next;
         Ok(snapshot)
@@ -265,9 +262,9 @@ mod tests {
         let mut old = CombinedSequence::new(::std::u16::MAX, ::std::u32::MAX);
         let new = old.increment();
         assert!(new.is_err());
-        match new.unwrap_err().kind() {
-            &ErrorKind::CsnOverflow => {},
-            ref ek @ _ => panic!("Wrong error kind: {:?}", ek),
+        match new.unwrap_err() {
+            SignalingError::CsnOverflow => {},
+            ref other => panic!("Wrong error type: {:?}", other),
         };
     }
 }

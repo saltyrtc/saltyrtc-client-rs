@@ -7,8 +7,6 @@
 
 extern crate byteorder;
 extern crate data_encoding;
-#[macro_use]
-extern crate error_chain;
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
@@ -54,9 +52,13 @@ use websocket::header::WebSocketProtocol;
 use websocket::message::OwnedMessage;
 
 // Re-exports
-pub use crypto::{KeyStore, PublicKey, PrivateKey, AuthToken, public_key_from_hex_str};
-pub use errors::{SaltyResult, SaltyError};
-pub use protocol::{Role, messages};
+pub use crypto::{KeyStore, PublicKey, PrivateKey, AuthToken};
+pub use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError};
+pub use protocol::{Role};
+
+pub mod utils {
+    pub use crypto::{public_key_from_hex_str};
+}
 
 // Internal imports
 use helpers::libsodium_init;
@@ -108,7 +110,7 @@ impl SaltyClient {
     }
 
     /// Handle an incoming message.
-    fn handle_message(&mut self, bbox: boxes::ByteBox) -> Vec<HandleAction> {
+    fn handle_message(&mut self, bbox: boxes::ByteBox) -> SignalingResult<Vec<HandleAction>> {
         self.signaling.handle_message(bbox)
     }
 }
@@ -130,7 +132,7 @@ pub fn connect(
     // Parse URL
     let ws_url = match Url::parse(url) {
         Ok(b) => b,
-        Err(e) => return Err(SaltyError::Parsing(format!("Could not parse URL: {}", e))),
+        Err(e) => return Err(SaltyError::Decode(format!("Could not parse URL: {}", e))),
     };
 
     // Initialize WebSocket client
@@ -224,7 +226,15 @@ pub fn connect(
 
                         // Handle message bytes
                         let handle_actions = match salty.deref().try_borrow_mut() {
-                            Ok(mut s) => s.handle_message(bbox),
+                            Ok(mut s) => match s.handle_message(bbox) {
+                                Ok(actions) => actions,
+                                Err(e) => {
+                                    // TODO: Convert to protocol error
+                                    return boxed!(future::err(SaltyError::Crash(
+                                        format!("Signaling error (FIXME): {}", e)
+                                    )));
+                                },
+                            },
                             Err(e) => return boxed!(
                                 future::err(SaltyError::Crash(
                                     format!("Could not get mutable reference to SaltyClient: {}", e)

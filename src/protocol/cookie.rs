@@ -1,13 +1,12 @@
 //! Cookies.
 
 use std::fmt;
-use std::result::Result as StdResult;
 
 use rust_sodium::randombytes::randombytes_into;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use errors::{Result, ErrorKind};
+use errors::{SignalingError, SignalingResult};
 use helpers::libsodium_init_or_panic;
 
 
@@ -15,12 +14,12 @@ const COOKIE_BYTES: usize = 16;
 
 /// Newtype wrapper for the cookie bytes.
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct Cookie([u8; COOKIE_BYTES]);
+pub(crate) struct Cookie([u8; COOKIE_BYTES]);
 
 impl Cookie {
 
     /// Create a new `Cookie` from a byte array.
-    pub fn new(bytes: [u8; COOKIE_BYTES]) -> Self {
+    pub(crate) fn new(bytes: [u8; COOKIE_BYTES]) -> Self {
         Cookie(bytes)
     }
 
@@ -28,18 +27,19 @@ impl Cookie {
     ///
     /// This will fail if the byte slice does not contain exactly 16 bytes of
     /// data.
-    pub fn from_slice(bytes: &[u8]) -> Result<Self> {
-        ensure!(
-            bytes.len() == COOKIE_BYTES,
-            ErrorKind::Crypto(format!("byte slice must be exactly {} bytes, not {}", COOKIE_BYTES, bytes.len()))
-        );
+    pub(crate) fn from_slice(bytes: &[u8]) -> SignalingResult<Self> {
+        if bytes.len() != COOKIE_BYTES {
+            return Err(SignalingError::Decode(
+                format!("byte slice must be exactly {} bytes, not {}", COOKIE_BYTES, bytes.len())
+            ));
+        };
         let mut array = [0; COOKIE_BYTES];
         array[..COOKIE_BYTES].clone_from_slice(&bytes[..COOKIE_BYTES]);
         Ok(Cookie(array))
     }
 
     /// Create a new random `Cookie`.
-    pub fn random() -> Self {
+    pub(crate) fn random() -> Self {
         // Make sure that libsodium is initialized
         libsodium_init_or_panic();
 
@@ -54,14 +54,14 @@ impl Cookie {
     }
 
     /// Return the cookie bytes.
-    pub fn bytes(&self) -> &[u8] {
+    pub(crate) fn bytes(&self) -> &[u8] {
         &self.0
     }
 }
 
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl Serialize for Cookie {
-    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where S: Serializer {
         serializer.serialize_bytes(&self.0)
     }
@@ -76,7 +76,7 @@ impl<'de> Visitor<'de> for CookieVisitor {
         formatter.write_str("16 bytes of binary data")
     }
 
-    fn visit_bytes<E>(self, v: &[u8]) -> StdResult<Self::Value, E> where E: SerdeError {
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E> where E: SerdeError {
         if v.len() != 16 {
             return Err(SerdeError::invalid_length(v.len(), &self));
         }
@@ -84,14 +84,14 @@ impl<'de> Visitor<'de> for CookieVisitor {
                         v[8], v[9], v[10], v[11], v[12], v[13], v[14], v[15]]))
     }
 
-    fn visit_byte_buf<E>(self, v: Vec<u8>) -> StdResult<Self::Value, E> where E: SerdeError {
+    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> where E: SerdeError {
         self.visit_bytes(&v)
     }
 }
 
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl<'de> Deserialize<'de> for Cookie {
-    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where D: Deserializer<'de> {
         deserializer.deserialize_bytes(CookieVisitor)
     }
@@ -100,14 +100,14 @@ impl<'de> Deserialize<'de> for Cookie {
 
 /// A pair of two [`Cookie`](struct.Cookie.html)s
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CookiePair {
-    pub ours: Cookie,
-    pub theirs: Option<Cookie>,
+pub(crate) struct CookiePair {
+    pub(crate) ours: Cookie,
+    pub(crate) theirs: Option<Cookie>,
 }
 
 impl CookiePair {
     /// Create a new [`CookiePair`](struct.CookiePair.html).
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         CookiePair {
             ours: Cookie::random(),
             theirs: None,

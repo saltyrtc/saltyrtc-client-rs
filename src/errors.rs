@@ -3,18 +3,21 @@
 //! The implementation is done using the
 //! [`failure`](https://crates.io/crates/failure) crate.
 
-use rmp_serde::decode::Error as DecodeError;
+use std::convert::From;
+
+use rmp_serde::decode::Error as SerdeDecodeError;
+
 
 /// Errors that are exposed to the user of the library.
-#[derive(Fail, Debug)]
+#[derive(Fail, Debug, PartialEq)]
 pub enum SaltyError {
     /// A problem with Libsodium or with encrypting or decrypting data.
     #[fail(display = "Crypto error: {}", _0)]
     Crypto(String),
 
-    /// A problem when parsing data.
-    #[fail(display = "Parsing error: {}", _0)]
-    Parsing(String),
+    /// A problem when parsing or decoding data.
+    #[fail(display = "Decoding error: {}", _0)]
+    Decode(String),
 
     /// A network related problem.
     #[fail(display = "Network error: {}", _0)]
@@ -38,7 +41,7 @@ pub type SaltyResult<T> = ::std::result::Result<T, SaltyError>;
 /// in the connection being closed.
 ///
 /// TODO: Should the messages be represented as context instead?
-#[derive(Fail, Debug)]
+#[derive(Fail, Debug, PartialEq)]
 pub enum SignalingError {
     /// A problem with decoding data.
     #[fail(display = "Decoding error: {}", _0)]
@@ -56,61 +59,34 @@ pub enum SignalingError {
     /// This is extremely unlikely and must always be treated as a protocol error.
     #[fail(display = "CSN overflow")]
     CsnOverflow,
+
+    /// An invalid state transition was attempted.
+    #[fail(display = "Invalid state transition: {}", _0)]
+    InvalidStateTransition(String),
+
+    /// A message is not valid.
+    #[fail(display = "Invalid message: {}", _0)]
+    InvalidMessage(String),
+
+    /// Something happened that violates the protocol.
+    /// This error should mainly be used if the event that happened is outside
+    /// of our control (e.g. if the peer sends a message we didn't expect).
+    /// If the error is an implementation bug, use
+    /// [`SignalingError::Crash`](enum.SignalingError.html#crash) instead!
+    #[fail(display = "A protocol error occurred: {}", _0)]
+    Protocol(String),
+
+    /// An unexpected error. This should never happen and indicates a bug in
+    /// the implementation.
+    #[fail(display = "An unexpected error occurred: {}. This indicates a bug and should be reported!", _0)]
+    Crash(String),
 }
 
 /// A result with [`SignalingError](enum.SignalingError.html) as error type.
 pub type SignalingResult<T> = ::std::result::Result<T, SignalingError>;
 
-error_chain!{
-    // The type defined for this error.
-    types {
-        Error, ErrorKind, ResultExt, Result;
-    }
-
-    // Automatic conversions between this error chain
-    // and other error chains.
-    links {
-    }
-
-    // Automatic conversions between this error chain and other
-    // error types not defined by the `error_chain!`.
-    // These will be wrapped in a new error.
-    foreign_links {
-        Io(::std::io::Error) #[cfg(unix)] #[doc = "An I/O error occurred."];
-        MsgpackDecode(DecodeError) #[doc = "Decoding msgpack bytes failed."];
-    }
-
-    errors {
-        /// A problem with decoding data.
-        Decode(msg: String) {
-            description("decoding error"),
-            display("decoding error: {}", msg),
-        }
-        /// Nonce validation fails.
-        InvalidNonce(msg: String) {
-            description("invalid nonce"),
-            display("invalid nonce: {}", msg),
-        }
-        /// A problem with Libsodium or with encrypting or decrypting data.
-        Crypto(msg: String) {
-            description("crypto error"),
-            display("crypto error: {}", msg),
-        }
-        /// A CSN overflowed.
-        /// This is extremely unlikely and must be treated as a protocol error.
-        CsnOverflow {
-            description("csn overflow"),
-            display("csn overflow"),
-        }
-        /// A message has an invalid state.
-        InvalidMessageState(msg: String) {
-            description("invalid message state"),
-            display("invalid message state: {}", msg),
-        }
-        /// An invalid state transition was attempted.
-        InvalidStateTransition(msg: String) {
-            description("invalid state transition"),
-            display("invalid state transition: {}", msg),
-        }
+impl From<SerdeDecodeError> for SignalingError {
+    fn from(e: SerdeDecodeError) -> Self {
+        SignalingError::Decode(format!("Could not decode msgpack data: {}", e))
     }
 }

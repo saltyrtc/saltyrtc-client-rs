@@ -43,7 +43,7 @@ impl fmt::Display for Role {
 ///
 /// On the network level, this is encoded as a single unsigned byte.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Identity {
+pub(crate) enum Identity {
     /// An unknown identity is initialized to `0x00`.
     Unknown,
     /// The initiator has the identity `0x01`.
@@ -81,7 +81,7 @@ impl fmt::Display for Identity {
 /// This is like the [`Identity`](enum.identity.html), but the `Server` value
 /// is not allowed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum ClientIdentity {
+pub(crate) enum ClientIdentity {
     /// An unknown identity is initialized to `0x00`.
     Unknown,
     /// The initiator has the identity `0x01`.
@@ -106,26 +106,26 @@ impl fmt::Display for ClientIdentity {
 /// This is an unsigned byte like the [`Identity`](enum.Identity.html),
 /// but without any semantic information attached.
 #[derive(Debug, PartialEq, Eq, Copy, Clone, Hash)]
-pub struct Address(pub u8);
+pub(crate) struct Address(pub(crate) u8);
 
 impl Address {
     /// Return whether this address is a valid server address.
-    pub fn is_server(&self) -> bool {
+    pub(crate) fn is_server(&self) -> bool {
         self.0 == 0x00
     }
 
     /// Return whether this address is a valid unknown address.
-    pub fn is_unknown(&self) -> bool {
+    pub(crate) fn is_unknown(&self) -> bool {
         self.0 == 0x00
     }
 
     /// Return whether this address is the initiator address.
-    pub fn is_initiator(&self) -> bool {
+    pub(crate) fn is_initiator(&self) -> bool {
         self.0 == 0x01
     }
 
     /// Return whether this address is in the responder range.
-    pub fn is_responder(&self) -> bool {
+    pub(crate) fn is_responder(&self) -> bool {
         self.0 >= 0x02
     }
 }
@@ -210,7 +210,7 @@ impl<'de> Deserialize<'de> for Address {
 /// TODO: This could be split up into actions for the signaling state and
 /// actions for the network part.
 #[derive(Debug, PartialEq)]
-pub enum HandleAction {
+pub(crate) enum HandleAction {
     /// Send the specified message through the websocket.
     Reply(ByteBox),
 }

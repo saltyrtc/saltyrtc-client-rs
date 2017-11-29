@@ -2,7 +2,6 @@
 
 use std::cmp;
 use std::fmt;
-use std::result::Result as StdResult;
 
 use data_encoding::{HEXLOWER, HEXLOWER_PERMISSIVE};
 use rust_sodium::crypto::{box_, secretbox};
@@ -10,7 +9,7 @@ use rust_sodium_sys::crypto_scalarmult_base;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use errors::{Result, Error, ErrorKind, SaltyResult, SaltyError};
+use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError};
 use helpers::{libsodium_init, libsodium_init_or_panic};
 use protocol::Nonce;
 
@@ -30,14 +29,11 @@ pub type PrivateKey = box_::SecretKey;
 pub type SecretKey = secretbox::Key;
 
 /// Create a `PublicKey` instance from hex bytes.
-pub fn public_key_from_hex_str(hex_str: &str) -> Result<PublicKey> {
+pub fn public_key_from_hex_str(hex_str: &str) -> SaltyResult<PublicKey> {
     let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
-        .map_err(|_| Error::from_kind(
-            ErrorKind::Decode("Could not decode public key hex string".to_string())
-        ))?;
-    PublicKey::from_slice(&bytes).ok_or(Error::from_kind(
-        ErrorKind::Decode("Invalid public key hex string".to_string())
-    ))
+        .map_err(|_| SaltyError::Decode("Could not decode public key hex string".to_string()))?;
+    PublicKey::from_slice(&bytes)
+        .ok_or(SaltyError::Decode("Invalid public key hex string".to_string()))
 }
 
 
@@ -108,24 +104,25 @@ impl KeyStore {
     }
 
     /// Return a reference to the private key.
-    pub fn private_key(&self) -> &PrivateKey {
+    pub(crate) fn private_key(&self) -> &PrivateKey {
         &self.private_key
     }
 
     /// Encrypt data for the specified public key with the private key.
-    pub fn encrypt(&self, data: &[u8], nonce: Nonce, other_key: &PublicKey) -> Vec<u8> {
+    pub(crate) fn encrypt(&self, data: &[u8], nonce: Nonce, other_key: &PublicKey) -> Vec<u8> {
         let rust_sodium_nonce: box_::Nonce = nonce.into();
         box_::seal(data, &rust_sodium_nonce, other_key, &self.private_key)
     }
 
     /// Decrypt data using the specified public key with the own private key.
     ///
-    /// If decryption succeeds, the decrypted bytes are returned. Otherwise, an
-    /// error with error kind `Crypto` is returned.
-    pub fn decrypt(&self, data: &[u8], nonce: Nonce, other_key: &PublicKey) -> Result<Vec<u8>> {
+    /// If decryption succeeds, the decrypted bytes are returned. Otherwise, a
+    /// [`SignalingError::Crypto`](../enum.SignalingError.html#variant.Crypto)
+    /// is returned.
+    pub(crate) fn decrypt(&self, data: &[u8], nonce: Nonce, other_key: &PublicKey) -> SignalingResult<Vec<u8>> {
         let rust_sodium_nonce: box_::Nonce = nonce.into();
         box_::open(data, &rust_sodium_nonce, other_key, &self.private_key)
-            .map_err(|_| Error::from_kind(ErrorKind::Crypto("Could not decrypt data".to_string())))
+            .map_err(|_| SignalingError::Crypto("Could not decrypt data".to_string()))
     }
 
 }
@@ -153,14 +150,11 @@ impl AuthToken {
     }
 
     /// Create an `AuthToken` instance from hex bytes.
-    pub fn from_hex_str(hex_str: &str) -> Result<Self> {
+    pub fn from_hex_str(hex_str: &str) -> SaltyResult<Self> {
         let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
-            .map_err(|_| Error::from_kind(
-                ErrorKind::Decode("Could not decode auth token hex string".to_string())
-            ))?;
-        let key = SecretKey::from_slice(&bytes).ok_or(Error::from_kind(
-            ErrorKind::Decode("Invalid auth token hex string".to_string())
-        ))?;
+            .map_err(|e| SaltyError::Decode(format!("Could not decode auth token hex string: {}", e)))?;
+        let key = SecretKey::from_slice(&bytes)
+            .ok_or(SaltyError::Decode("Invalid auth token hex string".to_string()))?;
         Ok(AuthToken(key))
     }
 
@@ -175,19 +169,20 @@ impl AuthToken {
     }
 
     /// Encrypt data with the secret key.
-    pub fn encrypt(&self, plaintext: &[u8], nonce: Nonce) -> Vec<u8> {
+    pub(crate) fn encrypt(&self, plaintext: &[u8], nonce: Nonce) -> Vec<u8> {
         let rust_sodium_nonce: secretbox::Nonce = nonce.into();
         secretbox::seal(plaintext, &rust_sodium_nonce, self.secret_key())
     }
 
     /// Decrypt data with the secret key.
     ///
-    /// If decryption succeeds, the decrypted bytes are returned. Otherwise, an
-    /// error with error kind `Crypto` is returned.
-    pub fn decrypt(&self, ciphertext: &[u8], nonce: Nonce) -> Result<Vec<u8>> {
+    /// If decryption succeeds, the decrypted bytes are returned. Otherwise, a
+    /// [`SignalingError::Crypto`](../enum.SignalingError.html#variant.Crypto)
+    /// is returned.
+    pub(crate) fn decrypt(&self, ciphertext: &[u8], nonce: Nonce) -> SignalingResult<Vec<u8>> {
         let rust_sodium_nonce: secretbox::Nonce = nonce.into();
         secretbox::open(ciphertext, &rust_sodium_nonce, self.secret_key())
-            .map_err(|_| Error::from_kind(ErrorKind::Crypto("Could not decrypt data".to_string())))
+            .map_err(|_| SignalingError::Crypto("Could not decrypt data".to_string()))
     }
 
 }
@@ -248,7 +243,7 @@ impl cmp::PartialEq<SignedKeys> for SignedKeys {
 
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl Serialize for SignedKeys {
-    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where S: Serializer {
         serializer.serialize_bytes(&self.0)
     }
@@ -265,7 +260,7 @@ impl<'de> Visitor<'de> for SignedKeysVisitor {
         formatter.write_str("80 bytes of binary data")
     }
 
-    fn visit_bytes<E>(self, v: &[u8]) -> StdResult<Self::Value, E> where E: SerdeError {
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E> where E: SerdeError {
         if v.len() != SIGNED_KEYS_BYTES {
             return Err(SerdeError::invalid_length(v.len(), &self));
         }
@@ -283,14 +278,14 @@ impl<'de> Visitor<'de> for SignedKeysVisitor {
         ]))
     }
 
-    fn visit_byte_buf<E>(self, v: Vec<u8>) -> StdResult<Self::Value, E> where E: SerdeError {
+    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> where E: SerdeError {
         self.visit_bytes(&v)
     }
 }
 
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl<'de> Deserialize<'de> for SignedKeys {
-    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where D: Deserializer<'de> {
         deserializer.deserialize_bytes(SignedKeysVisitor)
     }
@@ -403,7 +398,7 @@ mod tests {
         let decrypted_bad = ks.decrypt(&bad_ciphertext_bytes, nonce, &other_key);
         assert!(decrypted_bad.is_err());
         let error = decrypted_bad.unwrap_err();
-        assert_eq!(format!("{}", error), "crypto error: Could not decrypt data");
+        assert_eq!(format!("{}", error), "Crypto error: Could not decrypt data");
     }
 
     /// Test the `AuthToken::from_hex_str` method.
@@ -411,17 +406,11 @@ mod tests {
     fn auth_token_from_hex_str() {
         let invalid_hex = "foobar";
         let res1 = AuthToken::from_hex_str(&invalid_hex);
-        match res1.unwrap_err().kind() {
-            &ErrorKind::Decode(ref msg) => assert_eq!(msg, "Could not decode auth token hex string"),
-            other => panic!("Wrong error kind: {:?}", other),
-        };
+        assert_eq!(res1, Err(SaltyError::Decode("Could not decode auth token hex string: invalid symbol at 1".into())));
 
         let invalid_key = "012345ab";
         let res2 = AuthToken::from_hex_str(&invalid_key);
-        match res2.unwrap_err().kind() {
-            &ErrorKind::Decode(ref msg) => assert_eq!(msg, "Invalid auth token hex string"),
-            other => panic!("Wrong error kind: {:?}", other),
-        };
+        assert_eq!(res2, Err(SaltyError::Decode("Invalid auth token hex string".into())));
 
         let valid_key = "53459fb52fdeeb74103a2932a5eff8095ea1efbaf657f2181722c4e61e6f7e79";
         let res3 = AuthToken::from_hex_str(&valid_key);
