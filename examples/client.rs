@@ -2,6 +2,7 @@
 
 extern crate clap;
 extern crate data_encoding;
+extern crate dotenv;
 extern crate env_logger;
 extern crate native_tls;
 extern crate saltyrtc_client;
@@ -26,6 +27,7 @@ use saltyrtc_client::{SaltyClient, KeyStore, Role, AuthToken, public_key_from_he
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 fn main() {
+    dotenv::dotenv().ok();
     env_logger::init().expect("Could not initialize env_logger");
 
     const ARG_PATH: &'static str = "path";

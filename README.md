@@ -46,6 +46,11 @@ To see the logs, export an env variable:
 
     export RUST_LOG=saltyrtc_client=TRACE
 
+The examples initialize the [`dotenv`](https://crates.io/crates/dotenv) crate,
+so you can also store this setting in an `.env` file:
+
+    echo "RUST_LOG=saltyrtc_client=DEBUG" >> .env
+
 
 <!-- Badges -->
 [circle-ci]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/develop
