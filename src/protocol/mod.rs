@@ -2,7 +2,11 @@
 //!
 //! These state machines handle all state transitions independently of the
 //! connection. Instead of executing side effects (like sending a response
-//! message to the peer through the websocket), a `HandleAction` is returned.
+//! message to the peer through the websocket), a
+//! [`HandleAction`](types/enum.HandleAction.html) is returned.
+//!
+//! All state is contained in the [context structs](context/index.html),
+//! depending on the role.
 //!
 //! This allows for better decoupling between protocol logic and network code,
 //! and makes it possible to easily add tests.

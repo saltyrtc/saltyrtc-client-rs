@@ -4,10 +4,17 @@
 /// handle actions.
 pub type FailureMsg = String;
 
+/// The state of the entire signaling instance.
+///
+/// When establishing a connection with a SaltyRTC peer, the connection buildup
+/// can be in one of three stages: Server handshake, peer handshake or task.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SignalingState {
+    /// The server handshake is in progress.
     ServerHandshake,
+    /// The server handshake is finished, the peer handshake is in progress.
     PeerHandshake,
+    /// The peer handshake is finished, control has been handed over to a task.
     Task,
 }
 
@@ -35,9 +42,10 @@ pub enum ServerHandshakeState {
 pub enum InitiatorHandshakeState {
     /// Initial state.
     New,
-    /// A `key` message and maybe a `token` message have been sent.
+    /// A [`Key`](../messages/struct.Key.html) message and maybe a
+    /// [`Token`](../messages/struct.Token.html) message have been sent.
     KeySent,
-    /// A `key` message has been received.
+    /// A [`Key`](../messages/struct.Key.html) message has been received.
     KeyReceived,
     AuthSent,
     AuthReceived,
@@ -50,7 +58,9 @@ pub enum ResponderHandshakeState {
     /// Initial state.
     New,
     TokenReceived,
+    /// A [`Key`](../messages/struct.Key.html) message has been received.
     KeyReceived,
+    /// A [`Key`](../messages/struct.Key.html) message has been sent.
     KeySent,
     AuthReceived,
     AuthSent,
