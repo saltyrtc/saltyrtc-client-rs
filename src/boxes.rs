@@ -6,7 +6,7 @@
 
 use rust_sodium::crypto::box_::NONCEBYTES;
 
-use errors::{Result, ResultExt, ErrorKind};
+use errors::{Result, ResultExt, ErrorKind, SignalingError, SignalingResult};
 use crypto::{KeyStore, PublicKey, AuthToken};
 use protocol::Nonce;
 use protocol::messages::Message;
@@ -77,10 +77,12 @@ impl ByteBox {
         ByteBox { bytes, nonce }
     }
 
-    pub fn from_slice(bytes: &[u8]) -> Result<Self> {
-        ensure!(bytes.len() > NONCEBYTES, ErrorKind::Decode("message is too short".into()));
+    pub fn from_slice(bytes: &[u8]) -> SignalingResult<Self> {
+        if bytes.len() <= NONCEBYTES {
+            return Err(SignalingError::Decode("Message is too short".into()));
+        }
         let nonce = Nonce::from_bytes(&bytes[..24])
-            .chain_err(|| ErrorKind::Decode("cannot decode nonce".into()))?;
+            .map_err(|e| SignalingError::Decode(format!("Cannot decode nonce: {}", e)))?;
         let bytes = bytes[24..].to_vec();
         Ok(Self::new(bytes, nonce))
     }
@@ -187,8 +189,8 @@ mod tests {
 
         let err1 = ByteBox::from_slice(&bytes_only_nonce).unwrap_err();
         let err2 = ByteBox::from_slice(&bytes_not_even_nonce).unwrap_err();
-        assert_eq!(format!("{}", err1), "decoding error: message is too short");
-        assert_eq!(format!("{}", err2), "decoding error: message is too short");
+        assert_eq!(format!("{}", err1), "Decoding error: Message is too short");
+        assert_eq!(format!("{}", err2), "Decoding error: Message is too short");
     }
 
     #[test]

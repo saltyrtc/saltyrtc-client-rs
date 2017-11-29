@@ -1,4 +1,4 @@
-use errors::{Result, ErrorKind};
+use errors::{SaltyResult, SaltyError};
 
 /// Initialize libsodium. Return an error if initialization failed.
 ///
@@ -6,10 +6,10 @@ use errors::{Result, ErrorKind};
 ///
 /// See [`rust_sodium::init` docs](https://docs.rs/rust_sodium/0.5.0/rust_sodium/fn.init.html)
 /// for more information.
-pub fn libsodium_init() -> Result<()> {
+pub fn libsodium_init() -> SaltyResult<()> {
     let success = ::rust_sodium::init();
     if !success {
-        bail!(ErrorKind::Crypto("could not initialize libsodium".into()));
+        return Err(SaltyError::Crypto("could not initialize libsodium".into()));
     } else {
         Ok(())
     }

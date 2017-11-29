@@ -1,10 +1,65 @@
 //! Error types used in saltyrtc-client.
 //!
 //! The implementation is done using the
-//! [`error-chain`](https://github.com/rust-lang-nursery/error-chain/)
-//! crate.
+//! [`failure`](https://crates.io/crates/failure) crate.
 
 use rmp_serde::decode::Error as DecodeError;
+
+/// Errors that are exposed to the user of the library.
+#[derive(Fail, Debug)]
+pub enum SaltyError {
+    /// A problem with Libsodium or with encrypting or decrypting data.
+    #[fail(display = "Crypto error: {}", _0)]
+    Crypto(String),
+
+    /// A problem when parsing data.
+    #[fail(display = "Parsing error: {}", _0)]
+    Parsing(String),
+
+    /// A network related problem.
+    #[fail(display = "Network error: {}", _0)]
+    Network(String),
+
+    /// A protocol related error.
+    #[fail(display = "Protocol error: {}", _0)]
+    Protocol(String),
+
+    /// An unexpected error. This should never happen and indicates a bug in
+    /// the implementation.
+    #[fail(display = "An unexpected error occurred: {}. This indicates a bug and should be reported!", _0)]
+    Crash(String),
+}
+
+/// A result with [`SaltyError](enum.SaltyError.html) as error type.
+pub type SaltyResult<T> = ::std::result::Result<T, SaltyError>;
+
+
+/// Internal errors that occur during signaling and that will probably result
+/// in the connection being closed.
+///
+/// TODO: Should the messages be represented as context instead?
+#[derive(Fail, Debug)]
+pub enum SignalingError {
+    /// A problem with decoding data.
+    #[fail(display = "Decoding error: {}", _0)]
+    Decode(String),
+
+    /// Nonce validation fails.
+    #[fail(display = "Invalid nonce: {}", _0)]
+    InvalidNonce(String),
+
+    /// A problem with Libsodium or with encrypting or decrypting data.
+    #[fail(display = "Crypto error: {}", _0)]
+    Crypto(String),
+
+    /// A CSN overflowed.
+    /// This is extremely unlikely and must always be treated as a protocol error.
+    #[fail(display = "CSN overflow")]
+    CsnOverflow,
+}
+
+/// A result with [`SignalingError](enum.SignalingError.html) as error type.
+pub type SignalingResult<T> = ::std::result::Result<T, SignalingError>;
 
 error_chain!{
     // The type defined for this error.

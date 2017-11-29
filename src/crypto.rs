@@ -10,7 +10,7 @@ use rust_sodium_sys::crypto_scalarmult_base;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use errors::{Result, ResultExt, Error, ErrorKind};
+use errors::{Result, Error, ErrorKind, SaltyResult, SaltyError};
 use helpers::{libsodium_init, libsodium_init_or_panic};
 use protocol::Nonce;
 
@@ -53,12 +53,12 @@ impl KeyStore {
     /// Create a new key pair and wrap it in a key store.
     ///
     /// This can fail only if libsodium initialization fails.
-    pub fn new() -> Result<Self> {
+    pub fn new() -> SaltyResult<Self> {
         info!("Generating new key pair");
 
         // Initialize libsodium if it hasn't been initialized already
         libsodium_init()
-            .chain_err(|| ErrorKind::Crypto("could not generate keystore".into()))?;
+            .map_err(|e| SaltyError::Crypto(format!("Could not generate keystore: {}", e)))?;
 
         // Generate key pair
         let (pk, sk) = box_::gen_keypair();

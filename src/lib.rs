@@ -9,6 +9,9 @@ extern crate byteorder;
 extern crate data_encoding;
 #[macro_use]
 extern crate error_chain;
+extern crate failure;
+#[macro_use]
+extern crate failure_derive;
 #[macro_use]
 extern crate futures;
 #[macro_use]
@@ -27,7 +30,7 @@ extern crate websocket;
 // Modules
 mod boxes;
 mod crypto;
-pub mod errors;
+mod errors;
 mod helpers;
 mod protocol;
 mod send_all;
@@ -52,10 +55,10 @@ use websocket::message::OwnedMessage;
 
 // Re-exports
 pub use crypto::{KeyStore, PublicKey, PrivateKey, AuthToken, public_key_from_hex_str};
+pub use errors::{SaltyResult, SaltyError};
 pub use protocol::{Role, messages};
 
 // Internal imports
-use errors::{Result, Error};
 use helpers::libsodium_init;
 use protocol::{HandleAction, Signaling};
 
@@ -120,21 +123,21 @@ pub fn connect(
     tls_config: Option<TlsConnector>,
     handle: &Handle,
     salty: Rc<RefCell<SaltyClient>>,
-) -> Result<BoxedFuture<(), Error>> {
+) -> SaltyResult<BoxedFuture<(), SaltyError>> {
     // Initialize libsodium
     libsodium_init()?;
 
     // Parse URL
     let ws_url = match Url::parse(url) {
         Ok(b) => b,
-        Err(e) => bail!("Could not parse URL: {}", e),
+        Err(e) => return Err(SaltyError::Parsing(format!("Could not parse URL: {}", e))),
     };
 
     // Initialize WebSocket client
     let client = ClientBuilder::from_url(&ws_url)
         .add_protocol(SUBPROTOCOL)
         .async_connect_secure(tls_config, handle)
-        .map_err(|e: WebSocketError| format!("Could not connect to server: {}", e).into())
+        .map_err(|e: WebSocketError| SaltyError::Network(format!("Could not connect to server: {}", e)))
         .and_then(|(client, headers)| {
             // Verify that the correct subprotocol was chosen
             trace!("Websocket server headers: {:?}", headers);
@@ -144,11 +147,11 @@ pub fn connect(
                 },
                 Some(proto) => {
                     error!("More than one chosen protocol: {:?}", proto);
-                    Err("More than one websocket subprotocol chosen by server".into())
+                    Err(SaltyError::Protocol("More than one websocket subprotocol chosen by server".into()))
                 },
                 None => {
                     error!("No protocol chosen by server");
-                    Err("Websocket subprotocol not accepted by server".into())
+                    Err(SaltyError::Protocol("Websocket subprotocol not accepted by server".into()))
                 },
             }
         });
@@ -200,16 +203,17 @@ pub fn connect(
                 client.into_future()
 
                     // Map errors to our custom error type
-                    .map_err(|(e, _)| format!("Could not receive message from server: {}", e).into())
+                    .map_err(|(e, _)| SaltyError::Network(format!("Could not receive message from server: {}", e)))
 
                     // Get nonce and message payload from the incoming bytes
                     .and_then(|(bytes_option, client)| {
                         // Unwrap bytes
-                        let bytes = bytes_option.ok_or("Server message stream ended")?;
+                        let bytes = bytes_option.ok_or(SaltyError::Network("Server message stream ended".into()))?;
                         debug!("Received {} bytes", bytes.len());
 
                         // Parse into ByteBox
-                        let bbox = boxes::ByteBox::from_slice(&bytes)?;
+                        let bbox = boxes::ByteBox::from_slice(&bytes)
+                            .map_err(|e| SaltyError::Protocol(e.to_string()))?;
                         trace!("ByteBox: {:?}", bbox);
 
                         Ok((bbox, client))
@@ -222,7 +226,9 @@ pub fn connect(
                         let handle_actions = match salty.deref().try_borrow_mut() {
                             Ok(mut s) => s.handle_message(bbox),
                             Err(e) => return boxed!(
-                                future::err(format!("Could not get mutable reference to SaltyClient: {}", e).into())
+                                future::err(SaltyError::Crash(
+                                    format!("Could not get mutable reference to SaltyClient: {}", e)
+                                ))
                             ),
                         };
 
@@ -243,7 +249,7 @@ pub fn connect(
                             }
                             let outbox = stream::iter_ok::<_, WebSocketError>(messages);
                             let future = send_all::new(client, outbox)
-                                .map_err(move |e| format!("Could not send message: {}", e).into())
+                                .map_err(move |e| SaltyError::Network(format!("Could not send message: {}", e)))
                                 .map(|(client, _)| {
                                     trace!("Sent all messages");
                                     Loop::Continue(client)

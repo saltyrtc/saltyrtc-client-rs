@@ -9,7 +9,6 @@ extern crate saltyrtc_client;
 extern crate tokio_core;
 
 use std::cell::RefCell;
-use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -158,9 +157,6 @@ fn main() {
         },
         Err(e) => {
             println!("{}", e);
-            if let Some(cause) = e.cause() {
-                println!("Cause: {}", cause);
-            }
             process::exit(1);
         },
     };
