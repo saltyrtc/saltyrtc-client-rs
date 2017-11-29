@@ -73,12 +73,12 @@ macro_rules! on_inner {
 }
 
 impl Signaling {
-    /// Create a new initiator signaling instane.
+    /// Create a new initiator signaling instance.
     pub fn new_initiator(permanent_key: KeyStore) -> Self {
         Signaling::Initiator(InitiatorSignaling::new(permanent_key))
     }
 
-    /// Create a new responder signaling instane.
+    /// Create a new responder signaling instance.
     pub fn new_responder(permanent_key: KeyStore,
                          initiator_pubkey: PublicKey,
                          auth_token: Option<AuthToken>) -> Self {
@@ -98,15 +98,37 @@ impl Signaling {
         on_inner!(self, ref s, s.signaling_state)
     }
 
-    /// Set the signaling state to `PeerHandshake`.
+    /// Update the signaling state.
     fn set_signaling_state(&mut self, state: SignalingState) -> Result<()> {
+        macro_rules! update { () => {{
+            trace!("Signaling state transition: {:?} -> {:?}", self.signaling_state(), state);
+            on_inner!(self, ref mut s, s.signaling_state = state);
+            Ok(())
+        }} }
+        macro_rules! ignore { () => {{
+            trace!("Ignoring signaling state transition: {:?} -> {:?}", self.signaling_state(), state);
+            Ok(())
+        }} };
+        macro_rules! fail { () => {{
+            Err(ErrorKind::InvalidStateTransition(
+                format!("Invalid state transition: {:?} -> {:?}", self.signaling_state(), state)
+            ).into())
+        }} };
+
         match self.signaling_state() {
-            SignalingState::ServerHandshake => {
-                on_inner!(self, ref mut s, s.signaling_state = state);
+            SignalingState::ServerHandshake => match state {
+                SignalingState::ServerHandshake => ignore!(),
+                _ => update!(),
             },
-            _ => return Err(ErrorKind::InvalidStateTransition("foo".into()).into()),
+            SignalingState::PeerHandshake => {
+                match state {
+                    SignalingState::ServerHandshake => fail!(),
+                    SignalingState::PeerHandshake => ignore!(),
+                    _ => update!(),
+                }
+            },
+            SignalingState::Task => fail!(),
         }
-        Ok(())
     }
 
     /// Return our assigned client identity.
