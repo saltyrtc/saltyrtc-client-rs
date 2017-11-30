@@ -172,22 +172,6 @@ impl Signaling {
 
     /// Handle an incoming message.
     pub(crate) fn handle_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
-        match self.signaling_state() {
-            SignalingState::ServerHandshake => self.handle_server_message(bbox),
-            SignalingState::PeerHandshake => match *self {
-                Signaling::Initiator(ref mut sig) => sig.handle_peer_message(bbox),
-                Signaling::Responder(ref mut sig) => sig.handle_peer_message(bbox),
-            },
-            SignalingState::Task => unimplemented!("TODO: Handle task messages"),
-        }
-    }
-
-    /// Determine the next server handshake state based on the incoming
-    /// server-to-client message bytes and the current state.
-    ///
-    /// This method call may have some side effects, like updates in the peer
-    /// context (cookie, CSN, etc).
-    fn handle_server_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
         // Validate the nonce
         match self.validate_nonce(&bbox.nonce) {
             // It's valid! Carry on.
@@ -206,6 +190,22 @@ impl Signaling {
         // Decode message
         let obox: OpenBox = self.decode_msg(bbox)?;
 
+        match self.signaling_state() {
+            SignalingState::ServerHandshake => self.handle_server_message(obox),
+            SignalingState::PeerHandshake => match *self {
+                Signaling::Initiator(ref mut sig) => sig.handle_peer_message(obox),
+                Signaling::Responder(ref mut sig) => sig.handle_peer_message(obox),
+            },
+            SignalingState::Task => unimplemented!("TODO: Handle task messages"),
+        }
+    }
+
+    /// Determine the next server handshake state based on the incoming
+    /// server-to-client message and the current state.
+    ///
+    /// This method call may have some side effects, like updates in the peer
+    /// context (cookie, CSN, etc).
+    fn handle_server_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>> {
         let old_state = self.server().handshake_state().clone();
         match (old_state, obox.message) {
             // Valid state transitions
@@ -593,11 +593,11 @@ impl InitiatorSignaling {
     }
 
     /// Determine the next peer handshake state based on the incoming
-    /// client-to-client message bytes and the current state.
+    /// client-to-client message and the current state.
     ///
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
-    fn handle_peer_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_peer_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>> {
         unimplemented!("initiator: handle peer message");
     }
 
@@ -695,11 +695,11 @@ impl ResponderSignaling {
     }
 
     /// Determine the next peer handshake state based on the incoming
-    /// client-to-client message bytes and the current state.
+    /// client-to-client message and the current state.
     ///
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
-    fn handle_peer_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_peer_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>> {
         unimplemented!("responder: handle peer message");
     }
 
