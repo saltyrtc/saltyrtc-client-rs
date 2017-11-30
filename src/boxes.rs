@@ -4,6 +4,7 @@
 //!
 //! A sealed box consists of the encrypted message bytes and a nonce.
 
+use data_encoding::BASE64;
 use rust_sodium::crypto::box_::NONCEBYTES;
 
 use errors::{SignalingError, SignalingResult};
@@ -99,7 +100,7 @@ impl ByteBox {
 
     /// Decrypt an encrypted message into an [`OpenBox`](struct.OpenBox.html).
     pub(crate) fn decrypt(self, keystore: &KeyStore, other_key: &PublicKey) -> SignalingResult<OpenBox> {
-        let decrypted = keystore.decrypt(
+        let decrypted: Vec<u8> = keystore.decrypt(
             // The message bytes to be decrypted
             &self.bytes,
             // The nonce. The unsafe call to `clone()` is required because the
@@ -110,7 +111,18 @@ impl ByteBox {
             other_key
         ).map_err(|e| SignalingError::Decode(format!("Cannot decode message payload: {}", e)))?;
 
-        trace!("Decrypted bytes: {:?}", decrypted);
+        if cfg!(feature = "msgpack-debugging") {
+            let encoded = || BASE64.encode(&decrypted)
+                                   .replace("+", "%2B")
+                                   .replace("=", "%3D")
+                                   .replace("/", "%2F");
+            match option_env!("MSGPACK_DEBUG_URL") {
+                Some(url) => trace!("Decrypted bytes: {}{}", url, encoded()),
+                None => trace!("Decrypted bytes: {}{}", ::DEFAULT_MSGPACK_DEBUG_URL, encoded()),
+            }
+        } else {
+            trace!("Decrypted bytes: {:?}", &decrypted);
+        }
 
         let message = Message::from_msgpack(&decrypted)
             .map_err(|e| SignalingError::Decode(format!("Cannot decode message payload: {}", e)))?;

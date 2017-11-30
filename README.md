@@ -52,6 +52,19 @@ so you can also store this setting in an `.env` file:
     echo "RUST_LOG=saltyrtc_client=DEBUG" >> .env
 
 
+## Msgpack Debugging
+
+If you enable the `msgpack-debugging` compile flag, you'll get direct msgpack
+analysis URLs for all decoded messages in your `TRACE` level logs.
+
+    cargo build --features 'msgpack-debugging'
+
+You can customize that URL prefix at compile time using the `MSGPACK_DEBUG_URL`
+env var. This is the default URL:
+
+    MSGPACK_DEBUG_URL='https://sugendran.github.io/msgpack-visualizer/#base64='
+
+
 <!-- Badges -->
 [circle-ci]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/develop
 [circle-ci-badge]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/develop.svg?style=shield

@@ -65,7 +65,9 @@ use helpers::libsodium_init;
 use protocol::{HandleAction, Signaling};
 
 
+// Constants
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
+const DEFAULT_MSGPACK_DEBUG_URL: &'static str = "https://sugendran.github.io/msgpack-visualizer/#base64=";
 
 
 /// A type alias for a boxed future.
