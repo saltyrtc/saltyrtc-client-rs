@@ -1310,7 +1310,7 @@ mod tests {
         /// field's value is true, the responder MUST proceed with sending a
         /// `token` or `key` client-to-client message described in the
         /// Client-to-Client Messages section.
-        fn _server_auth_respond_initiator(mut ctx: TestContext) -> Vec<HandleAction> {
+        fn _server_auth_respond_initiator(ctx: TestContext) -> Vec<HandleAction> {
             // Prepare a ServerAuth message
             let msg = ServerAuth {
                 your_cookie: ctx.our_cookie.clone(),
@@ -1335,16 +1335,16 @@ mod tests {
 
         #[test]
         fn server_auth_respond_initiator_with_token() { // TODO: Add similar test without token
-            let mut ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
-                                              ServerHandshakeState::ClientInfoSent, Some(AuthToken::new()));
+            let ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
+                                          ServerHandshakeState::ClientInfoSent, Some(AuthToken::new()));
             let actions = _server_auth_respond_initiator(ctx);
             assert_eq!(actions.len(), 2);
         }
 
         #[test]
         fn server_auth_respond_initiator_without_token() { // TODO: Add similar test without token
-            let mut ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
-                                              ServerHandshakeState::ClientInfoSent, None);
+            let ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
+                                          ServerHandshakeState::ClientInfoSent, None);
             let actions = _server_auth_respond_initiator(ctx);
             assert_eq!(actions.len(), 1);
         }
@@ -1353,8 +1353,8 @@ mod tests {
         /// should change to `PeerHandshake`.
         #[test]
         fn server_auth_signaling_state_transition() {
-            let mut ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
-                                              ServerHandshakeState::ClientInfoSent, None);
+            let ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
+                                          ServerHandshakeState::ClientInfoSent, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth {
