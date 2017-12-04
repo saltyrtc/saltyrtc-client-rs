@@ -34,7 +34,8 @@ pub(crate) use self::nonce::{Nonce};
 pub use self::types::{Role};
 pub(crate) use self::types::{HandleAction};
 use self::types::{ClientIdentity, Address};
-use self::state::{SignalingState, ServerHandshakeState, InitiatorHandshakeState};
+use self::state::{SignalingState, ServerHandshakeState};
+use self::state::{InitiatorHandshakeState, ResponderHandshakeState};
 
 
 /// The signaling implementation.
@@ -189,7 +190,11 @@ impl Signaling {
         }
 
         // Decode message
-        let obox: OpenBox = self.decode_msg(bbox)?;
+        let obox: OpenBox = if bbox.nonce.source().is_server() {
+            self.decode_server_msg(bbox)?
+        } else {
+            on_inner!(self, ref s, s.decode_peer_msg(bbox))?
+        };
 
         match self.signaling_state() {
             SignalingState::ServerHandshake =>
@@ -418,17 +423,18 @@ impl Signaling {
         ValidationResult::Ok
     }
 
-    /// Decode or decrypt a binary message depending on the state
-    fn decode_msg(&self, bbox: ByteBox) -> SignalingResult<OpenBox> {
-        if self.server().handshake_state() == ServerHandshakeState::New {
-            // If we're in state `New`, message must be unencrypted.
-            bbox.decode()
-        } else {
-            // Otherwise, decrypt
-            match self.server().permanent_key {
-                Some(ref pubkey) => bbox.decrypt(&self.permanent_key(), pubkey),
-                None => Err(SignalingError::Crash("Missing server permanent key".into())),
-            }
+    /// Decode or decrypt a binary message coming from the server
+    fn decode_server_msg(&self, bbox: ByteBox) -> SignalingResult<OpenBox> {
+        // The very first message from the server is unencrypted
+        if self.signaling_state() == SignalingState::ServerHandshake
+        && self.server().handshake_state() == ServerHandshakeState::New {
+            return bbox.decode();
+        }
+
+        // Otherwise, decrypt with server key
+        match self.server().permanent_key {
+            Some(ref pubkey) => bbox.decrypt(&self.permanent_key(), pubkey),
+            None => Err(SignalingError::Crash("Missing server permanent key".into())),
         }
     }
 
@@ -608,6 +614,58 @@ impl InitiatorSignaling {
         }
     }
 
+    /// Decode or decrypt a binary message coming from the peer
+    fn decode_peer_msg(&self, bbox: ByteBox) -> SignalingResult<OpenBox> {
+        // Validate source again
+        if !bbox.nonce.source().is_responder() {
+            return Err(SignalingError::Crash(format!("Received message from an initiator")));
+        }
+
+        // Find responder
+        let source = bbox.nonce.source();
+        let responder = match self.responders.get(&source) {
+            Some(responder) => responder,
+            None => return Err(SignalingError::Crash(format!("Did not find responder with address {}", source))),
+        };
+
+        // Helper functions
+        fn responder_permanent_key(responder: &ResponderContext) -> SignalingResult<&PublicKey> {
+            responder.permanent_key.as_ref()
+                .ok_or(SignalingError::Crash(
+                    format!("Did not find public permanent key for responder {}", responder.address.0)))
+        }
+        fn responder_session_key(responder: &ResponderContext) -> SignalingResult<&PublicKey> {
+            responder.session_key.as_ref()
+                .ok_or(SignalingError::Crash(
+                    format!("Did not find public session key for responder {}", responder.address.0)))
+        }
+
+        // Decrypt depending on state
+        match responder.handshake_state() {
+            ResponderHandshakeState::New => {
+                // Expect token message, encrypted with authentication token.
+                match self.auth_token {
+                    Some(ref token) => bbox.decrypt_token(token),
+                    None => Err(SignalingError::Crash("Auth token not set".into())),
+                }
+            },
+            ResponderHandshakeState::TokenReceived => {
+                // Expect key message, encrypted with our public permanent key
+                // and responder private permanent key
+                bbox.decrypt(&self.permanent_key, responder_permanent_key(&responder)?)
+            },
+            ResponderHandshakeState::KeySent => {
+                // Expect auth message, encrypted with our public session key
+                // and responder private session key
+                bbox.decrypt(&responder.keystore, responder_session_key(&responder)?)
+            },
+            other => {
+                // TODO: Maybe remove these states?
+                Err(SignalingError::Crash(format!("Invalid responder handshake state: {:?}", other)))
+            },
+        }
+    }
+
     /// Determine the next peer handshake state based on the incoming
     /// client-to-client message and the current state.
     ///
@@ -630,7 +688,7 @@ impl InitiatorSignaling {
 
             // Any undefined state transition results in an error
             (s, message) => Err(SignalingError::InvalidStateTransition(
-                format!("Got {} message from responder {} in {:?} state", message.get_type(), source, s)
+                format!("Got {} message from responder {} in {:?} state", message.get_type(), source.0, s)
             )),
         }
     }
@@ -759,6 +817,16 @@ impl ResponderSignaling {
         }
     }
 
+    /// Decode or decrypt a binary message coming from the peer
+    fn decode_peer_msg(&self, bbox: ByteBox) -> SignalingResult<OpenBox> {
+        // Validate source again
+        if !bbox.nonce.source().is_initiator() {
+            return Err(SignalingError::Crash(format!("Received message from a responder")));
+        }
+
+        unimplemented!("TODO: ResponderSignaling::decode_peer_msg");
+    }
+
     /// Determine the next peer handshake state based on the incoming
     /// client-to-client message and the current state.
     ///
@@ -810,7 +878,7 @@ impl ResponderSignaling {
     }
 
     /// Handle an incoming [`NewResponder`](messages/struct.NewResponder.html) message.
-    fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_new_responder(&mut self, _msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
         Err(SignalingError::Protocol("Received 'new-responder' message as responder".into()))
     }
 
