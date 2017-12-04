@@ -28,7 +28,7 @@ pub(crate) mod types;
 
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
-use self::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth};
+use self::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth, NewResponder};
 use self::messages::{Token, Key};
 pub(crate) use self::nonce::{Nonce};
 pub use self::types::{Role};
@@ -110,7 +110,7 @@ impl Signaling {
         }} };
         macro_rules! fail { () => {{
             Err(SignalingError::InvalidStateTransition(
-                format!("Invalid state transition: {:?} -> {:?}", self.signaling_state(), state)
+                format!("Signaling state: {:?} -> {:?}", self.signaling_state(), state)
             ))
         }} };
 
@@ -192,12 +192,19 @@ impl Signaling {
         let obox: OpenBox = self.decode_msg(bbox)?;
 
         match self.signaling_state() {
-            SignalingState::ServerHandshake => self.handle_server_message(obox),
-            SignalingState::PeerHandshake => match *self {
-                Signaling::Initiator(ref mut sig) => sig.handle_peer_message(obox),
-                Signaling::Responder(ref mut sig) => sig.handle_peer_message(obox),
-            },
-            SignalingState::Task => unimplemented!("TODO: Handle task messages"),
+            SignalingState::ServerHandshake =>
+                self.handle_server_message(obox),
+
+            SignalingState::PeerHandshake if obox.nonce.source().is_server() =>
+                self.handle_server_message(obox),
+            SignalingState::PeerHandshake =>
+                match *self {
+                    Signaling::Initiator(ref mut sig) => sig.handle_peer_message(obox),
+                    Signaling::Responder(ref mut sig) => sig.handle_peer_message(obox),
+                },
+
+            SignalingState::Task =>
+                unimplemented!("TODO: Handle task messages"),
         }
     }
 
@@ -210,12 +217,20 @@ impl Signaling {
         let old_state = self.server().handshake_state().clone();
         match (old_state, obox.message) {
             // Valid state transitions
-            (ServerHandshakeState::New, Message::ServerHello(msg)) => self.handle_server_hello(msg),
-            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) => self.handle_server_auth(msg),
+            (ServerHandshakeState::New, Message::ServerHello(msg)) =>
+                self.handle_server_hello(msg),
+            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
+                self.handle_server_auth(msg),
+            (ServerHandshakeState::Done, Message::NewResponder(msg)) =>
+                on_inner!(self, ref mut s, s.handle_new_responder(msg)),
+            (ServerHandshakeState::Done, Message::DropResponder(_msg)) =>
+                unimplemented!("Handling DropResponder messages not yet implemented"),
+            (ServerHandshakeState::Done, Message::SendError(_msg)) =>
+                unimplemented!("Handling SendError messages not yet implemented"),
 
             // Any undefined state transition results in an error
             (s, message) => Err(SignalingError::InvalidStateTransition(
-                format!("Invalid state transition: {:?} <- {}", s, message.get_type())
+                format!("Got {} message from server in {:?} state", message.get_type(), s)
             )),
         }
     }
@@ -599,7 +614,25 @@ impl InitiatorSignaling {
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
     fn handle_peer_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>> {
-        unimplemented!("initiator: handle peer message");
+        // Find responder
+        let source = obox.nonce.source();
+        let responder = match self.responders.get(&source) {
+            Some(responder) => responder,
+            None => return Err(SignalingError::Crash(format!("Did not find responder with address {}", source))),
+        };
+
+        // State transitions
+        let old_state = responder.handshake_state();
+        match (old_state, obox.message) {
+            // Valid state transitions
+            // TODO
+            //(ResponderHandshakeState::New, Message::ServerHello(msg)) => self.handle_server_hello(msg),
+
+            // Any undefined state transition results in an error
+            (s, message) => Err(SignalingError::InvalidStateTransition(
+                format!("Got {} message from responder {} in {:?} state", message.get_type(), source, s)
+            )),
+        }
     }
 
     fn handle_server_auth(&mut self, msg: &ServerAuth) -> SignalingResult<Vec<HandleAction>> {
@@ -654,6 +687,37 @@ impl InitiatorSignaling {
 
         Ok(vec![])
     }
+
+    /// Handle an incoming [`NewResponder`](messages/struct.NewResponder.html) message.
+    fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
+        debug!("Received new-responder");
+
+        // An initiator who receives a 'new-responder' message SHALL validate
+        // that the id field contains a valid responder address (0x02..0xff).
+        if !msg.id.is_responder() {
+            return Err(SignalingError::InvalidMessage(
+                "`id` field in new-responder message is not a valid responder address".into()
+            ));
+        }
+
+        // It SHOULD store the responder's identity in its internal list of responders.
+        // If a responder with the same id already exists, all currently cached
+        // information about and for the previous responder (such as cookies
+        // and the sequence number) MUST be deleted first.
+        if self.responders.contains_key(&msg.id) {
+            warn!("Overwriting responder context for address {:?}", msg.id);
+        } else {
+            info!("Registering new responder with address {:?}", msg.id);
+        }
+        self.responders.insert(msg.id, ResponderContext::new(msg.id));
+
+        // Furthermore, the initiator MUST keep its path clean by following the
+        // procedure described in the Path Cleaning section.
+        // TODO: Implement
+
+        Ok(vec![])
+    }
+
 }
 
 /// Signaling data for the responder.
@@ -701,7 +765,17 @@ impl ResponderSignaling {
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
     fn handle_peer_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>> {
-        unimplemented!("responder: handle peer message");
+        let old_state = self.initiator.handshake_state();
+        match (old_state, obox.message) {
+            // Valid state transitions
+            // TODO
+            //(ResponderHandshakeState::New, Message::ServerHello(msg)) => self.handle_server_hello(msg),
+
+            // Any undefined state transition results in an error
+            (s, message) => Err(SignalingError::InvalidStateTransition(
+                format!("Got {} message from initiator in {:?} state", message.get_type(), s)
+            )),
+        }
     }
 
     fn handle_server_auth(&mut self, msg: &ServerAuth) -> SignalingResult<Vec<HandleAction>> {
@@ -733,6 +807,11 @@ impl ResponderSignaling {
             )),
         }
         Ok(actions)
+    }
+
+    /// Handle an incoming [`NewResponder`](messages/struct.NewResponder.html) message.
+    fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
+        Err(SignalingError::Protocol("Received 'new-responder' message as responder".into()))
     }
 
     fn generate_session_key(&mut self) -> SignalingResult<()> {
