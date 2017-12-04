@@ -54,7 +54,7 @@ impl Cookie {
     }
 
     /// Return the cookie bytes.
-    pub(crate) fn bytes(&self) -> &[u8] {
+    pub(crate) fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 }

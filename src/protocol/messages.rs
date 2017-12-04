@@ -16,6 +16,8 @@ use crypto::{PublicKey, SignedKeys};
 use errors::{SignalingError, SignalingResult};
 
 use super::{Address, Cookie};
+use super::csn::{CombinedSequenceSnapshot};
+use super::send_error::{SendErrorId};
 
 
 /// The `Message` enum contains all possible message types that may be used in
@@ -255,13 +257,26 @@ impl DropResponder {
 /// Sent by the server if relaying a client-to-client message fails.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct SendError {
-    pub(crate) id: Vec<u8>,
+    pub(crate) id: SendErrorId,
 }
 
 impl SendError {
     /// Create a new `SendError` message.
-    pub(crate) fn new(id: Vec<u8>) -> Self {
+    pub(crate) fn new(id: SendErrorId) -> Self {
         Self { id }
+    }
+
+    /// Create a new `SendError` message.
+    pub(crate) fn from_parts(source: Address,
+                             destination: Address,
+                             csn: CombinedSequenceSnapshot) -> Self {
+        Self {
+            id: SendErrorId {
+                source,
+                destination,
+                csn,
+            }
+        }
     }
 }
 
@@ -555,6 +570,15 @@ mod tests {
             assert_eq!(auth.task.unwrap(), "data.none");
             assert_eq!(auth.data.len(), 1);
             assert!(auth.data.contains_key("data.none"));
+        }
+    }
+
+    mod send_error {
+        use super::*;
+
+        #[test]
+        fn send_error_decode() {
+            // TODO
         }
     }
 }

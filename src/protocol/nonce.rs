@@ -68,7 +68,7 @@ impl Nonce {
     /// reused.
     pub(crate) fn into_bytes(self) -> [u8; 24] {
         let mut bytes = [0u8; 24];
-        (&mut bytes[0..16]).write_all(self.cookie.bytes()).expect("Writing cookie to nonce failed");
+        (&mut bytes[0..16]).write_all(self.cookie.as_bytes()).expect("Writing cookie to nonce failed");
         bytes[16] = self.source.0;
         bytes[17] = self.destination.0;
         BigEndian::write_u16(&mut bytes[18..20], self.csn.overflow_number());

@@ -22,6 +22,7 @@ pub(crate) mod cookie;
 pub(crate) mod csn;
 pub(crate) mod messages;
 pub(crate) mod nonce;
+pub(crate) mod send_error;
 pub(crate) mod state;
 pub(crate) mod types;
 
