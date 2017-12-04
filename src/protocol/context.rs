@@ -2,7 +2,8 @@
 
 use std::cell::RefCell;
 
-use crypto::{PublicKey};
+use crypto::{PublicKey, KeyStore};
+use errors::{SignalingError, SignalingResult};
 
 use super::cookie::{CookiePair};
 use super::csn::{CombinedSequencePair};
@@ -140,24 +141,33 @@ impl PeerContext for InitiatorContext {
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ResponderContext {
+    /// The handshake state with this receiver
     handshake_state: ResponderHandshakeState,
+    /// The receiver address
     pub(crate) address: Address,
+    /// Public permanent key of the responder
     pub(crate) permanent_key: Option<PublicKey>,
+    /// Public session key of the responder
     pub(crate) session_key: Option<PublicKey>,
+    /// Our session keystore for this responder
+    pub(crate) keystore: KeyStore,
+    /// Our combined sequence pair for this responder
     pub(crate) csn_pair: RefCell<CombinedSequencePair>,
+    /// Our cookie pair for this responder
     pub(crate) cookie_pair: CookiePair,
 }
 
 impl ResponderContext {
-    pub fn new(address: Address) -> Self {
-        ResponderContext {
+    pub fn new(address: Address) -> SignalingResult<Self> {
+        Ok(ResponderContext {
             handshake_state: ResponderHandshakeState::New,
             address: address,
             permanent_key: None,
             session_key: None,
+            keystore: KeyStore::new().map_err(|e| SignalingError::Crypto(e.to_string()))?,
             csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
-        }
+        })
     }
 
     /// Return the current responder handshake state.

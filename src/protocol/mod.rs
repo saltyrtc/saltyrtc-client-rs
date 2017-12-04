@@ -677,7 +677,7 @@ impl InitiatorSignaling {
         // It SHOULD store the responder's identities in its
         // internal list of responders.
         for address in responders_set {
-            self.responders.insert(address, ResponderContext::new(address));
+            self.responders.insert(address, ResponderContext::new(address)?);
         }
 
         // Additionally, the initiator MUST keep its path clean
@@ -709,7 +709,7 @@ impl InitiatorSignaling {
         } else {
             info!("Registering new responder with address {:?}", msg.id);
         }
-        self.responders.insert(msg.id, ResponderContext::new(msg.id));
+        self.responders.insert(msg.id, ResponderContext::new(msg.id)?);
 
         // Furthermore, the initiator MUST keep its path clean by following the
         // procedure described in the Path Cleaning section.
