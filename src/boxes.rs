@@ -130,6 +130,30 @@ impl ByteBox {
         Ok(OpenBox::new(message, self.nonce))
     }
 
+    /// Decrypt token message using the `auth_token` using secret key cryptography.
+    pub(crate) fn decrypt_token(self, auth_token: &AuthToken) -> SignalingResult<OpenBox> {
+        let decrypted = auth_token.decrypt(&self.bytes, unsafe { self.nonce.clone() })
+            .map_err(|e| SignalingError::Decode(format!("Cannot decode message payload: {}", e)))?;
+
+        if cfg!(feature = "msgpack-debugging") {
+            let encoded = || BASE64.encode(&decrypted)
+                                   .replace("+", "%2B")
+                                   .replace("=", "%3D")
+                                   .replace("/", "%2F");
+            match option_env!("MSGPACK_DEBUG_URL") {
+                Some(url) => trace!("Decrypted bytes: {}{}", url, encoded()),
+                None => trace!("Decrypted bytes: {}{}", ::DEFAULT_MSGPACK_DEBUG_URL, encoded()),
+            }
+        } else {
+            trace!("Decrypted bytes: {:?}", &decrypted);
+        }
+
+        let message = Message::from_msgpack(&decrypted)
+            .map_err(|e| SignalingError::Decode(format!("Cannot decode message payload: {}", e)))?;
+
+        Ok(OpenBox::new(message, self.nonce))
+    }
+
     pub(crate) fn into_bytes(self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(NONCEBYTES + self.bytes.len());
         bytes.extend(self.nonce.into_bytes().iter());
@@ -222,6 +246,26 @@ mod tests {
         let encrypted = keystore_tx.encrypt(&bytes, unsafe { nonce.clone() }, keystore_rx.public_key());
         let bbox = ByteBox::new(encrypted, nonce);
         let obox = bbox.decrypt(&keystore_rx, keystore_tx.public_key()).unwrap();
+        assert_eq!(obox.message.get_type(), "server-hello");
+    }
+
+    #[test]
+    fn byte_box_decrypt_token() {
+        // Create test nonce and message
+        let nonce = create_test_nonce();
+        let bytes = create_test_msg_bytes();
+
+        // New auth token
+        let auth_token = AuthToken::new();
+
+        // Encrypt message with that auth token directly
+        let encrypted = auth_token.encrypt(&bytes, unsafe { nonce.clone() });
+
+        // Construct byte box
+        let bbox = ByteBox::new(encrypted, nonce);
+
+        // Decrypt byte box
+        let obox = bbox.decrypt_token(&auth_token).unwrap();
         assert_eq!(obox.message.get_type(), "server-hello");
     }
 }
