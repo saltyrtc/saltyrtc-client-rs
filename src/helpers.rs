@@ -27,3 +27,10 @@ pub fn libsodium_init_or_panic() {
         panic!("could not initialize libsodium");
     }
 }
+
+/// A test-only trait that allows the user to create random instances of
+/// certain types (e.g. a public key).
+#[cfg(test)]
+pub trait TestRandom {
+    fn random() -> Self;
+}

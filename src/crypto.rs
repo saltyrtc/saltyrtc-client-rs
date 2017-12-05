@@ -291,6 +291,19 @@ impl<'de> Deserialize<'de> for SignedKeys {
     }
 }
 
+#[cfg(test)]
+use helpers::TestRandom;
+#[cfg(test)]
+impl TestRandom for PublicKey {
+    fn random() -> PublicKey {
+        use rust_sodium::randombytes::randombytes_into;
+        libsodium_init_or_panic();
+        let mut rand = [0; 32];
+        randombytes_into(&mut rand);
+        PublicKey::from_slice(&rand).unwrap()
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
