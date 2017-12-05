@@ -230,11 +230,23 @@ pub fn connect(
                         let handle_actions = match salty.deref().try_borrow_mut() {
                             Ok(mut s) => match s.handle_message(bbox) {
                                 Ok(actions) => actions,
-                                Err(e) => {
-                                    // TODO: Convert to protocol error
-                                    return boxed!(future::err(SaltyError::Crash(
-                                        format!("Signaling error (FIXME): {}", e)
-                                    )));
+                                Err(e) => match e {
+                                    SignalingError::Crash(msg) => {
+                                        return boxed!(future::err(SaltyError::Crash(
+                                            format!("Signaling error: {}", msg)
+                                        )));
+                                    },
+                                    SignalingError::SendError => {
+                                        return boxed!(future::err(SaltyError::Network(e.to_string())));
+                                    },
+                                    SignalingError::Protocol(msg) => {
+                                        return boxed!(future::err(SaltyError::Protocol(msg)));
+                                    },
+                                    other => {
+                                        return boxed!(future::err(SaltyError::Crash(
+                                            format!("Signaling error (FIXME): {}", other)
+                                        )));
+                                    },
                                 },
                             },
                             Err(e) => return boxed!(
