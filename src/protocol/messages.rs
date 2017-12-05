@@ -265,19 +265,6 @@ impl SendError {
     pub(crate) fn new(id: SendErrorId) -> Self {
         Self { id }
     }
-
-    /// Create a new `SendError` message.
-    pub(crate) fn from_parts(source: Address,
-                             destination: Address,
-                             csn: CombinedSequenceSnapshot) -> Self {
-        Self {
-            id: SendErrorId {
-                source,
-                destination,
-                csn,
-            }
-        }
-    }
 }
 
 
