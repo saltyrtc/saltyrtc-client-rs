@@ -76,6 +76,12 @@ pub enum SignalingError {
     #[fail(display = "A protocol error occurred: {}", _0)]
     Protocol(String),
 
+    /// The server returned a `SendError` message. This means that a
+    /// client-to-client message could not be relayed (the connection between
+    /// server and the receiver has been severed).
+    #[fail(display = "Server could not relay message")]
+    SendError,
+
     /// An unexpected error. This should never happen and indicates a bug in
     /// the implementation.
     #[fail(display = "An unexpected error occurred: {}. This indicates a bug and should be reported!", _0)]

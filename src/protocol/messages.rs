@@ -578,7 +578,36 @@ mod tests {
 
         #[test]
         fn send_error_decode() {
-            // TODO
+            let bytes = [
+                // Fixmap with two entries
+                0x82,
+                // Key: type
+                0xa4, 0x74, 0x79, 0x70, 0x65,
+                // Val: send-error
+                0xaa, 0x73, 0x65, 0x6e, 0x64, 0x2d, 0x65, 0x72, 0x72, 0x6f, 0x72,
+                // Key: id
+                0xa2, 0x69, 0x64,
+                // Val: binary data
+                0xc4, 0x08,
+                    // Source address
+                    0x02,
+                    // Destination address
+                    0x01,
+                    // Overflow number
+                    0x00, 0x00,
+                    // Sequence number
+                    0x8a, 0xe3, 0xbe, 0xb5,
+            ];
+
+            let msg: Message = rmps::from_slice(&bytes).unwrap();
+            if let Message::SendError(se) = msg {
+                assert_eq!(se.id.source, Address(2));
+                assert_eq!(se.id.destination, Address(1));
+                assert_eq!(se.id.csn.overflow_number(), 0);
+                assert_eq!(se.id.csn.sequence_number(), (0x8a << 24) + (0xe3 << 16) + (0xbe << 8) + 0xb5);
+            } else {
+                panic!("Wrong message type: Should be SendError, but is {:?}", msg);
+            }
         }
     }
 }

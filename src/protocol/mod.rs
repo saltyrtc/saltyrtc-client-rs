@@ -29,7 +29,7 @@ pub(crate) mod types;
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth, NewResponder};
-use self::messages::{Token, Key};
+use self::messages::{SendError, Token, Key};
 pub(crate) use self::nonce::{Nonce};
 pub use self::types::{Role};
 pub(crate) use self::types::{HandleAction};
@@ -230,8 +230,8 @@ impl Signaling {
                 on_inner!(self, ref mut s, s.handle_new_responder(msg)),
             (ServerHandshakeState::Done, Message::DropResponder(_msg)) =>
                 unimplemented!("Handling DropResponder messages not yet implemented"),
-            (ServerHandshakeState::Done, Message::SendError(_msg)) =>
-                unimplemented!("Handling SendError messages not yet implemented"),
+            (ServerHandshakeState::Done, Message::SendError(msg)) =>
+                self.handle_send_error(msg),
 
             // Any undefined state transition results in an error
             (s, message) => Err(SignalingError::InvalidStateTransition(
@@ -543,6 +543,13 @@ impl Signaling {
         self.server_mut().set_handshake_state(ServerHandshakeState::Done);
         self.set_signaling_state(SignalingState::PeerHandshake)?;
         Ok(actions)
+    }
+
+    /// Handle an incoming [`SendError`](messages/struct.ServerAuth.html) message.
+    fn handle_send_error(&mut self, msg: SendError) -> SignalingResult<Vec<HandleAction>> {
+        warn!("Received send-error");
+        trace!("Message that could not be relayed: {:?}", msg.id);
+        return Err(SignalingError::SendError);
     }
 
     /// Return the inner `InitiatorSignaling` instance.
