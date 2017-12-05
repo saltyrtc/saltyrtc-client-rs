@@ -414,7 +414,7 @@ mod tests {
 
         let valid_key = "53459fb52fdeeb74103a2932a5eff8095ea1efbaf657f2181722c4e61e6f7e79";
         let res3 = AuthToken::from_hex_str(&valid_key);
-        let token = res3.unwrap();
+        let _ = res3.unwrap();
     }
 
 }

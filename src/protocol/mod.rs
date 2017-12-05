@@ -964,6 +964,8 @@ impl ResponderSignaling {
 
 #[cfg(test)]
 mod tests {
+    use std::default::Default;
+
     use self::cookie::{Cookie, CookiePair};
     use self::csn::{CombinedSequenceSnapshot};
     use self::messages::{ServerHello, ServerAuth};
@@ -1207,11 +1209,78 @@ mod tests {
             }
         }
 
-        fn make_test_msg(msg: Message, ctx: &TestContext, dest_address: Address) -> ByteBox {
-            let nonce = Nonce::new(ctx.server_cookie.clone(), Address(0), dest_address, CombinedSequenceSnapshot::random());
-            let obox = OpenBox::new(msg, nonce);
-            obox.encrypt(&ctx.server_ks, ctx.our_ks.public_key())
+        #[derive(Debug, PartialEq, Eq)]
+        enum TestMsgType { None, Message, Bytes }
+
+        impl Default for TestMsgType {
+            fn default() -> Self { TestMsgType::None }
         }
+
+        #[derive(Debug, Default)]
+        struct TestMsgBuilder {
+            type_: TestMsgType,
+            msg: Option<Message>,
+            bytes: Option<Vec<u8>>,
+            src: Option<Address>,
+            dest: Option<Address>,
+        }
+
+        impl TestMsgBuilder {
+            pub fn new() -> Self {
+                TestMsgBuilder { ..Default::default() }
+            }
+
+            pub fn from(mut self, addr: u8) -> Self {
+                self.src = Some(Address(addr));
+                self
+            }
+
+            pub fn to(mut self, addr: u8) -> Self {
+                self.dest = Some(Address(addr));
+                self
+            }
+
+            pub fn with_msg(mut self, msg: Message) -> Self {
+                self.msg = Some(msg);
+                self.type_ = TestMsgType::Message;
+                self
+            }
+
+            pub fn with_bytes<T: Into<Vec<u8>>>(mut self, bytes: T) -> Self {
+                self.bytes = Some(bytes.into());
+                self.type_ = TestMsgType::Bytes;
+                self
+            }
+
+            pub fn build(self, ctx: &TestContext) -> ByteBox {
+                let nonce = Nonce::new(ctx.server_cookie.clone(),
+                                       self.src.unwrap(), self.dest.unwrap(),
+                                       CombinedSequenceSnapshot::random());
+                match self.type_ {
+                    TestMsgType::None => panic!("Please use .with_msg or .with_bytes"),
+                    TestMsgType::Message => {
+                        let obox = OpenBox::new(self.msg.unwrap(), nonce);
+                        obox.encrypt(&ctx.server_ks, ctx.our_ks.public_key())
+                    },
+                    TestMsgType::Bytes => {
+                        unimplemented!();
+                    },
+                }
+            }
+        }
+
+//        let encrypted = keystore.encrypt(
+//            // The message bytes to be encrypted
+//            &self.message.to_msgpack(),
+//            // The nonce. The unsafe call to `clone()` is required because the
+//            // nonce needs to be used both for encrypting, as well as being
+//            // sent along with the message bytes.
+//            unsafe { self.nonce.clone() },
+//            // The public key of the recipient
+//            other_key
+//        );
+//        ByteBox::new(encrypted, self.nonce)
+//        }
 
         /// Assert that handling the specified byte box fails in ClientInfoSent
         /// state with the specified error.
@@ -1231,7 +1300,7 @@ mod tests {
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, false).into_message();
-            let bbox = make_test_msg(msg, &ctx, Address(13));
+            let bbox = TestMsgBuilder::new().from(0).to(13).with_msg(msg).build(&ctx);
 
             // Handle message
             let mut s = ctx.signaling;
@@ -1252,7 +1321,7 @@ mod tests {
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(Cookie::random(), None, vec![]).into_message();
-            let bbox = make_test_msg(msg, &ctx, Address(1));
+            let bbox = TestMsgBuilder::new().from(0).to(1).with_msg(msg).build(&ctx);
 
             // Handle message
             assert_client_info_sent_fail(&mut ctx, bbox,
@@ -1268,7 +1337,7 @@ mod tests {
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, true).into_message();
-            let bbox = make_test_msg(msg, &ctx, Address(1));
+            let bbox = TestMsgBuilder::new().from(0).to(1).with_msg(msg).build(&ctx);
 
             // Handle message
             assert_client_info_sent_fail(&mut ctx, bbox,
@@ -1289,7 +1358,7 @@ mod tests {
                 responders: None,
                 initiator_connected: None,
             }.into_message();
-            let bbox = make_test_msg(msg, &ctx, Address(1));
+            let bbox = TestMsgBuilder::new().from(0).to(1).with_msg(msg).build(&ctx);
 
             // Handle message
             assert_client_info_sent_fail(&mut ctx, bbox,
@@ -1305,7 +1374,7 @@ mod tests {
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3), Address(3)]).into_message();
-            let bbox = make_test_msg(msg, &ctx, Address(1));
+            let bbox = TestMsgBuilder::new().from(0).to(1).with_msg(msg).build(&ctx);
 
             // Handle message
             assert_client_info_sent_fail(&mut ctx, bbox,
@@ -1321,7 +1390,7 @@ mod tests {
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(1), Address(2), Address(3)]).into_message();
-            let bbox = make_test_msg(msg, &ctx, Address(1));
+            let bbox = TestMsgBuilder::new().from(0).to(1).with_msg(msg).build(&ctx);
 
             // Handle message
             assert_client_info_sent_fail(&mut ctx, bbox,
@@ -1339,7 +1408,7 @@ mod tests {
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3)]).into_message();
-            let bbox = make_test_msg(msg, &ctx, Address(1));
+            let bbox = TestMsgBuilder::new().from(0).to(1).with_msg(msg).build(&ctx);
 
             // Handle message
             let mut s = ctx.signaling;
@@ -1372,7 +1441,7 @@ mod tests {
                 responders: None,
                 initiator_connected: None,
             }.into_message();
-            let bbox = make_test_msg(msg, &ctx, Address(4));
+            let bbox = TestMsgBuilder::new().from(0).to(4).with_msg(msg).build(&ctx);
 
             // Handle message
             assert_client_info_sent_fail(&mut ctx, bbox,
@@ -1393,7 +1462,7 @@ mod tests {
                 responders: None,
                 initiator_connected: Some(true),
             }.into_message();
-            let bbox = make_test_msg(msg, &ctx, Address(7));
+            let bbox = TestMsgBuilder::new().from(0).to(7).with_msg(msg).build(&ctx);
 
             // Signaling ref
             let mut s = ctx.signaling;
@@ -1438,7 +1507,7 @@ mod tests {
                 responders: None,
                 initiator_connected: Some(false),
             }.into_message();
-            let bbox = make_test_msg(msg, &ctx, Address(7));
+            let bbox = TestMsgBuilder::new().from(0).to(7).with_msg(msg).build(&ctx);
 
             // Signaling ref
             let mut s = ctx.signaling;
@@ -1446,7 +1515,7 @@ mod tests {
             // Handle message
             assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
             assert_eq!(s.signaling_state(), SignalingState::ServerHandshake);
-            let actions = s.handle_message(bbox).unwrap();
+            let _actions = s.handle_message(bbox).unwrap();
             assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
             assert_eq!(s.signaling_state(), SignalingState::PeerHandshake);
         }
