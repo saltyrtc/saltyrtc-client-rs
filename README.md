@@ -62,7 +62,7 @@ analysis URLs for all decoded messages in your `TRACE` level logs.
 You can customize that URL prefix at compile time using the `MSGPACK_DEBUG_URL`
 env var. This is the default URL:
 
-    MSGPACK_DEBUG_URL='https://sugendran.github.io/msgpack-visualizer/#base64='
+    MSGPACK_DEBUG_URL='https://msgpack.dbrgn.ch/#base64='
 
 
 <!-- Badges -->
