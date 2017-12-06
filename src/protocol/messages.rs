@@ -274,11 +274,6 @@ pub(crate) struct Token {
 }
 
 impl Token {
-    /// Create a new `Token` message.
-    pub(crate) fn new(key: PublicKey) -> Self {
-        Self { key }
-    }
-
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
@@ -293,15 +288,12 @@ impl Token {
 /// The key message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Key {
+    // TODO: Do we want to differentiate between permanent key and session key
+    // in the type system?
     pub(crate) key: PublicKey,
 }
 
 impl Key {
-    /// Create a new `Key` message.
-    pub(crate) fn new(key: PublicKey) -> Self {
-        Self { key }
-    }
-
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {

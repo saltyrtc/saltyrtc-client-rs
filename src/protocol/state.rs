@@ -45,6 +45,7 @@ pub enum InitiatorHandshakeState {
 pub enum ResponderHandshakeState {
     /// Initial state.
     New,
+    /// A [`Token`](../messages/struct.Token.html) message has been received.
     TokenReceived,
     /// A [`Key`](../messages/struct.Key.html) message has been received.
     KeyReceived,

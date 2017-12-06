@@ -703,6 +703,7 @@ impl InitiatorSignaling {
         match (old_state, obox.message) {
             // Valid state transitions
             (ResponderHandshakeState::New, Message::Token(msg)) => self.handle_token(msg, source),
+            (ResponderHandshakeState::TokenReceived, Message::Key(msg)) => self.handle_key(msg, source),
             // TODO
 
             // Any undefined state transition results in an error
@@ -817,6 +818,48 @@ impl InitiatorSignaling {
         responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
 
         Ok(vec![])
+    }
+
+    /// Handle an incoming [`Key`](messages/struct.Key.html) message.
+    fn handle_key(&mut self, msg: Key, source: Address) -> SignalingResult<Vec<HandleAction>> {
+        debug!("Received key");
+
+        // Find responder instance
+        let mut responder = self.responders.get_mut(&source)
+            .ok_or(SignalingError::Crash(
+                format!("Did not find responder with address {}", source)
+            ))?;
+
+        // Sanity check
+        if responder.session_key.is_some() {
+            return Err(SignalingError::Crash("Responder already has a session key set!".into()));
+        }
+
+        // Set public session key
+        responder.session_key = Some(msg.key);
+
+        // State transition
+        responder.set_handshake_state(ResponderHandshakeState::KeyReceived);
+
+        // Reply with our own key msg
+        let key: Message = Key {
+            key: responder.keystore.public_key().clone(),
+        }.into_message();
+        let key_nonce = Nonce::new(
+            responder.cookie_pair().ours.clone(),
+            self.identity.into(),
+            responder.identity().into(),
+            responder.csn_pair().borrow_mut().ours.increment()?,
+        );
+        let obox = OpenBox::new(key, key_nonce);
+        let bbox = obox.encrypt(
+            &self.permanent_key,
+            responder.permanent_key.as_ref()
+                .ok_or(SignalingError::Crash("Responder permanent key not set".into()))?,
+        );
+
+        debug!("Enqueuing key");
+        Ok(vec![HandleAction::Reply(bbox)])
     }
 
 }
@@ -952,7 +995,9 @@ impl ResponderSignaling {
     fn send_token(&self, token: &AuthToken) -> SignalingResult<HandleAction> {
         // The responder MUST set the public key (32 bytes) of the permanent
         // key pair in the key field of this message.
-        let msg: Message = Token::new(self.permanent_key.public_key().to_owned()).into_message();
+        let msg: Message = Token {
+            key: self.permanent_key.public_key().to_owned(),
+        }.into_message();
         let nonce = Nonce::new(
             self.initiator.cookie_pair().ours.clone(),
             self.identity.into(),
@@ -977,7 +1022,9 @@ impl ResponderSignaling {
     fn send_key(&self) -> SignalingResult<HandleAction> {
         // It MUST set the public key (32 bytes) of that key pair in the key field.
         let msg: Message = match self.session_key {
-            Some(ref session_key) => Key::new(session_key.public_key().to_owned()).into_message(),
+            Some(ref session_key) => Key {
+                key: session_key.public_key().to_owned(),
+            }.into_message(),
             None => return Err(SignalingError::Crash("Missing session keypair".into())),
         };
         let nonce = Nonce::new(
@@ -1631,7 +1678,7 @@ mod tests {
             let pk = PublicKey::random();
 
             // Prepare a token message
-            let msg: Message = Token::new(pk).into_message();
+            let msg: Message = Token { key: pk }.into_message();
             let msg_bytes = msg.to_msgpack();
 
             // The token message is encrypted with the auth token,
@@ -1656,6 +1703,54 @@ mod tests {
                 assert_eq!(responder.handshake_state(), ResponderHandshakeState::TokenReceived);
                 assert_eq!(responder.permanent_key, Some(pk));
                 assert_eq!(actions, vec![]);
+            }
+        }
+
+        /// The client MUST generate a session key pair (a new NaCl key pair
+        /// for public key authenticated encryption) for further communication
+        /// with the other client. The client's session key pair SHALL NOT be
+        /// identical to the client's permanent key pair. It MUST set the
+        /// public key (32 bytes) of that key pair in the key field.
+        #[test]
+        fn key_initiator_success() {
+            let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
+                                              SignalingState::PeerHandshake,
+                                              ServerHandshakeState::Done, None);
+            // Peer crypto
+            let peer_permanent_pk = PublicKey::random();
+            let peer_session_pk = PublicKey::random();
+            let cookie = Cookie::random();
+
+            // Create new responder context
+            let addr = Address(3);
+            let mut responder = ResponderContext::new(addr).unwrap();
+            responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
+            responder.permanent_key = Some(peer_permanent_pk.clone());
+
+            // Prepare a key message
+            let msg: Message = Key {
+                key: peer_session_pk.clone(),
+            }.into_message();
+
+            // Encrypt message
+            let bbox = TestMsgBuilder::new().from(3).to(1).with_msg(msg)
+                .build(cookie, &ctx.our_ks, &peer_permanent_pk);
+
+            // Store responder in signaling instance
+            ctx.signaling.as_initiator_mut().responders.insert(addr, responder);
+
+            { // Waiting for NLL
+                let responder = ctx.signaling.as_initiator().responders.get(&addr).unwrap();
+                assert_eq!(responder.handshake_state(), ResponderHandshakeState::TokenReceived);
+                assert!(responder.session_key.is_none());
+            }
+            // Handle message. This should result in a state transition.
+            let actions = ctx.signaling.handle_message(bbox).unwrap();
+            {
+                let responder = ctx.signaling.as_initiator().responders.get(&addr).unwrap();
+                assert_eq!(responder.handshake_state(), ResponderHandshakeState::KeyReceived);
+                assert_eq!(responder.session_key, Some(peer_session_pk));
+                assert_eq!(actions.len(), 1); // Reply with key msg
             }
         }
     }
