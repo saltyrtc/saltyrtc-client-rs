@@ -440,7 +440,7 @@ impl Signaling {
 
     /// Handle an incoming [`ServerHello`](messages/struct.ServerHello.html) message.
     fn handle_server_hello(&mut self, msg: ServerHello) -> SignalingResult<Vec<HandleAction>> {
-        debug!("Received server-hello");
+        debug!("--> Received server-hello");
 
         let mut actions = Vec::with_capacity(2);
 
@@ -470,7 +470,7 @@ impl Signaling {
                 self.server().csn_pair().borrow_mut().ours.increment()?,
             );
             let reply = OpenBox::new(client_hello, client_hello_nonce);
-            debug!("Enqueuing client-hello");
+            debug!("<-- Enqueuing client-hello");
             actions.push(HandleAction::Reply(reply.encode()));
         }
 
@@ -490,7 +490,7 @@ impl Signaling {
         let reply = OpenBox::new(client_auth, client_auth_nonce);
         match self.server().permanent_key {
             Some(ref pubkey) => {
-                debug!("Enqueuing client-auth");
+                debug!("<-- Enqueuing client-auth");
                 actions.push(HandleAction::Reply(reply.encrypt(&self.permanent_key(), pubkey)));
             },
             None => return Err(SignalingError::Crash("Missing server permanent key".into())),
@@ -503,7 +503,7 @@ impl Signaling {
 
     /// Handle an incoming [`ServerAuth`](messages/struct.ServerAuth.html) message.
     fn handle_server_auth(&mut self, msg: ServerAuth) -> SignalingResult<Vec<HandleAction>> {
-        debug!("Received server-auth");
+        debug!("--> Received server-auth");
 
         // When the client receives a 'server-auth' message, it MUST
         // have accepted and set its identity as described in the
@@ -547,7 +547,7 @@ impl Signaling {
 
     /// Handle an incoming [`SendError`](messages/struct.ServerAuth.html) message.
     fn handle_send_error(&mut self, msg: SendError) -> SignalingResult<Vec<HandleAction>> {
-        warn!("Received send-error");
+        warn!("--> Received send-error");
         trace!("Message that could not be relayed: {:?}", msg.id);
         return Err(SignalingError::SendError);
     }
@@ -768,7 +768,7 @@ impl InitiatorSignaling {
 
     /// Handle an incoming [`NewResponder`](messages/struct.NewResponder.html) message.
     fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
-        debug!("Received new-responder");
+        debug!("--> Received new-responder");
 
         // An initiator who receives a 'new-responder' message SHALL validate
         // that the id field contains a valid responder address (0x02..0xff).
@@ -798,7 +798,7 @@ impl InitiatorSignaling {
 
     /// Handle an incoming [`Token`](messages/struct.Token.html) message.
     fn handle_token(&mut self, msg: Token, source: Address) -> SignalingResult<Vec<HandleAction>> {
-        debug!("Received token");
+        debug!("--> Received token");
 
         // Find responder instance
         let mut responder = self.responders.get_mut(&source)
@@ -822,7 +822,7 @@ impl InitiatorSignaling {
 
     /// Handle an incoming [`Key`](messages/struct.Key.html) message.
     fn handle_key(&mut self, msg: Key, source: Address) -> SignalingResult<Vec<HandleAction>> {
-        debug!("Received key");
+        debug!("--> Received key");
 
         // Find responder instance
         let mut responder = self.responders.get_mut(&source)
@@ -858,7 +858,7 @@ impl InitiatorSignaling {
                 .ok_or(SignalingError::Crash("Responder permanent key not set".into()))?,
         );
 
-        debug!("Enqueuing key");
+        debug!("<-- Enqueuing key");
         Ok(vec![HandleAction::Reply(bbox)])
     }
 
@@ -1014,7 +1014,7 @@ impl ResponderSignaling {
         // message, the secret key MUST be invalidated immediately and SHALL
         // NOT be used for any other message.
 
-        debug!("Enqueuing token");
+        debug!("<-- Enqueuing token");
         Ok(HandleAction::Reply(bbox))
     }
 
@@ -1039,7 +1039,7 @@ impl ResponderSignaling {
         // permanent key pair and the other client's permanent key pair.
         let bbox = obox.encrypt(&self.permanent_key, &self.initiator.permanent_key);
 
-        debug!("Enqueuing key");
+        debug!("<-- Enqueuing key");
         Ok(HandleAction::Reply(bbox))
     }
 }
