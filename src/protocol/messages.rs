@@ -16,7 +16,6 @@ use crypto::{PublicKey, SignedKeys};
 use errors::{SignalingError, SignalingResult};
 
 use super::{Address, Cookie};
-use super::csn::{CombinedSequenceSnapshot};
 use super::send_error::{SendErrorId};
 
 

@@ -49,6 +49,7 @@ impl ServerContext {
     /// Update the server handshake state.
     pub fn set_handshake_state(&mut self, new_state: ServerHandshakeState) {
         trace!("Server handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
+        // TODO: Validate state transitions
         self.handshake_state = new_state;
     }
 }
@@ -108,6 +109,7 @@ impl InitiatorContext {
     /// Update the initiator handshake state.
     pub fn set_handshake_state(&mut self, new_state: InitiatorHandshakeState) {
         trace!("Initiator handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
+        // TODO: Validate state transitions
         self.handshake_state = new_state;
     }
 }
@@ -178,6 +180,7 @@ impl ResponderContext {
     /// Update the responder handshake state.
     pub fn set_handshake_state(&mut self, new_state: ResponderHandshakeState) {
         trace!("Responder handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
+        // TODO: Validate state transitions
         self.handshake_state = new_state;
     }
 }

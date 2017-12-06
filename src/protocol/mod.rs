@@ -690,20 +690,19 @@ impl InitiatorSignaling {
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
     fn handle_peer_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>> {
+        let source = obox.nonce.source();
         let old_state = {
-            // Find responder
-            let source = obox.nonce.source();
-            let responder = match self.responders.get(&source) {
-                Some(responder) => responder,
-                None => return Err(SignalingError::Crash(format!("Did not find responder with address {}", source))),
-            };
+            let responder = self.responders.get(&source)
+                .ok_or(SignalingError::Crash(
+                    format!("Did not find responder with address {}", source)
+                ))?;
             responder.handshake_state()
         };
 
         // State transitions
         match (old_state, obox.message) {
             // Valid state transitions
-            (ResponderHandshakeState::New, Message::Token(msg)) => self.handle_token(msg),
+            (ResponderHandshakeState::New, Message::Token(msg)) => self.handle_token(msg, source),
             // TODO
 
             // Any undefined state transition results in an error
@@ -797,9 +796,27 @@ impl InitiatorSignaling {
     }
 
     /// Handle an incoming [`Token`](messages/struct.Token.html) message.
-    fn handle_token(&mut self, msg: Token) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_token(&mut self, msg: Token, source: Address) -> SignalingResult<Vec<HandleAction>> {
         debug!("Received token");
-        unimplemented!();
+
+        // Find responder instance
+        let mut responder = self.responders.get_mut(&source)
+            .ok_or(SignalingError::Crash(
+                format!("Did not find responder with address {}", source)
+            ))?;
+
+        // Sanity check
+        if responder.permanent_key.is_some() {
+            return Err(SignalingError::Crash("Responder already has a permanent key set!".into()));
+        }
+
+        // Set public permanent key
+        responder.permanent_key = Some(msg.key);
+
+        // State transition
+        responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
+
+        Ok(vec![])
     }
 
 }
@@ -1587,6 +1604,59 @@ mod tests {
             // Handle message. This should result in a decoding error
             let err = ctx.signaling.handle_message(bbox).unwrap_err();
             assert_eq!(err, SignalingError::Decode("Cannot decode message payload: Decoding error: Could not decode msgpack data: error while decoding value".into()));
+        }
+
+        /// In case the initiator expects a 'token' message but could not
+        /// decrypt the message's content, it SHALL send a 'drop-responder'
+        /// message containing the id of the responder who sent the message and
+        /// a close code of 3005 (Initiator Could Not Decrypt) in the reason
+        /// field.
+        fn token_initiator_cannot_decrypt() {
+            // TODO!
+        }
+
+        /// If a token message is valid, set the responder permanent key.
+        #[test]
+        fn token_initiator_set_public_key() {
+            let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
+                                              SignalingState::PeerHandshake,
+                                              ServerHandshakeState::Done, None);
+
+            // Create new responder context
+            let addr = Address(3);
+            let responder = ResponderContext::new(addr).unwrap();
+            ctx.signaling.as_initiator_mut().responders.insert(addr, responder);
+
+            // Generate a public permanent key for the responder
+            let pk = PublicKey::random();
+
+            // Prepare a token message
+            let msg: Message = Token::new(pk).into_message();
+            let msg_bytes = msg.to_msgpack();
+
+            // The token message is encrypted with the auth token,
+            // so we can't use the `TestMsgBuilder` here.
+            let cookie = Cookie::random();
+            let nonce = Nonce::new(cookie, Address(3), Address(1),
+                                   CombinedSequenceSnapshot::random());
+            let encrypted = ctx.signaling
+                .auth_token().expect("Could not get auth token")
+                .encrypt(&msg_bytes, unsafe { nonce.clone() });
+            let bbox = ByteBox::new(encrypted, nonce);
+
+            { // Waiting for NLL
+                let responder = ctx.signaling.as_initiator_mut().responders.get(&addr).unwrap();
+                assert_eq!(responder.handshake_state(), ResponderHandshakeState::New);
+                assert!(responder.permanent_key.is_none());
+            }
+            // Handle message. This should result in a state transition.
+            let actions = ctx.signaling.handle_message(bbox).unwrap();
+            {
+                let responder = ctx.signaling.as_initiator_mut().responders.get(&addr).unwrap();
+                assert_eq!(responder.handshake_state(), ResponderHandshakeState::TokenReceived);
+                assert_eq!(responder.permanent_key, Some(pk));
+                assert_eq!(actions, vec![]);
+            }
         }
     }
 
