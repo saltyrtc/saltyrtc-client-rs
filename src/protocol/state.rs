@@ -13,7 +13,7 @@ pub enum SignalingState {
 }
 
 impl SignalingState {
-    fn may_transition_to(&self, new_state: Self) -> bool {
+    pub fn may_transition_to(&self, new_state: Self) -> bool {
         match (*self, new_state) {
             (SignalingState::ServerHandshake, SignalingState::PeerHandshake) => true,
             (SignalingState::PeerHandshake, SignalingState::Task) => true,

@@ -26,6 +26,9 @@ pub(crate) mod send_error;
 pub(crate) mod state;
 pub(crate) mod types;
 
+mod new;
+pub(crate) use self::new::{NewSignaling, NewInitiatorSignaling, NewResponderSignaling};
+
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth, NewResponder};
