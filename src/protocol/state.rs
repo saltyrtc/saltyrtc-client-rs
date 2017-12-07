@@ -12,6 +12,16 @@ pub enum SignalingState {
     Task,
 }
 
+impl SignalingState {
+    fn may_transition_to(&self, new_state: Self) -> bool {
+        match (*self, new_state) {
+            (SignalingState::ServerHandshake, SignalingState::PeerHandshake) => true,
+            (SignalingState::PeerHandshake, SignalingState::Task) => true,
+            _ => false,
+        }
+    }
+}
+
 /// The states when doing a handshake with the server.
 ///
 /// The `ClientHello` state is only valid for the responder role, otherwise the
@@ -53,4 +63,28 @@ pub enum ResponderHandshakeState {
     KeySent,
     AuthReceived,
     AuthSent,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signaling_handshake_validate_transitions() {
+        let s = SignalingState::ServerHandshake;
+        let p = SignalingState::PeerHandshake;
+        let t = SignalingState::Task;
+
+        assert!(!s.may_transition_to(s));
+        assert!(s.may_transition_to(p));
+        assert!(!s.may_transition_to(t));
+
+        assert!(!p.may_transition_to(s));
+        assert!(!p.may_transition_to(p));
+        assert!(p.may_transition_to(t));
+
+        assert!(!t.may_transition_to(s));
+        assert!(!t.may_transition_to(p));
+        assert!(!t.may_transition_to(t));
+    }
 }
