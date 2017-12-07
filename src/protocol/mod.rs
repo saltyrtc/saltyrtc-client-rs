@@ -29,7 +29,7 @@ pub(crate) mod types;
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth, NewResponder};
-use self::messages::{SendError, Token, Key};
+use self::messages::{SendError, Token, Key, InitiatorAuthBuilder};
 pub(crate) use self::nonce::{Nonce};
 pub use self::types::{Role};
 pub(crate) use self::types::{HandleAction};
@@ -161,17 +161,6 @@ impl Signaling {
         on_inner!(self, ref mut s, &mut s.server)
     }
 
-    /// Return the responder with the specified address (if present).
-    fn responder_with_address_mut(&mut self, addr: &Address) -> Option<&mut ResponderContext> {
-        match *self {
-            Initiator(ref mut s) => s.responders.get_mut(addr),
-            Responder(_) => {
-                warn!("Called responder_with_address_mut on a responder!");
-                None
-            }
-        }
-    }
-
     /// Handle an incoming message.
     pub(crate) fn handle_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
         // Validate the nonce
@@ -187,6 +176,9 @@ impl Signaling {
 
             // Nonce is invalid, fail the signaling
             ValidationResult::Fail(reason) => return Err(SignalingError::InvalidNonce(reason)),
+
+            // A critical error occurred
+            ValidationResult::Crash(reason) => return Err(SignalingError::Crash(reason)),
         }
 
         // Decode message
@@ -326,12 +318,16 @@ impl Signaling {
         // TODO: Also consider signaling state, see InitiatorSignaling.java getPeerWithId
         let peer: &mut PeerContext = match nonce.source().0 {
             0x00 => self.server_mut(),
-            0x01 => unimplemented!(),
-            addr @ 0x02...0xff => {
-                match self.responder_with_address_mut(&nonce.source()) {
+            0x01 => match *self {
+                Initiator(_) => return ValidationResult::Crash("Got message from invalid sender that wasn't dropped".into()),
+                Responder(ref mut s) => &mut s.initiator,
+            },
+            addr @ 0x02...0xff => match *self {
+                Initiator(ref mut s) => match s.responders.get_mut(&nonce.source()) {
                     Some(responder) => responder,
                     None => return ValidationResult::Fail(format!("could not find responder with address {}", addr)),
-                }
+                },
+                Responder(_) => return ValidationResult::Crash("Got message from invalid sender that wasn't dropped".into()),
             },
             _ => unreachable!(),
         };
@@ -584,14 +580,30 @@ impl Signaling {
             Signaling::Initiator(_) => panic!("Called .as_responder() on a `Signaling::Initiator`"),
         }
     }
+
+    /// Return the inner `ResponderSignaling` instance.
+    ///
+    /// Panics if we're not an responder
+    #[cfg(test)]
+    fn as_responder_mut(&mut self) -> &mut ResponderSignaling {
+        match *self {
+            Signaling::Responder(ref mut s) => s,
+            Signaling::Initiator(_) => panic!("Called .as_responder() on a `Signaling::Initiator`"),
+        }
+    }
 }
 
 
 /// Result of the nonce validation.
 pub(crate) enum ValidationResult {
+    /// Validation passed
     Ok,
+    /// Ignore message
     DropMsg(String),
+    /// Validation failed
     Fail(String),
+    /// A critical error occurred
+    Crash(String),
 }
 
 
@@ -801,7 +813,7 @@ impl InitiatorSignaling {
         debug!("--> Received token");
 
         // Find responder instance
-        let mut responder = self.responders.get_mut(&source)
+        let responder = self.responders.get_mut(&source)
             .ok_or(SignalingError::Crash(
                 format!("Did not find responder with address {}", source)
             ))?;
@@ -825,7 +837,7 @@ impl InitiatorSignaling {
         debug!("--> Received key");
 
         // Find responder instance
-        let mut responder = self.responders.get_mut(&source)
+        let responder = self.responders.get_mut(&source)
             .ok_or(SignalingError::Crash(
                 format!("Did not find responder with address {}", source)
             ))?;
@@ -834,6 +846,17 @@ impl InitiatorSignaling {
         if responder.session_key.is_some() {
             return Err(SignalingError::Crash("Responder already has a session key set!".into()));
         }
+
+        // Ensure that session key != permanent key
+        match responder.permanent_key {
+            Some(pk) if pk == msg.key => {
+                return Err(SignalingError::Protocol("Responder session key and permanent key are equal".into()));
+            },
+            Some(_) => {},
+            None => {
+                return Err(SignalingError::Crash("Responder permanent key not set".into()));
+            }
+        };
 
         // Set public session key
         responder.session_key = Some(msg.key);
@@ -910,7 +933,27 @@ impl ResponderSignaling {
             return Err(SignalingError::Crash(format!("Received message from a responder")));
         }
 
-        unimplemented!("TODO: ResponderSignaling::decode_peer_msg");
+        // Decrypt depending on state
+        match self.initiator.handshake_state() {
+            InitiatorHandshakeState::KeySent => {
+                // Expect key message, encrypted with our public permanent key
+                // and initiator private permanent key
+                bbox.decrypt(&self.permanent_key, &self.initiator.permanent_key)
+            },
+            InitiatorHandshakeState::AuthSent => {
+                // Expect an auth message, encrypted with our public session
+                // key and initiator private session key
+                match (self.session_key.as_ref(), self.initiator.session_key.as_ref()) {
+                    (Some(ref our_key), Some(ref initiator_key)) => bbox.decrypt(our_key, initiator_key),
+                    (None, _) => return Err(SignalingError::Crash("Our session key not set".into())),
+                    (_, None) => return Err(SignalingError::Crash("Initiator session key not set".into())),
+                }
+            },
+            other => {
+                // TODO: Maybe remove these states?
+                Err(SignalingError::Crash(format!("Invalid initiator handshake state: {:?}", other)))
+            },
+        }
     }
 
     /// Determine the next peer handshake state based on the incoming
@@ -922,8 +965,7 @@ impl ResponderSignaling {
         let old_state = self.initiator.handshake_state();
         match (old_state, obox.message) {
             // Valid state transitions
-            // TODO
-            //(ResponderHandshakeState::New, Message::ServerHello(msg)) => self.handle_server_hello(msg),
+            (InitiatorHandshakeState::KeySent, Message::Key(msg)) => self.handle_key(msg, &obox.nonce),
 
             // Any undefined state transition results in an error
             (s, message) => Err(SignalingError::InvalidStateTransition(
@@ -1041,6 +1083,49 @@ impl ResponderSignaling {
 
         debug!("<-- Enqueuing key");
         Ok(HandleAction::Reply(bbox))
+    }
+
+    /// Handle an incoming [`Key`](messages/struct.Key.html) message.
+    fn handle_key(&mut self, msg: Key, nonce: &Nonce) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received key");
+
+        // Sanity check
+        if self.initiator.session_key.is_some() {
+            return Err(SignalingError::Crash("Initiator already has a session key set!".into()));
+        }
+
+        // Ensure that session key != permanent key
+        if msg.key == self.initiator.permanent_key {
+            return Err(SignalingError::Protocol("Responder session key and permanent key are equal".into()));
+        }
+
+        // Set public session key
+        self.initiator.session_key = Some(msg.key);
+
+        // State transition
+        self.initiator.set_handshake_state(InitiatorHandshakeState::KeyReceived);
+
+        // Reply with auth msg
+        let auth: Message = InitiatorAuthBuilder::new(nonce.cookie().clone())
+            .add_task("dummy", None)
+            .build()?
+            .into_message();
+        let auth_nonce = Nonce::new(
+            self.initiator.cookie_pair().ours.clone(),
+            self.identity.into(),
+            self.initiator.identity().into(),
+            self.initiator.csn_pair().borrow_mut().ours.increment()?,
+        );
+        let obox = OpenBox::new(auth, auth_nonce);
+        let bbox = obox.encrypt(
+            self.session_key.as_ref()
+                .ok_or(SignalingError::Crash("Our session key not set".into()))?,
+            self.initiator.session_key.as_ref()
+                .ok_or(SignalingError::Crash("Initiator session key not set".into()))?,
+        );
+
+        debug!("<-- Enqueuing auth");
+        Ok(vec![HandleAction::Reply(bbox)])
     }
 }
 
@@ -1257,6 +1342,7 @@ mod tests {
                                identity: ClientIdentity,
                                signaling_state: SignalingState,
                                server_handshake_state: ServerHandshakeState,
+                               initiator_pubkey: Option<PublicKey>,
                                auth_token: Option<AuthToken>) -> TestContext {
             let our_ks = KeyStore::new().unwrap();
             let server_ks = KeyStore::new().unwrap();
@@ -1265,8 +1351,11 @@ mod tests {
             let mut signaling = match role {
                 Role::Initiator => Signaling::new_initiator(KeyStore::from_private_key(our_ks.private_key().clone())),
                 Role::Responder => {
-                    let initiator_pubkey = PublicKey::from_slice(&[0u8; 32]).unwrap();
-                    Signaling::new_responder(KeyStore::from_private_key(our_ks.private_key().clone()), initiator_pubkey, auth_token)
+                    let pk = match initiator_pubkey {
+                        Some(pk) => pk,
+                        None => PublicKey::from_slice(&[0u8; 32]).unwrap(),
+                    };
+                    Signaling::new_responder(KeyStore::from_private_key(our_ks.private_key().clone()), pk, auth_token)
                 },
             };
             signaling.set_identity(identity);
@@ -1377,7 +1466,7 @@ mod tests {
             // Initialize signaling class
             let ctx = make_test_signaling(Role::Responder, ClientIdentity::Unknown,
                                           SignalingState::ServerHandshake,
-                                          ServerHandshakeState::ClientInfoSent, None);
+                                          ServerHandshakeState::ClientInfoSent, None, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, false).into_message();
@@ -1399,7 +1488,7 @@ mod tests {
             // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
                                               SignalingState::ServerHandshake,
-                                              ServerHandshakeState::ClientInfoSent, None);
+                                              ServerHandshakeState::ClientInfoSent, None, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(Cookie::random(), None, vec![]).into_message();
@@ -1416,7 +1505,7 @@ mod tests {
             // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
                                               SignalingState::ServerHandshake,
-                                              ServerHandshakeState::ClientInfoSent, None);
+                                              ServerHandshakeState::ClientInfoSent, None, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, true).into_message();
@@ -1433,7 +1522,7 @@ mod tests {
             // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
                                               SignalingState::ServerHandshake,
-                                              ServerHandshakeState::ClientInfoSent, None);
+                                              ServerHandshakeState::ClientInfoSent, None, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth {
@@ -1455,7 +1544,7 @@ mod tests {
             // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
                                               SignalingState::ServerHandshake,
-                                              ServerHandshakeState::ClientInfoSent, None);
+                                              ServerHandshakeState::ClientInfoSent, None, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3), Address(3)]).into_message();
@@ -1472,7 +1561,7 @@ mod tests {
             // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
                                               SignalingState::ServerHandshake,
-                                              ServerHandshakeState::ClientInfoSent, None);
+                                              ServerHandshakeState::ClientInfoSent, None, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(1), Address(2), Address(3)]).into_message();
@@ -1491,7 +1580,7 @@ mod tests {
             // Initialize signaling class
             let ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
                                           SignalingState::ServerHandshake,
-                                          ServerHandshakeState::ClientInfoSent, None);
+                                          ServerHandshakeState::ClientInfoSent, None, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3)]).into_message();
@@ -1520,7 +1609,7 @@ mod tests {
             // Initialize signaling class
             let mut ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(4),
                                               SignalingState::ServerHandshake,
-                                              ServerHandshakeState::ClientInfoSent, None);
+                                              ServerHandshakeState::ClientInfoSent, None, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth {
@@ -1569,7 +1658,7 @@ mod tests {
         fn server_auth_respond_initiator_with_token() { // TODO: Add similar test without token
             let ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
                                           SignalingState::ServerHandshake,
-                                          ServerHandshakeState::ClientInfoSent, Some(AuthToken::new()));
+                                          ServerHandshakeState::ClientInfoSent, None, Some(AuthToken::new()));
             let actions = _server_auth_respond_initiator(ctx);
             assert_eq!(actions.len(), 2);
         }
@@ -1578,7 +1667,7 @@ mod tests {
         fn server_auth_respond_initiator_without_token() { // TODO: Add similar test without token
             let ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
                                           SignalingState::ServerHandshake,
-                                          ServerHandshakeState::ClientInfoSent, None);
+                                          ServerHandshakeState::ClientInfoSent, None, None);
             let actions = _server_auth_respond_initiator(ctx);
             assert_eq!(actions.len(), 1);
         }
@@ -1589,7 +1678,7 @@ mod tests {
         fn server_auth_signaling_state_transition() {
             let ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(7),
                                           SignalingState::ServerHandshake,
-                                          ServerHandshakeState::ClientInfoSent, None);
+                                          ServerHandshakeState::ClientInfoSent, None, None);
 
             // Prepare a ServerAuth message
             let msg = ServerAuth {
@@ -1617,7 +1706,7 @@ mod tests {
         fn token_initiator_validate_public_key() {
             let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
                                               SignalingState::PeerHandshake,
-                                              ServerHandshakeState::Done, None);
+                                              ServerHandshakeState::Done, None, None);
 
             // Create new responder context
             let addr = Address(3);
@@ -1667,7 +1756,7 @@ mod tests {
         fn token_initiator_set_public_key() {
             let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
                                               SignalingState::PeerHandshake,
-                                              ServerHandshakeState::Done, None);
+                                              ServerHandshakeState::Done, None, None);
 
             // Create new responder context
             let addr = Address(3);
@@ -1715,7 +1804,7 @@ mod tests {
         fn key_initiator_success() {
             let mut ctx = make_test_signaling(Role::Initiator, ClientIdentity::Initiator,
                                               SignalingState::PeerHandshake,
-                                              ServerHandshakeState::Done, None);
+                                              ServerHandshakeState::Done, None, None);
             // Peer crypto
             let peer_permanent_pk = PublicKey::random();
             let peer_session_pk = PublicKey::random();
@@ -1752,6 +1841,44 @@ mod tests {
                 assert_eq!(responder.session_key, Some(peer_session_pk));
                 assert_eq!(actions.len(), 1); // Reply with key msg
             }
+        }
+
+        /// The client MUST generate a session key pair (a new NaCl key pair
+        /// for public key authenticated encryption) for further communication
+        /// with the other client. The client's session key pair SHALL NOT be
+        /// identical to the client's permanent key pair. It MUST set the
+        /// public key (32 bytes) of that key pair in the key field.
+        //#[test]
+        fn key_responder_success() {
+            // Peer crypto
+            let peer_permanent_pk = PublicKey::random();
+            let peer_session_pk = PublicKey::random();
+            let cookie = Cookie::random();
+
+            // Context
+            let mut ctx = make_test_signaling(Role::Responder, ClientIdentity::Responder(6),
+                                              SignalingState::PeerHandshake,
+                                              ServerHandshakeState::Done, Some(peer_permanent_pk), None);
+            assert_eq!(ctx.signaling.as_responder().initiator.permanent_key, peer_permanent_pk);
+            ctx.signaling.as_responder_mut().initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
+
+            // Prepare a key message
+            let msg: Message = Key {
+                key: peer_session_pk.clone(),
+            }.into_message();
+
+            // Encrypt message
+            let bbox = TestMsgBuilder::new().from(1).to(6).with_msg(msg)
+                .build(cookie, &ctx.our_ks, &peer_permanent_pk);
+
+            assert_eq!(ctx.signaling.as_responder().initiator.handshake_state(), InitiatorHandshakeState::KeySent);
+            assert_eq!(ctx.signaling.as_responder().initiator.session_key, None);
+            let actions = ctx.signaling.handle_message(bbox).unwrap();
+            assert_eq!(ctx.signaling.as_responder().initiator.handshake_state(), InitiatorHandshakeState::KeyReceived);
+            assert_eq!(ctx.signaling.as_responder().initiator.session_key, Some(peer_session_pk));
+            assert_eq!(actions.len(), 1); // Reply with auth msg
+
+            // TODO
         }
     }
 
