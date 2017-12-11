@@ -1,15 +1,12 @@
-//! Protocol state machines.
+//! Protocol implementation.
 //!
-//! These state machines handle all state transitions independently of the
-//! connection. Instead of executing side effects (like sending a response
-//! message to the peer through the websocket), a
-//! [`HandleAction`](types/enum.HandleAction.html) is returned.
+//! Incoming messages can be passed to a [`Signaling`](trait.Signaling.html)
+//! implementation where they will be processed. Instead of sending responses
+//! through the network directly, a [`HandleAction`](types/enum.HandleAction.html)
+//! is returned.
 //!
-//! All state is contained in the [context structs](context/index.html),
-//! depending on the role.
-//!
-//! This allows for better decoupling between protocol logic and network code,
-//! and makes it possible to easily add tests.
+//! All peer related state is contained in the [context
+//! structs](context/index.html), depending on the role.
 
 use std::collections::{HashMap, HashSet};
 
@@ -39,6 +36,9 @@ use self::state::{InitiatorHandshakeState, ResponderHandshakeState};
 
 
 /// The main signaling trait.
+///
+/// This is implemented by both the initiator and responder signaling structs.
+/// It handles all signaling state and processes incoming messages.
 pub(crate) trait Signaling {
     /// Return reference to the common data.
     fn common(&self) -> &Common;
@@ -93,13 +93,13 @@ pub(crate) trait Signaling {
     /// Return the peer context with the specified address.
     fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut PeerContext>;
 
-    /// Validate the nonce destination
+    /// Validate the nonce destination.
     fn validate_nonce_destination(&mut self, nonce: &Nonce) -> Result<(), ValidationError>;
 
-    /// Validate the nonce source
+    /// Validate the nonce source.
     fn validate_nonce_source(&mut self, nonce: &Nonce) -> Result<(), ValidationError>;
 
-    /// Validate the nonce CSN
+    /// Validate the nonce CSN.
     fn validate_nonce_csn(&mut self, nonce: &Nonce) -> Result<(), ValidationError> {
         // Validate CSN
         //
@@ -158,7 +158,7 @@ pub(crate) trait Signaling {
         Ok(())
     }
 
-    /// Validate the nonce cookie
+    /// Validate the nonce cookie.
     fn validate_nonce_cookie(&mut self, nonce: &Nonce) -> Result<(), ValidationError> {
         // Validate cookie
         //
@@ -259,7 +259,7 @@ pub(crate) trait Signaling {
 
     // Message decoding
 
-    /// Decode or decrypt a binary message coming from the server
+    /// Decode or decrypt a binary message coming from the server.
     fn decode_server_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox> {
         // The very first message from the server is unencrypted
         if self.common().signaling_state() == SignalingState::ServerHandshake
@@ -274,7 +274,7 @@ pub(crate) trait Signaling {
         }
     }
 
-    /// Decrypt a binary message coming from a peer
+    /// Decrypt a binary message coming from a peer.
     fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox>;
 
 
@@ -307,6 +307,11 @@ pub(crate) trait Signaling {
         }
     }
 
+    /// Determine the next peer handshake state based on the incoming
+    /// client-to-client message and the current state.
+    ///
+    /// This method call may have some side effects, like updates in the peer
+    /// context (cookie, CSN, etc).
     fn handle_peer_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>>;
 
 
@@ -419,6 +424,7 @@ pub(crate) trait Signaling {
         Ok(actions)
     }
 
+    /// Role-specific handling of an incoming [`ServerAuth`](messages/struct.ServerAuth.html) message.
     fn handle_server_auth_impl(&mut self, msg: &ServerAuth) -> SignalingResult<Vec<HandleAction>>;
 
     /// Handle an incoming [`NewResponder`](messages/struct.NewResponder.html) message.
@@ -432,7 +438,7 @@ pub(crate) trait Signaling {
     }
 }
 
-/// Common functionality / state for all signaling types.
+/// Common functionality and state for all signaling types.
 pub(crate) struct Common {
     // The signaling state
     signaling_state: SignalingState,
