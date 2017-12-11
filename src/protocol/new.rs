@@ -4,7 +4,8 @@ use ::boxes::{OpenBox, ByteBox};
 use ::crypto::{KeyStore, AuthToken, PublicKey};
 use ::errors::{SignalingError, SignalingResult};
 use ::protocol::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
-use ::protocol::messages::{Message};
+use ::protocol::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth, NewResponder};
+use ::protocol::messages::{SendError, Token, Key, InitiatorAuthBuilder};
 use ::protocol::nonce::{Nonce};
 use ::protocol::types::{Role, ClientIdentity, Address, HandleAction, Identity};
 use ::protocol::state::{SignalingState, ServerHandshakeState};
@@ -12,7 +13,21 @@ use ::protocol::state::{InitiatorHandshakeState, ResponderHandshakeState};
 
 /// The main signaling trait.
 pub(crate) trait NewSignaling {
+    /// Return reference to the common data.
     fn common(&self) -> &Common;
+
+    /// Return mutable reference to the common data.
+    fn common_mut(&mut self) -> &mut Common;
+
+    /// Return reference to the server context.
+    fn server(&self) -> &ServerContext {
+        &self.common().server
+    }
+
+    /// Return mutable reference to the server context.
+    fn server_mut(&mut self) -> &mut ServerContext {
+        &mut self.common_mut().server
+    }
 
     /// Return the identity.
     fn identity(&self) -> ClientIdentity {
@@ -24,9 +39,15 @@ pub(crate) trait NewSignaling {
         self.common().role
     }
 
+    /// Return the auth token.
+    fn auth_token(&self) -> Option<&AuthToken> {
+        self.common().auth_token.as_ref()
+    }
+
     /// Return the server handshake state
+    /// TODO: Remove?
     fn server_handshake_state(&self) -> ServerHandshakeState {
-        self.common().server.handshake_state()
+        self.server().handshake_state()
     }
 
     fn validate_nonce<'a>(&'a mut self, nonce: &Nonce) -> Result<(), ValidationError> {
@@ -208,6 +229,9 @@ pub(crate) trait NewSignaling {
         }
     }
 
+
+    // Message decoding
+
     /// Decode or decrypt a binary message coming from the server
     fn decode_server_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox> {
         // The very first message from the server is unencrypted
@@ -226,6 +250,9 @@ pub(crate) trait NewSignaling {
     /// Decrypt a binary message coming from a peer
     fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox>;
 
+
+    // Message handling: Dispatching
+
     /// Determine the next server handshake state based on the incoming
     /// server-to-client message and the current state.
     ///
@@ -234,9 +261,9 @@ pub(crate) trait NewSignaling {
     fn handle_server_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>> {
         let old_state = self.server_handshake_state().clone();
         match (old_state, obox.message) {
-//            // Valid state transitions
-//            (ServerHandshakeState::New, Message::ServerHello(msg)) =>
-//                self.handle_server_hello(msg),
+            // Valid state transitions
+            (ServerHandshakeState::New, Message::ServerHello(msg)) =>
+                self.handle_server_hello(msg),
 //            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
 //                self.handle_server_auth(msg),
 //            (ServerHandshakeState::Done, Message::NewResponder(msg)) =>
@@ -253,7 +280,73 @@ pub(crate) trait NewSignaling {
         }
     }
 
-    fn
+    fn handle_peer_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>>;
+
+
+    // Message handling: Handling
+
+    /// Handle an incoming [`ServerHello`](messages/struct.ServerHello.html) message.
+    fn handle_server_hello(&mut self, msg: ServerHello) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received server-hello");
+
+        let mut actions = Vec::with_capacity(2);
+
+        // Set the server public permanent key
+        trace!("Server permanent key is {:?}", msg.key);
+        if self.server().permanent_key.is_some() {
+            return Err(SignalingError::Protocol(
+                "Got a server-hello message, but server permanent key is already set".to_string()
+            ));
+        }
+        self.common_mut().server.permanent_key = Some(msg.key);
+
+        // Reply with client-hello message if we're a responder
+        if self.role() == Role::Responder {
+            let client_hello = {
+                let key = self.common().permanent_key.public_key();
+                ClientHello::new(*key).into_message()
+            };
+            let client_hello_nonce = Nonce::new(
+                // Cookie
+                self.server().cookie_pair().ours.clone(),
+                // Src
+                self.common().identity.into(),
+                // Dst
+                self.server().identity().into(),
+                // Csn
+                self.server().csn_pair().borrow_mut().ours.increment()?,
+            );
+            let reply = OpenBox::new(client_hello, client_hello_nonce);
+            debug!("<-- Enqueuing client-hello");
+            actions.push(HandleAction::Reply(reply.encode()));
+        }
+
+        // Send client-auth message
+        let client_auth = ClientAuth {
+            your_cookie: self.server().cookie_pair().theirs.clone().unwrap(),
+            subprotocols: vec![::SUBPROTOCOL.into()],
+            ping_interval: 0, // TODO
+            your_key: None, // TODO
+        }.into_message();
+        let client_auth_nonce = Nonce::new(
+            self.server().cookie_pair().ours.clone(),
+            self.identity().into(),
+            self.server().identity().into(),
+            self.server().csn_pair().borrow_mut().ours.increment()?,
+        );
+        let reply = OpenBox::new(client_auth, client_auth_nonce);
+        match self.server().permanent_key {
+            Some(ref pubkey) => {
+                debug!("<-- Enqueuing client-auth");
+                actions.push(HandleAction::Reply(reply.encrypt(&self.common().permanent_key, pubkey)));
+            },
+            None => return Err(SignalingError::Crash("Missing server permanent key".into())),
+        };
+
+        // TODO: Can we prevent confusing an incoming and an outgoing nonce?
+        self.server_mut().set_handshake_state(ServerHandshakeState::ClientInfoSent);
+        Ok(actions)
+    }
 }
 
 /// Common functionality / state for all signaling types.
@@ -320,6 +413,11 @@ impl NewSignaling for NewInitiatorSignaling {
     /// Return a reference to the `Common` struct.
     fn common(&self) -> &Common {
         &self.common
+    }
+
+    /// Return a mutable reference to the `Common` struct.
+    fn common_mut(&mut self) -> &mut Common {
+        &mut self.common
     }
 
     fn get_peer(&self) -> Option<&PeerContext> {
@@ -466,7 +564,6 @@ impl NewSignaling for NewInitiatorSignaling {
             )),
         }
     }
-
 }
 
 impl NewInitiatorSignaling {
@@ -485,6 +582,83 @@ impl NewInitiatorSignaling {
             responder: None,
         }
     }
+
+    /// Handle an incoming [`Token`](messages/struct.Token.html) message.
+    fn handle_token(&mut self, msg: Token, source: Address) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received token");
+
+        // Find responder instance
+        let responder = self.responders.get_mut(&source)
+            .ok_or(SignalingError::Crash(
+                format!("Did not find responder with address {}", source)
+            ))?;
+
+        // Sanity check
+        if responder.permanent_key.is_some() {
+            return Err(SignalingError::Crash("Responder already has a permanent key set!".into()));
+        }
+
+        // Set public permanent key
+        responder.permanent_key = Some(msg.key);
+
+        // State transition
+        responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
+
+        Ok(vec![])
+    }
+
+    /// Handle an incoming [`Key`](messages/struct.Key.html) message.
+    fn handle_key(&mut self, msg: Key, source: Address) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received key");
+
+        // Find responder instance
+        let responder = self.responders.get_mut(&source)
+            .ok_or(SignalingError::Crash(
+                format!("Did not find responder with address {}", source)
+            ))?;
+
+        // Sanity check
+        if responder.session_key.is_some() {
+            return Err(SignalingError::Crash("Responder already has a session key set!".into()));
+        }
+
+        // Ensure that session key != permanent key
+        match responder.permanent_key {
+            Some(pk) if pk == msg.key => {
+                return Err(SignalingError::Protocol("Responder session key and permanent key are equal".into()));
+            },
+            Some(_) => {},
+            None => {
+                return Err(SignalingError::Crash("Responder permanent key not set".into()));
+            }
+        };
+
+        // Set public session key
+        responder.session_key = Some(msg.key);
+
+        // State transition
+        responder.set_handshake_state(ResponderHandshakeState::KeyReceived);
+
+        // Reply with our own key msg
+        let key: Message = Key {
+            key: responder.keystore.public_key().clone(),
+        }.into_message();
+        let key_nonce = Nonce::new(
+            responder.cookie_pair().ours.clone(),
+            self.common.identity.into(),
+            responder.identity().into(),
+            responder.csn_pair().borrow_mut().ours.increment()?,
+        );
+        let obox = OpenBox::new(key, key_nonce);
+        let bbox = obox.encrypt(
+            &self.common.permanent_key,
+            responder.permanent_key.as_ref()
+                .ok_or(SignalingError::Crash("Responder permanent key not set".into()))?,
+        );
+
+        debug!("<-- Enqueuing key");
+        Ok(vec![HandleAction::Reply(bbox)])
+    }
 }
 
 
@@ -501,6 +675,11 @@ impl NewSignaling for NewResponderSignaling {
     /// Return a reference to the `Common` struct.
     fn common(&self) -> &Common {
         &self.common
+    }
+
+    /// Return a mutable reference to the `Common` struct.
+    fn common_mut(&mut self) -> &mut Common {
+        &mut self.common
     }
 
     fn get_peer(&self) -> Option<&PeerContext> {
@@ -585,7 +764,7 @@ impl NewSignaling for NewResponderSignaling {
             InitiatorHandshakeState::AuthSent => {
                 // Expect an auth message, encrypted with our public session
                 // key and initiator private session key
-                match (self.session_key.as_ref(), self.initiator.session_key.as_ref()) {
+                match (self.common().session_key.as_ref(), self.initiator.session_key.as_ref()) {
                     (Some(ref our_key), Some(ref initiator_key)) => bbox.decrypt(our_key, initiator_key),
                     (None, _) => return Err(SignalingError::Crash("Our session key not set".into())),
                     (_, None) => return Err(SignalingError::Crash("Initiator session key not set".into())),
@@ -633,6 +812,49 @@ impl NewResponderSignaling {
             },
             initiator: InitiatorContext::new(initiator_pubkey),
         }
+    }
+
+    /// Handle an incoming [`Key`](messages/struct.Key.html) message.
+    fn handle_key(&mut self, msg: Key, nonce: &Nonce) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received key");
+
+        // Sanity check
+        if self.initiator.session_key.is_some() {
+            return Err(SignalingError::Crash("Initiator already has a session key set!".into()));
+        }
+
+        // Ensure that session key != permanent key
+        if msg.key == self.initiator.permanent_key {
+            return Err(SignalingError::Protocol("Responder session key and permanent key are equal".into()));
+        }
+
+        // Set public session key
+        self.initiator.session_key = Some(msg.key);
+
+        // State transition
+        self.initiator.set_handshake_state(InitiatorHandshakeState::KeyReceived);
+
+        // Reply with auth msg
+        let auth: Message = InitiatorAuthBuilder::new(nonce.cookie().clone())
+            .add_task("dummy", None)
+            .build()?
+            .into_message();
+        let auth_nonce = Nonce::new(
+            self.initiator.cookie_pair().ours.clone(),
+            self.common().identity.into(),
+            self.initiator.identity().into(),
+            self.initiator.csn_pair().borrow_mut().ours.increment()?,
+        );
+        let obox = OpenBox::new(auth, auth_nonce);
+        let bbox = obox.encrypt(
+            self.common().session_key.as_ref()
+                .ok_or(SignalingError::Crash("Our session key not set".into()))?,
+            self.initiator.session_key.as_ref()
+                .ok_or(SignalingError::Crash("Initiator session key not set".into()))?,
+        );
+
+        debug!("<-- Enqueuing auth");
+        Ok(vec![HandleAction::Reply(bbox)])
     }
 }
 
