@@ -266,8 +266,8 @@ pub(crate) trait NewSignaling {
                 self.handle_server_hello(msg),
             (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
                 self.handle_server_auth(msg),
-//            (ServerHandshakeState::Done, Message::NewResponder(msg)) =>
-//                on_inner!(self, ref mut s, s.handle_new_responder(msg)),
+            (ServerHandshakeState::Done, Message::NewResponder(msg)) =>
+                self.handle_new_responder(msg),
 //            (ServerHandshakeState::Done, Message::DropResponder(_msg)) =>
 //                unimplemented!("Handling DropResponder messages not yet implemented"),
             (ServerHandshakeState::Done, Message::SendError(msg)) =>
@@ -393,6 +393,9 @@ pub(crate) trait NewSignaling {
     }
 
     fn handle_server_auth_impl(&mut self, msg: &ServerAuth) -> SignalingResult<Vec<HandleAction>>;
+
+    /// Handle an incoming [`NewResponder`](messages/struct.NewResponder.html) message.
+    fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>>;
 
     /// Handle an incoming [`SendError`](messages/struct.ServerAuth.html) message.
     fn handle_send_error(&mut self, msg: SendError) -> SignalingResult<Vec<HandleAction>> {
@@ -695,6 +698,35 @@ impl NewSignaling for NewInitiatorSignaling {
         Ok(vec![])
     }
 
+    fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received new-responder");
+
+        // An initiator who receives a 'new-responder' message SHALL validate
+        // that the id field contains a valid responder address (0x02..0xff).
+        if !msg.id.is_responder() {
+            return Err(SignalingError::InvalidMessage(
+                "`id` field in new-responder message is not a valid responder address".into()
+            ));
+        }
+
+        // It SHOULD store the responder's identity in its internal list of responders.
+        // If a responder with the same id already exists, all currently cached
+        // information about and for the previous responder (such as cookies
+        // and the sequence number) MUST be deleted first.
+        if self.responders.contains_key(&msg.id) {
+            warn!("Overwriting responder context for address {:?}", msg.id);
+        } else {
+            info!("Registering new responder with address {:?}", msg.id);
+        }
+        self.responders.insert(msg.id, ResponderContext::new(msg.id)?);
+
+        // Furthermore, the initiator MUST keep its path clean by following the
+        // procedure described in the Path Cleaning section.
+        // TODO: Implement
+
+        Ok(vec![])
+    }
+
 }
 
 impl NewInitiatorSignaling {
@@ -955,6 +987,10 @@ impl NewSignaling for NewResponderSignaling {
             )),
         }
         Ok(actions)
+    }
+
+    fn handle_new_responder(&mut self, _msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
+        Err(SignalingError::Protocol("Received 'new-responder' message as responder".into()))
     }
 }
 
