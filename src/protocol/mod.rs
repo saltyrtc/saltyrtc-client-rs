@@ -270,7 +270,7 @@ pub(crate) trait Signaling {
 
         // Otherwise, decrypt with server key
         match self.server().permanent_key {
-            Some(ref pubkey) => bbox.decrypt(&self.common().permanent_key, pubkey),
+            Some(ref pubkey) => bbox.decrypt(&self.common().permanent_keypair, pubkey),
             None => Err(SignalingError::Crash("Missing server permanent key".into())),
         }
     }
@@ -336,7 +336,7 @@ pub(crate) trait Signaling {
         // Reply with client-hello message if we're a responder
         if self.role() == Role::Responder {
             let client_hello = {
-                let key = self.common().permanent_key.public_key();
+                let key = self.common().permanent_keypair.public_key();
                 ClientHello::new(*key).into_message()
             };
             let client_hello_nonce = Nonce::new(
@@ -371,7 +371,7 @@ pub(crate) trait Signaling {
         match self.server().permanent_key {
             Some(ref pubkey) => {
                 debug!("<-- Enqueuing client-auth");
-                actions.push(HandleAction::Reply(reply.encrypt(&self.common().permanent_key, pubkey)));
+                actions.push(HandleAction::Reply(reply.encrypt(&self.common().permanent_keypair, pubkey)));
             },
             None => return Err(SignalingError::Crash("Missing server permanent key".into())),
         };
@@ -446,10 +446,10 @@ pub(crate) struct Common {
     signaling_state: SignalingState,
 
     // Our permanent keypair
-    pub(crate) permanent_key: KeyStore,
+    pub(crate) permanent_keypair: KeyStore,
 
     // Our session keypair
-    pub(crate) session_key: Option<KeyStore>,
+    pub(crate) session_keypair: Option<KeyStore>,
 
     // An optional auth token
     pub(crate) auth_token: Option<AuthToken>,
@@ -488,9 +488,9 @@ impl Common {
 
     /// Generate a session key.
     fn generate_session_key(&mut self) -> SignalingResult<()> {
-        if self.session_key.is_some() {
+        if self.session_keypair.is_some() {
             return Err(
-                SignalingError::Crash("Cannot generate new session key: It has already been generated".into())
+                SignalingError::Crash("Cannot generate new session keypair: It has already been generated".into())
             );
         }
 
@@ -501,12 +501,12 @@ impl Common {
         // Note: This *could* cause a panic if libsodium initialization fails, but
         // that's not possible in practice because libsodium should already
         // have been initialized previously.
-        let mut session_key = KeyStore::new().expect("Libsodium initialization failed");
-        while session_key == self.permanent_key {
+        let mut session_keypair = KeyStore::new().expect("Libsodium initialization failed");
+        while session_keypair == self.permanent_keypair {
             warn!("Session keypair == permanent keypair! This is highly unlikely. Regenerating...");
-            session_key = KeyStore::new().expect("Libsodium initialization failed");
+            session_keypair = KeyStore::new().expect("Libsodium initialization failed");
         }
-        self.session_key = Some(session_key);
+        self.session_keypair = Some(session_keypair);
         Ok(())
     }
 }
@@ -645,7 +645,7 @@ impl Signaling for InitiatorSignaling {
             ResponderHandshakeState::TokenReceived => {
                 // Expect key message, encrypted with our public permanent key
                 // and responder private permanent key
-                bbox.decrypt(&self.common.permanent_key, responder_permanent_key(&responder)?)
+                bbox.decrypt(&self.common.permanent_keypair, responder_permanent_key(&responder)?)
             },
             ResponderHandshakeState::KeySent => {
                 // Expect auth message, encrypted with our public session key
@@ -773,14 +773,14 @@ impl Signaling for InitiatorSignaling {
 }
 
 impl InitiatorSignaling {
-    pub(crate) fn new(permanent_key: KeyStore) -> Self {
+    pub(crate) fn new(permanent_keypair: KeyStore) -> Self {
         InitiatorSignaling {
             common: Common {
                 signaling_state: SignalingState::ServerHandshake,
                 role: Role::Initiator,
                 identity: ClientIdentity::Unknown,
-                permanent_key: permanent_key,
-                session_key: None,
+                permanent_keypair: permanent_keypair,
+                session_keypair: None,
                 auth_token: Some(AuthToken::new()),
                 server: ServerContext::new(),
             },
@@ -857,7 +857,7 @@ impl InitiatorSignaling {
         );
         let obox = OpenBox::new(key, key_nonce);
         let bbox = obox.encrypt(
-            &self.common.permanent_key,
+            &self.common.permanent_keypair,
             responder.permanent_key.as_ref()
                 .ok_or(SignalingError::Crash("Responder permanent key not set".into()))?,
         );
@@ -973,12 +973,12 @@ impl Signaling for ResponderSignaling {
             InitiatorHandshakeState::KeySent => {
                 // Expect key message, encrypted with our public permanent key
                 // and initiator private permanent key
-                bbox.decrypt(&self.common.permanent_key, &self.initiator.permanent_key)
+                bbox.decrypt(&self.common.permanent_keypair, &self.initiator.permanent_key)
             },
             InitiatorHandshakeState::AuthSent => {
                 // Expect an auth message, encrypted with our public session
                 // key and initiator private session key
-                match (self.common().session_key.as_ref(), self.initiator.session_key.as_ref()) {
+                match (self.common().session_keypair.as_ref(), self.initiator.session_key.as_ref()) {
                     (Some(ref our_key), Some(ref initiator_key)) => bbox.decrypt(our_key, initiator_key),
                     (None, _) => return Err(SignalingError::Crash("Our session key not set".into())),
                     (_, None) => return Err(SignalingError::Crash("Initiator session key not set".into())),
@@ -1046,7 +1046,7 @@ impl Signaling for ResponderSignaling {
 }
 
 impl ResponderSignaling {
-    pub(crate) fn new(permanent_key: KeyStore,
+    pub(crate) fn new(permanent_keypair: KeyStore,
                       initiator_pubkey: PublicKey,
                       auth_token: Option<AuthToken>) -> Self {
         ResponderSignaling {
@@ -1054,8 +1054,8 @@ impl ResponderSignaling {
                 signaling_state: SignalingState::ServerHandshake,
                 role: Role::Responder,
                 identity: ClientIdentity::Unknown,
-                permanent_key: permanent_key,
-                session_key: None,
+                permanent_keypair: permanent_keypair,
+                session_keypair: None,
                 auth_token: auth_token,
                 server: ServerContext::new(),
             },
@@ -1068,7 +1068,7 @@ impl ResponderSignaling {
         // The responder MUST set the public key (32 bytes) of the permanent
         // key pair in the key field of this message.
         let msg: Message = Token {
-            key: self.common().permanent_key.public_key().to_owned(),
+            key: self.common().permanent_keypair.public_key().to_owned(),
         }.into_message();
         let nonce = Nonce::new(
             self.initiator.cookie_pair().ours.clone(),
@@ -1093,7 +1093,7 @@ impl ResponderSignaling {
     /// Build a `Key` message.
     fn send_key(&self) -> SignalingResult<HandleAction> {
         // It MUST set the public key (32 bytes) of that key pair in the key field.
-        let msg: Message = match self.common().session_key {
+        let msg: Message = match self.common().session_keypair {
             Some(ref session_key) => Key {
                 key: session_key.public_key().to_owned(),
             }.into_message(),
@@ -1109,7 +1109,7 @@ impl ResponderSignaling {
 
         // The message SHALL be NaCl public-key encrypted by the client's
         // permanent key pair and the other client's permanent key pair.
-        let bbox = obox.encrypt(&self.common().permanent_key, &self.initiator.permanent_key);
+        let bbox = obox.encrypt(&self.common().permanent_keypair, &self.initiator.permanent_key);
 
         debug!("<-- Enqueuing key");
         Ok(HandleAction::Reply(bbox))
@@ -1148,7 +1148,7 @@ impl ResponderSignaling {
         );
         let obox = OpenBox::new(auth, auth_nonce);
         let bbox = obox.encrypt(
-            self.common().session_key.as_ref()
+            self.common().session_keypair.as_ref()
                 .ok_or(SignalingError::Crash("Our session key not set".into()))?,
             self.initiator.session_key.as_ref()
                 .ok_or(SignalingError::Crash("Initiator session key not set".into()))?,
