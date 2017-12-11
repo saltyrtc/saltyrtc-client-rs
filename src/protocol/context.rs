@@ -210,3 +210,16 @@ impl PeerContext for ResponderContext {
         &mut self.cookie_pair
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_context_new() {
+        let ctx = ServerContext::new();
+        assert_eq!(ctx.identity(), Identity::Server);
+        assert_eq!(ctx.permanent_key(), None);
+        assert_eq!(ctx.session_key(), None);
+    }
+}
