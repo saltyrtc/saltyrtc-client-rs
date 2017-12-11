@@ -105,7 +105,7 @@ impl fmt::Display for ClientIdentity {
 ///
 /// This is an unsigned byte like the [`Identity`](enum.Identity.html),
 /// but without any semantic information attached.
-#[derive(Debug, PartialEq, Eq, Copy, Clone, Hash)]
+#[derive(PartialEq, Eq, Copy, Clone, Hash)]
 pub(crate) struct Address(pub(crate) u8);
 
 impl Address {
@@ -131,6 +131,13 @@ impl Address {
 }
 
 impl fmt::Display for Address {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Address({:#04x})", self.0)
+    }
+}
+
+impl fmt::Debug for Address {
+    // Impl this ourselves to avoid too much spacing in alternative debug format
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Address({:#04x})", self.0)
     }
