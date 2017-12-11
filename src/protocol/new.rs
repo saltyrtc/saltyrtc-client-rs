@@ -268,8 +268,8 @@ pub(crate) trait NewSignaling {
                 self.handle_server_auth(msg),
             (ServerHandshakeState::Done, Message::NewResponder(msg)) =>
                 self.handle_new_responder(msg),
-//            (ServerHandshakeState::Done, Message::DropResponder(_msg)) =>
-//                unimplemented!("Handling DropResponder messages not yet implemented"),
+            (ServerHandshakeState::Done, Message::DropResponder(_msg)) =>
+                unimplemented!("Handling DropResponder messages not yet implemented"),
             (ServerHandshakeState::Done, Message::SendError(msg)) =>
                 self.handle_send_error(msg),
 
