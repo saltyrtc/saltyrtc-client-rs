@@ -264,14 +264,14 @@ pub(crate) trait NewSignaling {
             // Valid state transitions
             (ServerHandshakeState::New, Message::ServerHello(msg)) =>
                 self.handle_server_hello(msg),
-//            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
-//                self.handle_server_auth(msg),
+            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
+                self.handle_server_auth(msg),
 //            (ServerHandshakeState::Done, Message::NewResponder(msg)) =>
 //                on_inner!(self, ref mut s, s.handle_new_responder(msg)),
 //            (ServerHandshakeState::Done, Message::DropResponder(_msg)) =>
 //                unimplemented!("Handling DropResponder messages not yet implemented"),
-//            (ServerHandshakeState::Done, Message::SendError(msg)) =>
-//                self.handle_send_error(msg),
+            (ServerHandshakeState::Done, Message::SendError(msg)) =>
+                self.handle_send_error(msg),
 
             // Any undefined state transition results in an error
             (s, message) => Err(SignalingError::InvalidStateTransition(
@@ -347,6 +347,59 @@ pub(crate) trait NewSignaling {
         self.server_mut().set_handshake_state(ServerHandshakeState::ClientInfoSent);
         Ok(actions)
     }
+
+    /// Handle an incoming [`ServerAuth`](messages/struct.ServerAuth.html) message.
+    fn handle_server_auth(&mut self, msg: ServerAuth) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received server-auth");
+
+        // When the client receives a 'server-auth' message, it MUST
+        // have accepted and set its identity as described in the
+        // Receiving a Signalling Message section.
+        if self.identity() == ClientIdentity::Unknown {
+            return Err(SignalingError::Crash(
+                "No identity assigned when receiving server-auth message".into()
+            ));
+        }
+
+        // It MUST check that the cookie provided in the your_cookie
+        // field contains the cookie the client has used in its
+        // previous and messages to the server.
+        if msg.your_cookie != self.server().cookie_pair().ours {
+            trace!("Our cookie as sent by server: {:?}", msg.your_cookie);
+            trace!("Our actual cookie: {:?}", self.server().cookie_pair().ours);
+            return Err(SignalingError::InvalidMessage(
+                "Cookie sent in server-auth message does not match our cookie".into()
+            ));
+        }
+
+        // If the client has knowledge of the server's public permanent
+        // key, it SHALL decrypt the signed_keys field by using the
+        // message's nonce, the client's private permanent key and the
+        // server's public permanent key. The decrypted message MUST
+        // match the concatenation of the server's public session key
+        // and the client's public permanent key (in that order). If
+        // the signed_keys is present but the client does not have
+        // knowledge of the server's permanent key, it SHALL log a
+        // warning.
+        // TODO: Implement
+
+        // Moreover, the client MUST do some checks depending on its role
+        let actions = self.handle_server_auth_impl(&msg)?;
+
+        info!("Server handshake completed");
+        self.server_mut().set_handshake_state(ServerHandshakeState::Done);
+        self.common_mut().set_signaling_state(SignalingState::PeerHandshake)?;
+        Ok(actions)
+    }
+
+    fn handle_server_auth_impl(&mut self, msg: &ServerAuth) -> SignalingResult<Vec<HandleAction>>;
+
+    /// Handle an incoming [`SendError`](messages/struct.ServerAuth.html) message.
+    fn handle_send_error(&mut self, msg: SendError) -> SignalingResult<Vec<HandleAction>> {
+        warn!("--> Received send-error");
+        debug!("Message that could not be relayed: {:#?}", msg.id);
+        return Err(SignalingError::SendError);
+    }
 }
 
 /// Common functionality / state for all signaling types.
@@ -392,6 +445,30 @@ impl Common {
         }
         trace!("Signaling state transition: {:?} -> {:?}", self.signaling_state(), state);
         self.signaling_state = state;
+        Ok(())
+    }
+
+    /// Generate a session key.
+    fn generate_session_key(&mut self) -> SignalingResult<()> {
+        if self.session_key.is_some() {
+            return Err(
+                SignalingError::Crash("Cannot generate new session key: It has already been generated".into())
+            );
+        }
+
+        // The client MUST generate a session key pair (a new NaCl key pair for
+        // public key authenticated encryption) for further communication with
+        // the other client.
+        //
+        // Note: This *could* cause a panic if libsodium initialization fails, but
+        // that's not possible in practice because libsodium should already
+        // have been initialized previously.
+        let mut session_key = KeyStore::new().expect("Libsodium initialization failed");
+        while session_key == self.permanent_key {
+            warn!("Session keypair == permanent keypair! This is highly unlikely. Regenerating...");
+            session_key = KeyStore::new().expect("Libsodium initialization failed");
+        }
+        self.session_key = Some(session_key);
         Ok(())
     }
 }
@@ -564,6 +641,60 @@ impl NewSignaling for NewInitiatorSignaling {
             )),
         }
     }
+
+    fn handle_server_auth_impl(&mut self, msg: &ServerAuth) -> SignalingResult<Vec<HandleAction>> {
+        // In case the client is the initiator, it SHALL check
+        // that the responders field is set and contains an
+        // Array of responder identities.
+        if msg.initiator_connected.is_some() {
+            return Err(SignalingError::InvalidMessage(
+                "We're the initiator, but the `initiator_connected` field in the server-auth message is set".into()
+            ));
+        }
+        let responders = match msg.responders {
+            Some(ref responders) => responders,
+            None => return Err(SignalingError::InvalidMessage(
+                "`responders` field in server-auth message not set".into()
+            )),
+        };
+
+        // The responder identities MUST be validated and SHALL
+        // neither contain addresses outside the range
+        // 0x02..0xff
+        let responders_set: HashSet<Address> = responders.iter().cloned().collect();
+        if responders_set.contains(&Address(0x00)) || responders_set.contains(&Address(0x01)) {
+            return Err(SignalingError::InvalidMessage(
+                "`responders` field in server-auth message may not contain addresses <0x02".into()
+            ));
+        }
+
+        // ...nor SHALL an address be repeated in the
+        // Array.
+        if responders.len() != responders_set.len() {
+            return Err(SignalingError::InvalidMessage(
+                "`responders` field in server-auth message may not contain duplicates".into()
+            ));
+        }
+
+        // An empty Array SHALL be considered valid. However,
+        // Nil SHALL NOT be considered a valid value of that
+        // field.
+        // -> Already covered by Rust's type system.
+
+        // It SHOULD store the responder's identities in its
+        // internal list of responders.
+        for address in responders_set {
+            self.responders.insert(address, ResponderContext::new(address)?);
+        }
+
+        // Additionally, the initiator MUST keep its path clean
+        // by following the procedure described in the Path
+        // Cleaning section.
+        // TODO: Implement
+
+        Ok(vec![])
+    }
+
 }
 
 impl NewInitiatorSignaling {
@@ -794,6 +925,37 @@ impl NewSignaling for NewResponderSignaling {
             )),
         }
     }
+
+    fn handle_server_auth_impl(&mut self, msg: &ServerAuth) -> SignalingResult<Vec<HandleAction>> {
+        // In case the client is the responder, it SHALL check
+        // that the initiator_connected field contains a
+        // boolean value.
+        if msg.responders.is_some() {
+            return Err(SignalingError::InvalidMessage(
+                "We're a responder, but the `responders` field in the server-auth message is set".into()
+            ));
+        }
+        let mut actions: Vec<HandleAction> = vec![];
+        match msg.initiator_connected {
+            Some(true) => {
+                if let Some(ref token) = self.common().auth_token {
+                    actions.push(self.send_token(&token)?);
+                } else {
+                    debug!("No auth token set");
+                }
+                self.common_mut().generate_session_key()?;
+                actions.push(self.send_key()?);
+                self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
+            },
+            Some(false) => {
+                debug!("No initiator connected so far");
+            },
+            None => return Err(SignalingError::InvalidMessage(
+                "We're a responder, but the `initiator_connected` field in the server-auth message is not set".into()
+            )),
+        }
+        Ok(actions)
+    }
 }
 
 impl NewResponderSignaling {
@@ -812,6 +974,58 @@ impl NewResponderSignaling {
             },
             initiator: InitiatorContext::new(initiator_pubkey),
         }
+    }
+
+    /// Build a `Token` message.
+    fn send_token(&self, token: &AuthToken) -> SignalingResult<HandleAction> {
+        // The responder MUST set the public key (32 bytes) of the permanent
+        // key pair in the key field of this message.
+        let msg: Message = Token {
+            key: self.common().permanent_key.public_key().to_owned(),
+        }.into_message();
+        let nonce = Nonce::new(
+            self.initiator.cookie_pair().ours.clone(),
+            self.identity().into(),
+            self.initiator.identity().into(),
+            self.initiator.csn_pair().borrow_mut().ours.increment()?,
+        );
+        let obox = OpenBox::new(msg, nonce);
+
+        // The message SHALL be NaCl secret key encrypted by the token the
+        // initiator created and issued to the responder.
+        let bbox = obox.encrypt_token(&token);
+
+        // TODO: In case the initiator has successfully decrypted the 'token'
+        // message, the secret key MUST be invalidated immediately and SHALL
+        // NOT be used for any other message.
+
+        debug!("<-- Enqueuing token");
+        Ok(HandleAction::Reply(bbox))
+    }
+
+    /// Build a `Key` message.
+    fn send_key(&self) -> SignalingResult<HandleAction> {
+        // It MUST set the public key (32 bytes) of that key pair in the key field.
+        let msg: Message = match self.common().session_key {
+            Some(ref session_key) => Key {
+                key: session_key.public_key().to_owned(),
+            }.into_message(),
+            None => return Err(SignalingError::Crash("Missing session keypair".into())),
+        };
+        let nonce = Nonce::new(
+            self.initiator.cookie_pair().ours.clone(),
+            self.identity().into(),
+            self.initiator.identity().into(),
+            self.initiator.csn_pair().borrow_mut().ours.increment()?,
+        );
+        let obox = OpenBox::new(msg, nonce);
+
+        // The message SHALL be NaCl public-key encrypted by the client's
+        // permanent key pair and the other client's permanent key pair.
+        let bbox = obox.encrypt(&self.common().permanent_key, &self.initiator.permanent_key);
+
+        debug!("<-- Enqueuing key");
+        Ok(HandleAction::Reply(bbox))
     }
 
     /// Handle an incoming [`Key`](messages/struct.Key.html) message.
