@@ -33,7 +33,7 @@ pub enum SaltyError {
     Crash(String),
 }
 
-/// A result with [`SaltyError](enum.SaltyError.html) as error type.
+/// A result with [`SaltyError`](enum.SaltyError.html) as error type.
 pub type SaltyResult<T> = ::std::result::Result<T, SaltyError>;
 
 
@@ -88,7 +88,7 @@ pub enum SignalingError {
     Crash(String),
 }
 
-/// A result with [`SignalingError](enum.SignalingError.html) as error type.
+/// A result with [`SignalingError`](enum.SignalingError.html) as error type.
 pub type SignalingResult<T> = ::std::result::Result<T, SignalingError>;
 
 impl From<SerdeDecodeError> for SignalingError {

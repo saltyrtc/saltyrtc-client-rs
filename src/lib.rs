@@ -62,7 +62,7 @@ pub mod utils {
 
 // Internal imports
 use helpers::libsodium_init;
-use protocol::{HandleAction, Signaling};
+use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
 
 
 // Constants
@@ -83,21 +83,31 @@ macro_rules! boxed {
 
 
 pub struct SaltyClient {
-    signaling: Signaling,
+    /// The signaling trait object.
+    ///
+    /// This is either an
+    /// [`InitiatorSignaling`](protocol/struct.InitiatorSignaling.html) or a
+    /// [`ResponderSignaling`](protocol/struct.ResponderSignaling.html)
+    /// instance.
+    signaling: Box<Signaling>,
 }
 
 impl SaltyClient {
+    /// Create a new SaltyRTC initiator.
     pub fn new_initiator(permanent_key: KeyStore) -> Self {
+        let signaling = InitiatorSignaling::new(permanent_key);
         SaltyClient {
-            signaling: Signaling::new_initiator(permanent_key),
+            signaling: Box::new(signaling),
         }
     }
 
+    /// Create a new SaltyRTC responder.
     pub fn new_responder(permanent_key: KeyStore,
                          initiator_pubkey: PublicKey,
                          auth_token: Option<AuthToken>) -> Self {
+        let signaling = ResponderSignaling::new(permanent_key, initiator_pubkey, auth_token);
         SaltyClient {
-            signaling: Signaling::new_responder(permanent_key, initiator_pubkey, auth_token),
+            signaling: Box::new(signaling),
         }
     }
 
@@ -116,6 +126,7 @@ impl SaltyClient {
         self.signaling.handle_message(bbox)
     }
 }
+
 
 
 /// Connect to the specified SaltyRTC server.
