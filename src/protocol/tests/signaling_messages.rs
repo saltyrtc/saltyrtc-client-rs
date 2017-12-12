@@ -522,7 +522,7 @@ fn key_initiator_success() {
     let actions = ctx.signaling.handle_message(bbox).unwrap();
     {
         let responder = ctx.signaling.responders.get(&addr).unwrap();
-        assert_eq!(responder.handshake_state(), ResponderHandshakeState::KeyReceived);
+        assert_eq!(responder.handshake_state(), ResponderHandshakeState::KeySent);
         assert_eq!(responder.session_key, Some(peer_session_pk));
         assert_eq!(actions.len(), 1); // Reply with key msg
     }
@@ -564,7 +564,7 @@ fn key_responder_success() {
     assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::KeySent);
     assert_eq!(ctx.signaling.initiator.session_key, None);
     let actions = ctx.signaling.handle_message(bbox).unwrap();
-    assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::KeyReceived);
+    assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::AuthSent);
     assert_eq!(ctx.signaling.initiator.session_key, Some(peer_session_pk));
     assert_eq!(actions.len(), 1); // Reply with auth msg
 

@@ -842,6 +842,9 @@ impl InitiatorSignaling {
                 .ok_or(SignalingError::Crash("Responder permanent key not set".into()))?,
         );
 
+        // State transition
+        responder.set_handshake_state(ResponderHandshakeState::KeySent);
+
         debug!("<-- Enqueuing key");
         Ok(vec![HandleAction::Reply(bbox)])
     }
@@ -1126,6 +1129,9 @@ impl ResponderSignaling {
             self.initiator.session_key.as_ref()
                 .ok_or(SignalingError::Crash("Initiator session key not set".into()))?,
         );
+
+        // State transition
+        self.initiator.set_handshake_state(InitiatorHandshakeState::AuthSent);
 
         debug!("<-- Enqueuing auth");
         Ok(vec![HandleAction::Reply(bbox)])

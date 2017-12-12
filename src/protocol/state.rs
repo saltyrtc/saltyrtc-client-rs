@@ -48,7 +48,9 @@ pub enum InitiatorHandshakeState {
     KeySent,
     /// A [`Key`](../messages/struct.Key.html) message has been received.
     KeyReceived,
+    /// An [`Auth`](../messages/struct.Auth.html) message has been sent.
     AuthSent,
+    /// An [`Auth`](../messages/struct.Auth.html) message has been received.
     AuthReceived,
 }
 
@@ -64,7 +66,9 @@ pub enum ResponderHandshakeState {
     KeyReceived,
     /// A [`Key`](../messages/struct.Key.html) message has been sent.
     KeySent,
+    /// An [`Auth`](../messages/struct.Auth.html) message has been received.
     AuthReceived,
+    /// An [`Auth`](../messages/struct.Auth.html) message has been sent.
     AuthSent,
 }
 
