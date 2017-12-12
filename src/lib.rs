@@ -32,6 +32,7 @@ mod errors;
 mod helpers;
 mod protocol;
 mod send_all;
+mod task;
 
 // Rust imports
 use std::cell::RefCell;
@@ -55,6 +56,7 @@ use websocket::message::OwnedMessage;
 pub use crypto::{KeyStore, PublicKey, PrivateKey, AuthToken};
 pub use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError};
 pub use protocol::{Role};
+pub use task::{Task};
 
 pub mod utils {
     pub use crypto::{public_key_from_hex_str};
