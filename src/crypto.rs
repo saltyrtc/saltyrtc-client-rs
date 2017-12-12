@@ -48,22 +48,23 @@ impl KeyStore {
 
     /// Create a new key pair and wrap it in a key store.
     ///
-    /// This can fail only if libsodium initialization fails.
-    pub fn new() -> SaltyResult<Self> {
+    /// ## Panics
+    ///
+    /// This may panic if libsodium initialization fails.
+    pub fn new() -> Self {
         info!("Generating new key pair");
 
         // Initialize libsodium if it hasn't been initialized already
-        libsodium_init()
-            .map_err(|e| SaltyError::Crypto(format!("Could not generate keystore: {}", e)))?;
+        libsodium_init_or_panic();
 
         // Generate key pair
         let (pk, sk) = box_::gen_keypair();
         trace!("Public key: {:?}", pk);
 
-        Ok(KeyStore {
+        KeyStore {
             public_key: pk,
             private_key: sk,
-        })
+        }
     }
 
     /// Create a new key pair from an existing private key.
@@ -312,8 +313,8 @@ mod tests {
     #[test]
     fn new() {
         for _ in 0..255 {
-            let ks1 = KeyStore::new().unwrap();
-            let ks2 = KeyStore::new().unwrap();
+            let ks1 = KeyStore::new();
+            let ks2 = KeyStore::new();
             assert_ne!(ks1.public_key(), ks2.public_key());
             assert_ne!(ks1.private_key(), ks2.private_key());
             assert_ne!(ks1, ks2);
@@ -323,7 +324,7 @@ mod tests {
     #[test]
     fn from_private_key() {
         for _ in 0..255 {
-            let ks1 = KeyStore::new().unwrap();
+            let ks1 = KeyStore::new();
             let ks2 = KeyStore::from_private_key(ks1.private_key().clone());
             assert_eq!(ks1.public_key(), ks2.public_key());
         }
@@ -332,8 +333,8 @@ mod tests {
     #[test]
     fn from_keypair() {
         for _ in 0..255 {
-            let ks1 = KeyStore::new().unwrap();
-            let ks2 = KeyStore::new().unwrap();
+            let ks1 = KeyStore::new();
+            let ks2 = KeyStore::new();
             let ks3 = KeyStore::from_keypair(ks1.public_key().clone(), ks1.private_key().clone());
             assert_ne!(ks1, ks2);
             assert_ne!(ks2, ks3);

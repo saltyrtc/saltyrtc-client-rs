@@ -73,11 +73,12 @@ pub(crate) trait Signaling {
         self.common().auth_token.as_ref()
     }
 
-    /// Return the server handshake state
+    /// Return the server handshake state.
     fn server_handshake_state(&self) -> ServerHandshakeState {
         self.server().handshake_state()
     }
 
+    /// Validate the nonce.
     fn validate_nonce<'a>(&'a mut self, nonce: &Nonce) -> Result<(), ValidationError> {
         self.validate_nonce_destination(nonce)?;
         self.validate_nonce_source(nonce)?;
@@ -497,14 +498,10 @@ impl Common {
         // The client MUST generate a session key pair (a new NaCl key pair for
         // public key authenticated encryption) for further communication with
         // the other client.
-        //
-        // Note: This *could* cause a panic if libsodium initialization fails, but
-        // that's not possible in practice because libsodium should already
-        // have been initialized previously.
-        let mut session_keypair = KeyStore::new().expect("Libsodium initialization failed");
+        let mut session_keypair = KeyStore::new();
         while session_keypair == self.permanent_keypair {
             warn!("Session keypair == permanent keypair! This is highly unlikely. Regenerating...");
-            session_keypair = KeyStore::new().expect("Libsodium initialization failed");
+            session_keypair = KeyStore::new();
         }
         self.session_keypair = Some(session_keypair);
         Ok(())
@@ -730,7 +727,7 @@ impl Signaling for InitiatorSignaling {
         // It SHOULD store the responder's identities in its
         // internal list of responders.
         for address in responders_set {
-            self.responders.insert(address, ResponderContext::new(address)?);
+            self.responders.insert(address, ResponderContext::new(address));
         }
 
         // Additionally, the initiator MUST keep its path clean
@@ -761,7 +758,7 @@ impl Signaling for InitiatorSignaling {
         } else {
             info!("Registering new responder with address {:?}", msg.id);
         }
-        self.responders.insert(msg.id, ResponderContext::new(msg.id)?);
+        self.responders.insert(msg.id, ResponderContext::new(msg.id));
 
         // Furthermore, the initiator MUST keep its path clean by following the
         // procedure described in the Path Cleaning section.

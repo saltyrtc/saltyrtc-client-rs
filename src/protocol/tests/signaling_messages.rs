@@ -20,8 +20,8 @@ impl TestContext<InitiatorSignaling> {
             signaling_state: SignalingState,
             server_handshake_state: ServerHandshakeState,
     ) -> TestContext<InitiatorSignaling> {
-        let our_ks = KeyStore::new().unwrap();
-        let server_ks = KeyStore::new().unwrap();
+        let our_ks = KeyStore::new();
+        let server_ks = KeyStore::new();
         let our_cookie = Cookie::random();
         let server_cookie = Cookie::random();
         let mut signaling = InitiatorSignaling::new(KeyStore::from_private_key(our_ks.private_key().clone()));
@@ -50,8 +50,8 @@ impl TestContext<ResponderSignaling> {
             initiator_pubkey: Option<PublicKey>,
             auth_token: Option<AuthToken>,
     ) -> TestContext<ResponderSignaling> {
-        let our_ks = KeyStore::new().unwrap();
-        let server_ks = KeyStore::new().unwrap();
+        let our_ks = KeyStore::new();
+        let server_ks = KeyStore::new();
         let our_cookie = Cookie::random();
         let server_cookie = Cookie::random();
         let mut signaling = {
@@ -391,7 +391,7 @@ fn token_initiator_validate_public_key() {
 
     // Create new responder context
     let addr = Address(3);
-    let responder = ResponderContext::new(addr).unwrap();
+    let responder = ResponderContext::new(addr);
     ctx.signaling.responders.insert(addr, responder);
 
     // Prepare a token message
@@ -444,7 +444,7 @@ fn token_initiator_set_public_key() {
 
     // Create new responder context
     let addr = Address(3);
-    let responder = ResponderContext::new(addr).unwrap();
+    let responder = ResponderContext::new(addr);
     ctx.signaling.responders.insert(addr, responder);
 
     // Generate a public permanent key for the responder
@@ -498,7 +498,7 @@ fn key_initiator_success() {
 
     // Create new responder context
     let addr = Address(3);
-    let mut responder = ResponderContext::new(addr).unwrap();
+    let mut responder = ResponderContext::new(addr);
     responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
     responder.permanent_key = Some(peer_permanent_pk.clone());
 

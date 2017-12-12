@@ -160,16 +160,16 @@ pub(crate) struct ResponderContext {
 }
 
 impl ResponderContext {
-    pub fn new(address: Address) -> SignalingResult<Self> {
-        Ok(ResponderContext {
+    pub fn new(address: Address) -> Self {
+        ResponderContext {
             handshake_state: ResponderHandshakeState::New,
             address: address,
             permanent_key: None,
             session_key: None,
-            keystore: KeyStore::new().map_err(|e| SignalingError::Crypto(e.to_string()))?,
+            keystore: KeyStore::new(),
             csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
-        })
+        }
     }
 
     /// Return the current responder handshake state.

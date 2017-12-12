@@ -102,7 +102,7 @@ fn main() {
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e));
 
     // Create new public permanent keypair
-    let keystore = KeyStore::new().unwrap();
+    let keystore = KeyStore::new();
 
     // Determine websocket path
     let path: String = match role {

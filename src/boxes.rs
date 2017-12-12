@@ -241,8 +241,8 @@ mod tests {
     fn byte_box_decrypt() {
         let nonce = create_test_nonce();
         let bytes = create_test_msg_bytes();
-        let keystore_tx = KeyStore::new().unwrap();
-        let keystore_rx = KeyStore::new().unwrap();
+        let keystore_tx = KeyStore::new();
+        let keystore_rx = KeyStore::new();
         let encrypted = keystore_tx.encrypt(&bytes, unsafe { nonce.clone() }, keystore_rx.public_key());
         let bbox = ByteBox::new(encrypted, nonce);
         let obox = bbox.decrypt(&keystore_rx, keystore_tx.public_key()).unwrap();
