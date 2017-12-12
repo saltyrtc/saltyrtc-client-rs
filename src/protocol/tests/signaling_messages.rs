@@ -542,10 +542,6 @@ mod key {
             assert_eq!(responder.session_key, Some(peer_session_pk));
             assert_eq!(actions.len(), 1); // Reply with key msg
         }
-
-        // We haven't authenticated a peer yet, so the session key on the signaling
-        // instance should still be `None`.
-        assert_eq!(ctx.signaling.common.session_keypair, None);
     }
 
     /// The client MUST generate a session key pair (a new NaCl key pair
@@ -583,10 +579,6 @@ mod key {
         assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::AuthSent);
         assert_eq!(ctx.signaling.initiator.session_key, Some(peer_session_pk));
         assert_eq!(actions.len(), 1); // Reply with auth msg
-
-        // We haven't authenticated a peer yet, so the session key on the signaling
-        // instance should still be `None`.
-        assert_eq!(ctx.signaling.common.session_keypair, None);
     }
 }
 

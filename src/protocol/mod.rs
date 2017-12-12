@@ -28,7 +28,7 @@ pub(crate) mod types;
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth, NewResponder};
-use self::messages::{SendError, Token, Key, Auth, InitiatorAuthBuilder};
+use self::messages::{SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder};
 pub(crate) use self::nonce::{Nonce};
 pub use self::types::{Role};
 pub(crate) use self::types::{HandleAction};
@@ -449,12 +449,6 @@ pub(crate) struct Common {
     /// Our permanent keypair.
     pub(crate) permanent_keypair: KeyStore,
 
-    /// Our session keypair.
-    ///
-    /// This will only be set once the client-to-client handshake is over and a
-    /// peer has been selected.
-    pub(crate) session_keypair: Option<KeyStore>,
-
     /// An optional auth token.
     pub(crate) auth_token: Option<AuthToken>,
 
@@ -760,7 +754,6 @@ impl InitiatorSignaling {
                 role: Role::Initiator,
                 identity: ClientIdentity::Unknown,
                 permanent_keypair: permanent_keypair,
-                session_keypair: None,
                 auth_token: Some(AuthToken::new()),
                 server: ServerContext::new(),
             },
@@ -853,8 +846,10 @@ impl InitiatorSignaling {
     fn handle_auth(&mut self, msg: Auth, source: Address) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received auth");
 
+        let mut actions = vec![];
+
         // Find responder instance
-        let responder = self.responders.get_mut(&source)
+        let mut responder = self.responders.remove(&source)
             .ok_or(SignalingError::Crash(
                 format!("Did not find responder with address {}", source)
             ))?;
@@ -899,7 +894,49 @@ impl InitiatorSignaling {
         // and raise an error event indicating that no common signalling task could be found.
         // TODO
 
-        Ok(vec![])
+        // Both initiator an responder SHALL verify that the data field contains a Map
+        // and SHALL look up the chosen task's data value. The value MUST be handed
+        // over to the corresponding task after processing this message is complete.
+        // TODO
+
+        // After the above procedure has been followed, the other client has successfully
+        // authenticated it towards the client. The other client's public key MAY be stored
+        // as trusted for that path if the application desires it.
+        info!("Responder {:#04x} authenticated", source.0);
+
+        // The initiator MUST drop all other connected responders with a 'drop-responder'
+        // message containing the close code 3004 (Dropped by Initiator) in the reason field.
+        // TODO
+
+        // State transition
+        responder.set_handshake_state(ResponderHandshakeState::AuthReceived);
+
+        // Respond with auth message
+        let responder_cookie = responder.cookie_pair.theirs.as_ref().cloned()
+            .ok_or(SignalingError::Crash("Responder cookie not set".into()))?;
+        let auth: Message = InitiatorAuthBuilder::new(responder_cookie)
+            .set_task("dummy", None) // TODO
+            .build()?
+            .into_message();
+        let auth_nonce = Nonce::new(
+            responder.cookie_pair().ours.clone(),
+            self.common.identity.into(),
+            responder.identity().into(),
+            responder.csn_pair().borrow_mut().ours.increment()?,
+        );
+        let obox = OpenBox::new(auth, auth_nonce);
+        let bbox = obox.encrypt(
+            &responder.keystore,
+            responder.session_key.as_ref()
+                .ok_or(SignalingError::Crash("Responder session key not set".into()))?,
+        );
+        actions.push(HandleAction::Reply(bbox));
+
+        // State transition
+        responder.set_handshake_state(ResponderHandshakeState::AuthSent);
+
+        self.responder = Some(responder);
+        Ok(actions)
     }
 }
 
@@ -1088,7 +1125,6 @@ impl ResponderSignaling {
                 role: Role::Responder,
                 identity: ClientIdentity::Unknown,
                 permanent_keypair: permanent_keypair,
-                session_keypair: None,
                 auth_token: auth_token,
                 server: ServerContext::new(),
             },
@@ -1166,8 +1202,8 @@ impl ResponderSignaling {
         self.initiator.set_handshake_state(InitiatorHandshakeState::KeyReceived);
 
         // Reply with auth msg
-        let auth: Message = InitiatorAuthBuilder::new(nonce.cookie().clone())
-            .set_task("dummy", None)
+        let auth: Message = ResponderAuthBuilder::new(nonce.cookie().clone())
+            .add_task("dummy", None) // TODO
             .build()?
             .into_message();
         let auth_nonce = Nonce::new(
