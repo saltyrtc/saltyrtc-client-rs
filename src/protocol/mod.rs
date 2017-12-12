@@ -28,7 +28,7 @@ pub(crate) mod types;
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth, NewResponder};
-use self::messages::{SendError, Token, Key, InitiatorAuthBuilder};
+use self::messages::{SendError, Token, Key, Auth, InitiatorAuthBuilder};
 pub(crate) use self::nonce::{Nonce};
 pub use self::types::{Role};
 pub(crate) use self::types::{HandleAction};
@@ -659,7 +659,7 @@ impl Signaling for InitiatorSignaling {
             // Valid state transitions
             (ResponderHandshakeState::New, Message::Token(msg)) => self.handle_token(msg, source),
             (ResponderHandshakeState::TokenReceived, Message::Key(msg)) => self.handle_key(msg, source),
-            // TODO
+            (ResponderHandshakeState::KeySent, Message::Auth(msg)) => self.handle_auth(msg, source),
 
             // Any undefined state transition results in an error
             (s, message) => Err(SignalingError::InvalidStateTransition(
@@ -847,6 +847,59 @@ impl InitiatorSignaling {
 
         debug!("<-- Enqueuing key");
         Ok(vec![HandleAction::Reply(bbox)])
+    }
+
+    /// Handle an incoming [`Auth`](messages/struct.Auth.html) message.
+    fn handle_auth(&mut self, msg: Auth, source: Address) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received auth");
+
+        // Find responder instance
+        let responder = self.responders.get_mut(&source)
+            .ok_or(SignalingError::Crash(
+                format!("Did not find responder with address {}", source)
+            ))?;
+
+        // The cookie provided in the `your_cookie` field SHALL contain the cookie
+        // we have used in our previous messages to the responder.
+        if msg.your_cookie != responder.cookie_pair().ours {
+            debug!("Our cookie: {:?}", &responder.cookie_pair().ours);
+            debug!("Their cookie: {:?}", msg.your_cookie);
+            return Err(SignalingError::Protocol("Peer repeated cookie in auth message does not match our cookie".into()));
+        }
+
+        // An initiator SHALL validate that the tasks field contains an array with at least one element.
+        if msg.task.is_some() {
+            return Err(SignalingError::InvalidMessage("We're an initiator, but the `task` field in the auth message is set".into()));
+        }
+        let tasks = match msg.tasks {
+            None => return Err(SignalingError::InvalidMessage("The `tasks` field in the auth message is not set".into())),
+            Some(ref tasks) if tasks.len() == 0 => return Err(SignalingError::InvalidMessage("The `tasks` field in the auth message is empty".into())),
+            Some(tasks) => tasks,
+        };
+
+        // Each element in the Array SHALL be a string.
+        // -> Already covered in deserialization
+
+        // Validate data field
+        if msg.data.len() != tasks.len() {
+            return Err(SignalingError::InvalidMessage("The `tasks` and `data` fields in the auth message have a different number of entries".into()));
+        };
+        for task in tasks {
+            if !msg.data.contains_key(&task) {
+                return Err(SignalingError::InvalidMessage("The task \"b\" in the auth message does not have a corresponding data entry".into()));
+            }
+        }
+
+        // The initiator SHALL continue by comparing the provided tasks
+        // to its own array of supported tasks.
+        // It MUST choose the first task in its own list of supported tasks
+        // that is also contained in the list of supported tasks provided by the responder.
+        // In case no common task could be found, the initiator SHALL send a 'close' message
+        // to the responder containing the close code 3006 (No Shared Task Found) as reason
+        // and raise an error event indicating that no common signalling task could be found.
+        // TODO
+
+        Ok(vec![])
     }
 }
 
@@ -1114,7 +1167,7 @@ impl ResponderSignaling {
 
         // Reply with auth msg
         let auth: Message = InitiatorAuthBuilder::new(nonce.cookie().clone())
-            .add_task("dummy", None)
+            .set_task("dummy", None)
             .build()?
             .into_message();
         let auth_nonce = Nonce::new(

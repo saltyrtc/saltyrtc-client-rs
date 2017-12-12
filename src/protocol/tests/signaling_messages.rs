@@ -7,10 +7,15 @@ use self::types::{Identity};
 use super::*;
 
 struct TestContext<S: Signaling> {
+    /// Our permanent keystore.
     pub our_ks: KeyStore,
+    /// The server permanent keystore.
     pub server_ks: KeyStore,
+    /// Our cookie towards the server.
     pub our_cookie: Cookie,
+    /// The server cookie.
     pub server_cookie: Cookie,
+    /// The signaling instance.
     pub signaling: S,
 }
 
@@ -571,4 +576,139 @@ fn key_responder_success() {
     // We haven't authenticated a peer yet, so the session key on the signaling
     // instance should still be `None`.
     assert_eq!(ctx.signaling.common.session_keypair, None);
+}
+
+// TODO: more namespacing
+
+mod auth {
+    use super::*;
+
+    /// Prepare context and responder for auth message validation tests.
+    fn _auth_msg_prepare_initiator() -> (TestContext<InitiatorSignaling>, ResponderContext) {
+        let ctx = TestContext::initiator(
+            ClientIdentity::Initiator,
+            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+        );
+
+        // Create new responder context
+        let peer_session_pk = PublicKey::random();
+        let mut responder = ResponderContext::new(Address(3));
+        responder.set_handshake_state(ResponderHandshakeState::KeySent);
+        responder.session_key = Some(peer_session_pk.clone());
+
+        (ctx, responder)
+    }
+
+    /// Handle a message for auth message validation tests.
+    fn _auth_msg_handle_initiator(msg: Message,
+                                  mut ctx: TestContext<InitiatorSignaling>,
+                                  responder: ResponderContext)
+                                  -> SignalingResult<Vec<HandleAction>> {
+        // Encrypt message
+        let bbox = TestMsgBuilder::new(msg).from(3).to(1)
+            .build(Cookie::random(), &responder.keystore, responder.session_key.as_ref().unwrap());
+
+        // Store responder in signaling instance
+        ctx.signaling.responders.insert(responder.address, responder);
+
+        // Handle message
+        ctx.signaling.handle_message(bbox)
+    }
+
+    /// The cookie provided in the your_cookie field SHALL contain the cookie it has used in its previous messages to the other client.
+    #[test]
+    fn initiator_validate_repeated_cookie() {
+        let (ctx, responder) = _auth_msg_prepare_initiator();
+
+        let msg: Message = ResponderAuthBuilder::new(Cookie::random()) // Note: Not our cookie
+            .add_task("dummy", None)
+            .build()
+            .unwrap()
+            .into_message();
+
+        let err = _auth_msg_handle_initiator(msg, ctx, responder).unwrap_err();
+        assert_eq!(err, SignalingError::Protocol("Peer repeated cookie in auth message does not match our cookie".into()));
+    }
+
+    /// An initiator SHALL validate that the tasks field contains an array with at least one element.
+    #[test]
+    fn initiator_task_field() {
+        let (ctx, responder) = _auth_msg_prepare_initiator();
+
+        let msg: Message = Auth {
+            your_cookie: responder.cookie_pair.ours.clone(),
+            task: Some("foo".into()),
+            tasks: None,
+            data: HashMap::new(),
+        }.into_message();
+
+        let err = _auth_msg_handle_initiator(msg, ctx, responder).unwrap_err();
+        assert_eq!(err, SignalingError::InvalidMessage("We're an initiator, but the `task` field in the auth message is set".into()));
+    }
+
+    /// An initiator SHALL validate that the tasks field contains an array with at least one element.
+    #[test]
+    fn initiator_tasks_field_missing() {
+        let (ctx, responder) = _auth_msg_prepare_initiator();
+
+        let msg: Message = Auth {
+            your_cookie: responder.cookie_pair.ours.clone(),
+            task: None,
+            tasks: None,
+            data: HashMap::new(),
+        }.into_message();
+
+        let err = _auth_msg_handle_initiator(msg, ctx, responder).unwrap_err();
+        assert_eq!(err, SignalingError::InvalidMessage("The `tasks` field in the auth message is not set".into()));
+    }
+
+    /// An initiator SHALL validate that the tasks field contains an array with at least one element.
+    #[test]
+    fn initiator_tasks_field_empty() {
+        let (ctx, responder) = _auth_msg_prepare_initiator();
+
+        let msg: Message = Auth {
+            your_cookie: responder.cookie_pair.ours.clone(),
+            task: None,
+            tasks: Some(HashSet::new()),
+            data: HashMap::new(),
+        }.into_message();
+
+        let err = _auth_msg_handle_initiator(msg, ctx, responder).unwrap_err();
+        assert_eq!(err, SignalingError::InvalidMessage("The `tasks` field in the auth message is empty".into()));
+    }
+
+    /// Validate that the number of data items matches the number of tasks
+    #[test]
+    fn initiator_data_field_length_mismatch() {
+        let (ctx, responder) = _auth_msg_prepare_initiator();
+
+        let msg: Message = Auth {
+            your_cookie: responder.cookie_pair.ours.clone(),
+            task: None,
+            tasks: Some({ let mut s = HashSet::new(); s.insert("a".into()); s.insert("b".into()); s }),
+            data: { let mut m = HashMap::new(); m.insert("a".into(), None); m },
+        }.into_message();
+
+        let err = _auth_msg_handle_initiator(msg, ctx, responder).unwrap_err();
+        assert_eq!(err, SignalingError::InvalidMessage(
+            "The `tasks` and `data` fields in the auth message have a different number of entries".into()));
+    }
+
+    /// Validate that all tasks have corresponding data entries.
+    #[test]
+    fn initiator_data_field_key_mismatch() {
+        let (ctx, responder) = _auth_msg_prepare_initiator();
+
+        let msg: Message = Auth {
+            your_cookie: responder.cookie_pair.ours.clone(),
+            task: None,
+            tasks: Some({ let mut s = HashSet::new(); s.insert("a".into()); s.insert("b".into()); s }),
+            data: { let mut m = HashMap::new(); m.insert("a".into(), None); m.insert("c".into(), None); m },
+        }.into_message();
+
+        let err = _auth_msg_handle_initiator(msg, ctx, responder).unwrap_err();
+        assert_eq!(err, SignalingError::InvalidMessage(
+            "The task \"b\" in the auth message does not have a corresponding data entry".into()));
+    }
 }

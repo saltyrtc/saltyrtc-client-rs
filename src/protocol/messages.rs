@@ -326,6 +326,43 @@ pub(crate) struct ResponderAuthBuilder {
 
 impl InitiatorAuthBuilder {
 
+    /// Create a new `Auth` message targeted at a responder.
+    pub(crate) fn new(your_cookie: Cookie) -> Self {
+        Self {
+            auth: Auth {
+                your_cookie,
+                tasks: None,
+                task: None,
+                data: HashMap::new(),
+            }
+        }
+    }
+
+    /// Set the task.
+    pub(crate) fn set_task<S: Into<String>>(mut self, name: S, data: Option<HashMap<String, Value>>) -> Self {
+        let name: String = name.into();
+        self.auth.task = Some(name.clone());
+        self.auth.data.clear();
+        self.auth.data.insert(name, data);
+        self
+    }
+
+    /// Return the resulting `Auth` message.
+    pub(crate) fn build(self) -> SignalingResult<Auth> {
+        if self.auth.tasks.is_some() {
+            panic!("tasks may not be set");
+        }
+        if self.auth.task.is_some() {
+            Ok(self.auth)
+        } else {
+            Err(SignalingError::InvalidMessage("An `Auth` message must have a task set".into()))
+        }
+    }
+
+}
+
+impl ResponderAuthBuilder {
+
     /// Create a new `Auth` message targeted at an initiator.
     pub(crate) fn new(your_cookie: Cookie) -> Self {
         Self {
@@ -360,43 +397,6 @@ impl InitiatorAuthBuilder {
             ),
             Some(_) => Ok(self.auth),
             None => panic!("tasks list not initialized!"),
-        }
-    }
-
-}
-
-impl ResponderAuthBuilder {
-
-    /// Create a new `Auth` message targeted at a responder.
-    pub(crate) fn new(your_cookie: Cookie) -> Self {
-        Self {
-            auth: Auth {
-                your_cookie,
-                tasks: None,
-                task: None,
-                data: HashMap::new(),
-            }
-        }
-    }
-
-    /// Set the task.
-    pub(crate) fn set_task<S: Into<String>>(mut self, name: S, data: Option<HashMap<String, Value>>) -> Self {
-        let name: String = name.into();
-        self.auth.task = Some(name.clone());
-        self.auth.data.clear();
-        self.auth.data.insert(name, data);
-        self
-    }
-
-    /// Return the resulting `Auth` message.
-    pub(crate) fn build(self) -> SignalingResult<Auth> {
-        if self.auth.tasks.is_some() {
-            panic!("tasks may not be set");
-        }
-        if self.auth.task.is_some() {
-            Ok(self.auth)
-        } else {
-            Err(SignalingError::InvalidMessage("An `Auth` message must have a task set".into()))
         }
     }
 
@@ -492,11 +492,11 @@ mod tests {
         roundtrip!(drop_responder_with_reason, DropResponder::with_reason(4.into(), 3004));
         roundtrip!(token, Token::random());
         roundtrip!(key, Key::random());
-        roundtrip!(auth_initiator, InitiatorAuthBuilder::new(Cookie::random())
-                   .add_task("foo.bar.baz", None)
-                   .build().unwrap());
-        roundtrip!(auth_responder, ResponderAuthBuilder::new(Cookie::random())
+        roundtrip!(auth_responder, InitiatorAuthBuilder::new(Cookie::random())
                    .set_task("foo.bar.baz", None)
+                   .build().unwrap());
+        roundtrip!(auth_initiator, ResponderAuthBuilder::new(Cookie::random())
+                   .add_task("foo.bar.baz", None)
                    .build().unwrap());
     }
 
@@ -512,20 +512,17 @@ mod tests {
 
         #[test]
         fn initiator_auth_builder() {
-            let mut data = HashMap::new();
-            data.insert("foo".to_string(), Value::Boolean(true));
             let cookie = Cookie::random();
             let builder = InitiatorAuthBuilder::new(cookie.clone())
-                .add_task("data.none", None)
-                .add_task("data.none", None)
-                .add_task("data.some", Some(data.clone()));
+                .set_task("data.none", None);
             let result = builder.build();
             let auth = result.unwrap();
             assert_eq!(auth.your_cookie, cookie);
-            assert!(auth.task.is_none());
-            assert!(auth.tasks.is_some());
-            assert_eq!(auth.tasks.unwrap().len(), 2);
-            assert_eq!(auth.data.len(), 2);
+            assert!(auth.tasks.is_none());
+            assert!(auth.task.is_some());
+            assert_eq!(auth.task.unwrap(), "data.none");
+            assert_eq!(auth.data.len(), 1);
+            assert!(auth.data.contains_key("data.none"));
         }
 
         #[test]
@@ -537,17 +534,20 @@ mod tests {
 
         #[test]
         fn responder_auth_builder() {
+            let mut data = HashMap::new();
+            data.insert("foo".to_string(), Value::Boolean(true));
             let cookie = Cookie::random();
             let builder = ResponderAuthBuilder::new(cookie.clone())
-                .set_task("data.none", None);
+                .add_task("data.none", None)
+                .add_task("data.none", None)
+                .add_task("data.some", Some(data.clone()));
             let result = builder.build();
             let auth = result.unwrap();
             assert_eq!(auth.your_cookie, cookie);
-            assert!(auth.tasks.is_none());
-            assert!(auth.task.is_some());
-            assert_eq!(auth.task.unwrap(), "data.none");
-            assert_eq!(auth.data.len(), 1);
-            assert!(auth.data.contains_key("data.none"));
+            assert!(auth.task.is_none());
+            assert!(auth.tasks.is_some());
+            assert_eq!(auth.tasks.unwrap().len(), 2);
+            assert_eq!(auth.data.len(), 2);
         }
     }
 
