@@ -86,6 +86,8 @@ pub(crate) struct InitiatorContext {
     handshake_state: InitiatorHandshakeState,
     pub(crate) permanent_key: PublicKey,
     pub(crate) session_key: Option<PublicKey>,
+    /// Our session keystore for this initiator
+    pub(crate) keystore: KeyStore,
     pub(crate) csn_pair: RefCell<CombinedSequencePair>,
     pub(crate) cookie_pair: CookiePair,
 }
@@ -96,6 +98,7 @@ impl InitiatorContext {
             handshake_state: InitiatorHandshakeState::New,
             permanent_key: permanent_key,
             session_key: None,
+            keystore: KeyStore::new(),
             csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }

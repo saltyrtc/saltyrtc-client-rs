@@ -526,6 +526,10 @@ fn key_initiator_success() {
         assert_eq!(responder.session_key, Some(peer_session_pk));
         assert_eq!(actions.len(), 1); // Reply with key msg
     }
+
+    // We haven't authenticated a peer yet, so the session key on the signaling
+    // instance should still be `None`.
+    assert_eq!(ctx.signaling.common.session_keypair, None);
 }
 
 /// The client MUST generate a session key pair (a new NaCl key pair
@@ -533,7 +537,7 @@ fn key_initiator_success() {
 /// with the other client. The client's session key pair SHALL NOT be
 /// identical to the client's permanent key pair. It MUST set the
 /// public key (32 bytes) of that key pair in the key field.
-//#[test]
+#[test]
 fn key_responder_success() {
     // Peer crypto
     let peer_permanent_pk = PublicKey::random();
@@ -564,5 +568,7 @@ fn key_responder_success() {
     assert_eq!(ctx.signaling.initiator.session_key, Some(peer_session_pk));
     assert_eq!(actions.len(), 1); // Reply with auth msg
 
-    // TODO
+    // We haven't authenticated a peer yet, so the session key on the signaling
+    // instance should still be `None`.
+    assert_eq!(ctx.signaling.common.session_keypair, None);
 }
