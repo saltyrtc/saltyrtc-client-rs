@@ -5,7 +5,7 @@
 ///
 /// All tasks need to implement this interface.
 
-use std::borrow::Cow;
+use std::borrow::{Cow};
 use std::collections::{HashMap};
 use std::fmt::Debug;
 
@@ -58,17 +58,17 @@ pub trait Task : Debug {
 /// This data structure wraps the vector and ensures
 /// that an empty tasks list cannot be created.
 #[derive(Debug)]
-pub struct Tasks(pub(crate) Vec<Box<Task>>);
+pub(crate) struct Tasks(pub(crate) Vec<Box<Task>>);
 
 impl Tasks {
-    pub fn new(task: Box<Task>) -> Self {
+    pub(crate) fn new(task: Box<Task>) -> Self {
         Tasks(vec![task])
     }
 
     /// Create a `Tasks` instance from a vector.
     ///
     /// This may fail if the tasks vector is empty.
-    pub fn from_vec(tasks: Vec<Box<Task>>) -> Result<Tasks, &'static str> {
+    pub(crate) fn from_vec(tasks: Vec<Box<Task>>) -> Result<Tasks, &'static str> {
         if tasks.is_empty() {
             return Err("Tasks vector may not be empty");
         }
@@ -78,7 +78,7 @@ impl Tasks {
     /// Add a task.
     ///
     /// This may fail if a task with the same `.name()` already exists.
-    pub fn add_task(&mut self, task: Box<Task>) -> Result<&mut Self, String> {
+    pub(crate) fn add_task(&mut self, task: Box<Task>) -> Result<&mut Self, String> {
         if self.0.iter().any(|t| t.name() == task.name()) {
             return Err(format!("Task with name \"{}\" cannot be added twice", task.name()));
         }
@@ -86,8 +86,22 @@ impl Tasks {
         Ok(self)
     }
 
-    pub fn len(&self) -> usize {
+    /// Return the number of registered tasks.
+    pub(crate) fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Choose the first task in our own list of supported tasks that is also contained in the list
+    /// of supported tasks provided by the peer.
+    pub(crate) fn choose_common_task<'a, S>(&'a self, tasks: &[S])
+                                            -> Option<&'a Box<Task>>
+                                            where S: AsRef<str> {
+        for task in &self.0 {
+            if let Some(v) = tasks.iter().find(|p| p.as_ref() == &*task.name()) {
+                return Some(&task);
+            }
+        }
+        None
     }
 }
 
@@ -147,5 +161,29 @@ mod tests {
         let err = tasks.add_task(t3).unwrap_err();
         assert_eq!(err, "Task with name \"dummy.3\" cannot be added twice".to_string());
         assert_eq!(tasks.len(), 3);
+    }
+
+    #[test]
+    fn choose_common_task() {
+        let t1 = Box::new(DummyTask(1));
+        let t2 = Box::new(DummyTask(2));
+
+        let tasks = Tasks::from_vec(vec![t1, t2]).unwrap();
+
+        // Parameters as static string references
+        let chosen = tasks.choose_common_task(&["dummy.1", "dummy.3"]).expect("No common task found (1)");
+        assert_eq!(chosen.name(), "dummy.1");
+
+        // Parameters from owned strings
+        let chosen = tasks.choose_common_task(&vec!["dummy.2".to_string()]).expect("No common task found (2)");
+        assert_eq!(chosen.name(), "dummy.2");
+
+        // Return `None` if no common task is present
+        let chosen = tasks.choose_common_task(&vec!["dummy.3".to_string()]);
+        assert!(chosen.is_none());
+
+        // Our preference wins
+        let chosen = tasks.choose_common_task(&["dummy.2", "dummy.1"]).expect("No common task found (3)");
+        assert_eq!(chosen.name(), "dummy.1");
     }
 }

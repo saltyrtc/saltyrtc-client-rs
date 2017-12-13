@@ -54,7 +54,7 @@ use websocket::message::OwnedMessage;
 pub use crypto::{KeyStore, PublicKey, PrivateKey, AuthToken};
 pub use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
 pub use protocol::{Role};
-pub use task::{Task, Tasks};
+pub use task::{Task};
 
 pub mod utils {
     pub use crypto::{public_key_from_hex_str};
@@ -63,6 +63,7 @@ pub mod utils {
 // Internal imports
 use helpers::libsodium_init;
 use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
+use task::{Tasks};
 
 
 // Constants
