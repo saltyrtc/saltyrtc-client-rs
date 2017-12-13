@@ -212,11 +212,15 @@ impl Task for ChatTask {
         // TODO
     }
 
-    /// Return the list of supported message types.
+    /// Return whether the specified message type is supported by this task.
     ///
-    /// Incoming messages with this type will be passed to the task.
-    fn supported_message_types(&self) -> &[&str] {
-        &["msg", "nick_change"]
+    /// Incoming messages with accepted types will be passed to the task.
+    /// Otherwise, the message is dropped.
+    fn type_supported(&self, type_: &str) -> bool {
+        match type_ {
+            "msg" | "nick_change" => true,
+            _ => false,
+        }
     }
 
     /// This method is called by SaltyRTC when a task related message
