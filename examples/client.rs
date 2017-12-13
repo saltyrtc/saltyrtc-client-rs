@@ -20,7 +20,7 @@ use data_encoding::HEXLOWER;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::Core;
 
-use saltyrtc_client::{SaltyClient, KeyStore, Role, AuthToken};
+use saltyrtc_client::{SaltyClientBuilder, KeyStore, Role, AuthToken, Task};
 use saltyrtc_client::utils::{public_key_from_hex_str};
 
 
@@ -113,7 +113,7 @@ fn main() {
     // Create new SaltyRTC client instance
     let (salty, auth_token_hex) = match role {
         Role::Initiator => {
-            let salty = SaltyClient::new_initiator(keystore);
+            let salty = SaltyClientBuilder::new(keystore).initiator();
             let auth_token_hex = HEXLOWER.encode(salty.auth_token().unwrap().secret_key_bytes());
             (
                 salty,
@@ -125,7 +125,7 @@ fn main() {
             let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
             let initiator_pubkey = public_key_from_hex_str(&path).unwrap();
             (
-                SaltyClient::new_responder(keystore, initiator_pubkey, Some(auth_token)),
+                SaltyClientBuilder::new(keystore).responder(initiator_pubkey, Some(auth_token)),
                 auth_token_hex
             )
         },

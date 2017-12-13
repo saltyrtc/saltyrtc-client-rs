@@ -84,6 +84,42 @@ macro_rules! boxed {
 }
 
 
+pub struct SaltyClientBuilder {
+    permanent_key: KeyStore,
+}
+
+impl SaltyClientBuilder {
+    pub fn new(permanent_key: KeyStore) -> Self {
+        SaltyClientBuilder {
+            permanent_key,
+        }
+    }
+
+    /// Create a new SaltyRTC initiator.
+    pub fn initiator(self) -> SaltyClient {
+        let signaling = InitiatorSignaling::new(self.permanent_key);
+        SaltyClient {
+            signaling: Box::new(signaling),
+        }
+    }
+
+    /// Create a new SaltyRTC responder.
+    pub fn responder(self, initiator_pubkey: PublicKey, auth_token: Option<AuthToken>) -> SaltyClient {
+        let signaling = ResponderSignaling::new(
+            self.permanent_key,
+            initiator_pubkey,
+            auth_token
+        );
+        SaltyClient {
+            signaling: Box::new(signaling),
+        }
+    }
+}
+
+/// The SaltyRTC Client instance.
+///
+/// To create an instance of this struct, use the
+/// [`SaltyClientBuilder`](struct.SaltyClientBuilder.html).
 pub struct SaltyClient {
     /// The signaling trait object.
     ///
@@ -95,23 +131,6 @@ pub struct SaltyClient {
 }
 
 impl SaltyClient {
-    /// Create a new SaltyRTC initiator.
-    pub fn new_initiator(permanent_key: KeyStore) -> Self {
-        let signaling = InitiatorSignaling::new(permanent_key);
-        SaltyClient {
-            signaling: Box::new(signaling),
-        }
-    }
-
-    /// Create a new SaltyRTC responder.
-    pub fn new_responder(permanent_key: KeyStore,
-                         initiator_pubkey: PublicKey,
-                         auth_token: Option<AuthToken>) -> Self {
-        let signaling = ResponderSignaling::new(permanent_key, initiator_pubkey, auth_token);
-        SaltyClient {
-            signaling: Box::new(signaling),
-        }
-    }
 
     /// Return the assigned role.
     pub fn role(&self) -> Role {
