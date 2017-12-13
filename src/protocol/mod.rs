@@ -238,7 +238,7 @@ pub(crate) trait Signaling {
         };
 
         // Decode message depending on source
-        let obox: OpenBox = if bbox.nonce.source().is_server() {
+        let obox: OpenBox<Message> = if bbox.nonce.source().is_server() {
             self.decode_server_message(bbox)?
         } else {
             self.decode_peer_message(bbox)?
@@ -263,22 +263,22 @@ pub(crate) trait Signaling {
     // Message decoding
 
     /// Decode or decrypt a binary message coming from the server.
-    fn decode_server_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox> {
+    fn decode_server_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Message>> {
         // The very first message from the server is unencrypted
         if self.common().signaling_state() == SignalingState::ServerHandshake
         && self.server_handshake_state() == ServerHandshakeState::New {
-            return bbox.decode();
+            return OpenBox::decode(bbox);
         }
 
         // Otherwise, decrypt with server key
         match self.server().permanent_key {
-            Some(ref pubkey) => bbox.decrypt(&self.common().permanent_keypair, pubkey),
+            Some(ref pubkey) => OpenBox::<Message>::decrypt(bbox, &self.common().permanent_keypair, pubkey),
             None => Err(SignalingError::Crash("Missing server permanent key".into())),
         }
     }
 
     /// Decrypt a binary message coming from a peer.
-    fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox>;
+    fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Message>>;
 
 
     // Message handling: Dispatching
@@ -288,7 +288,7 @@ pub(crate) trait Signaling {
     ///
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
-    fn handle_server_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_server_message(&mut self, obox: OpenBox<Message>) -> SignalingResult<Vec<HandleAction>> {
         let old_state = self.server_handshake_state().clone();
         match (old_state, obox.message) {
             // Valid state transitions
@@ -315,7 +315,7 @@ pub(crate) trait Signaling {
     ///
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
-    fn handle_peer_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>>;
+    fn handle_peer_message(&mut self, obox: OpenBox<Message>) -> SignalingResult<Vec<HandleAction>>;
 
 
     // Message handling: Handling
@@ -351,7 +351,7 @@ pub(crate) trait Signaling {
                 // Csn
                 self.server().csn_pair().borrow_mut().ours.increment()?,
             );
-            let reply = OpenBox::new(client_hello, client_hello_nonce);
+            let reply = OpenBox::<Message>::new(client_hello, client_hello_nonce);
             debug!("<-- Enqueuing client-hello");
             actions.push(HandleAction::Reply(reply.encode()));
         }
@@ -369,7 +369,7 @@ pub(crate) trait Signaling {
             self.server().identity().into(),
             self.server().csn_pair().borrow_mut().ours.increment()?,
         );
-        let reply = OpenBox::new(client_auth, client_auth_nonce);
+        let reply = OpenBox::<Message>::new(client_auth, client_auth_nonce);
         match self.server().permanent_key {
             Some(ref pubkey) => {
                 debug!("<-- Enqueuing client-auth");
@@ -586,7 +586,7 @@ impl Signaling for InitiatorSignaling {
         }
     }
 
-    fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox> {
+    fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Message>> {
         // Validate source again
         if !bbox.nonce.source().is_responder() {
             return Err(SignalingError::Crash(format!("Received message from an initiator")));
@@ -616,19 +616,19 @@ impl Signaling for InitiatorSignaling {
             ResponderHandshakeState::New => {
                 // Expect token message, encrypted with authentication token.
                 match self.common.auth_token {
-                    Some(ref token) => bbox.decrypt_token(token),
+                    Some(ref token) => OpenBox::decrypt_token(bbox, token),
                     None => Err(SignalingError::Crash("Auth token not set".into())),
                 }
             },
             ResponderHandshakeState::TokenReceived => {
                 // Expect key message, encrypted with our public permanent key
                 // and responder private permanent key
-                bbox.decrypt(&self.common.permanent_keypair, responder_permanent_key(&responder)?)
+                OpenBox::<Message>::decrypt(bbox, &self.common.permanent_keypair, responder_permanent_key(&responder)?)
             },
             ResponderHandshakeState::KeySent => {
                 // Expect auth message, encrypted with our public session key
                 // and responder private session key
-                bbox.decrypt(&responder.keystore, responder_session_key(&responder)?)
+                OpenBox::<Message>::decrypt(bbox, &responder.keystore, responder_session_key(&responder)?)
             },
             other => {
                 // TODO: Maybe remove these states?
@@ -642,7 +642,7 @@ impl Signaling for InitiatorSignaling {
     ///
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
-    fn handle_peer_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_peer_message(&mut self, obox: OpenBox<Message>) -> SignalingResult<Vec<HandleAction>> {
         let source = obox.nonce.source();
         let old_state = {
             let responder = self.responders.get(&source)
@@ -834,7 +834,7 @@ impl InitiatorSignaling {
             responder.identity().into(),
             responder.csn_pair().borrow_mut().ours.increment()?,
         );
-        let obox = OpenBox::new(key, key_nonce);
+        let obox = OpenBox::<Message>::new(key, key_nonce);
         let bbox = obox.encrypt(
             &self.common.permanent_keypair,
             responder.permanent_key.as_ref()
@@ -930,7 +930,7 @@ impl InitiatorSignaling {
             responder.identity().into(),
             responder.csn_pair().borrow_mut().ours.increment()?,
         );
-        let obox = OpenBox::new(auth, auth_nonce);
+        let obox = OpenBox::<Message>::new(auth, auth_nonce);
         let bbox = obox.encrypt(
             &responder.keystore,
             responder.session_key.as_ref()
@@ -1041,7 +1041,7 @@ impl Signaling for ResponderSignaling {
         }
     }
 
-    fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox> {
+    fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Message>> {
         // Validate source again
         if !bbox.nonce.source().is_initiator() {
             return Err(SignalingError::Crash(format!("Received message from a responder")));
@@ -1052,14 +1052,14 @@ impl Signaling for ResponderSignaling {
             InitiatorHandshakeState::KeySent => {
                 // Expect key message, encrypted with our public permanent key
                 // and initiator private permanent key
-                bbox.decrypt(&self.common.permanent_keypair, &self.initiator.permanent_key)
+                OpenBox::<Message>::decrypt(bbox, &self.common.permanent_keypair, &self.initiator.permanent_key)
             },
             InitiatorHandshakeState::AuthSent => {
                 // Expect an auth message, encrypted with our public session
                 // key and initiator private session key
                 let initiator_session_key = self.initiator.session_key.as_ref()
                     .ok_or(SignalingError::Crash("Initiator session key not set".into()))?;
-                bbox.decrypt(&self.initiator.keystore, initiator_session_key)
+                OpenBox::<Message>::decrypt(bbox, &self.initiator.keystore, initiator_session_key)
             },
             other => {
                 // TODO: Maybe remove these states?
@@ -1073,7 +1073,7 @@ impl Signaling for ResponderSignaling {
     ///
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
-    fn handle_peer_message(&mut self, obox: OpenBox) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_peer_message(&mut self, obox: OpenBox<Message>) -> SignalingResult<Vec<HandleAction>> {
         let old_state = self.initiator.handshake_state();
         match (old_state, obox.message) {
             // Valid state transitions
@@ -1153,7 +1153,7 @@ impl ResponderSignaling {
             self.initiator.identity().into(),
             self.initiator.csn_pair().borrow_mut().ours.increment()?,
         );
-        let obox = OpenBox::new(msg, nonce);
+        let obox = OpenBox::<Message>::new(msg, nonce);
 
         // The message SHALL be NaCl secret key encrypted by the token the
         // initiator created and issued to the responder.
@@ -1179,7 +1179,7 @@ impl ResponderSignaling {
             self.initiator.identity().into(),
             self.initiator.csn_pair().borrow_mut().ours.increment()?,
         );
-        let obox = OpenBox::new(msg, nonce);
+        let obox = OpenBox::<Message>::new(msg, nonce);
 
         // The message SHALL be NaCl public-key encrypted by the client's
         // permanent key pair and the other client's permanent key pair.
@@ -1220,7 +1220,7 @@ impl ResponderSignaling {
             self.initiator.identity().into(),
             self.initiator.csn_pair().borrow_mut().ours.increment()?,
         );
-        let obox = OpenBox::new(auth, auth_nonce);
+        let obox = OpenBox::<Message>::new(auth, auth_nonce);
         let bbox = obox.encrypt(
             &self.initiator.keystore,
             self.initiator.session_key.as_ref()

@@ -67,6 +67,7 @@ use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
 
 // Constants
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
+#[cfg(feature = "msgpack-debugging")]
 const DEFAULT_MSGPACK_DEBUG_URL: &'static str = "https://msgpack.dbrgn.ch/#base64=";
 
 

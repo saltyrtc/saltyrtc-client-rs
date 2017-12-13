@@ -18,7 +18,7 @@ fn first_message_wrong_destination() {
     let msg = ServerHello::random().into_message();
     let cs = CombinedSequenceSnapshot::random();
     let nonce = Nonce::new(Cookie::random(), Address(0), Address(1), cs);
-    let obox = OpenBox::new(msg, nonce);
+    let obox = OpenBox::<Message>::new(msg, nonce);
     let bbox = obox.encode();
 
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
@@ -43,7 +43,7 @@ fn wrong_source_initiator() {
         let msg = ServerHello::random().into_message();
         let cs = CombinedSequenceSnapshot::random();
         let nonce = Nonce::new(Cookie::random(), Address(src), Address(dest), cs);
-        let obox = OpenBox::new(msg, nonce);
+        let obox = OpenBox::<Message>::new(msg, nonce);
         let bbox = obox.encode();
         bbox
     };
@@ -93,7 +93,7 @@ fn wrong_source_responder() {
         let msg = ServerHello::random().into_message();
         let cs = CombinedSequenceSnapshot::random();
         let nonce = Nonce::new(Cookie::random(), Address(src), Address(dest), cs);
-        let obox = OpenBox::new(msg, nonce);
+        let obox = OpenBox::<Message>::new(msg, nonce);
         let bbox = obox.encode();
         bbox
     };
@@ -139,7 +139,7 @@ fn first_message_bad_overflow_number() {
     let msg = ServerHello::random().into_message();
     let cs = CombinedSequenceSnapshot::new(1, 1234);
     let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), cs);
-    let obox = OpenBox::new(msg, nonce);
+    let obox = OpenBox::<Message>::new(msg, nonce);
     let bbox = obox.encode();
 
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
@@ -169,7 +169,7 @@ fn cookie_differs_from_own() {
     let msg = ServerHello::random().into_message();
     let cookie = s.server().cookie_pair.ours.clone();
     let nonce = Nonce::new(cookie, Address(0), Address(0), CombinedSequenceSnapshot::random());
-    let obox = OpenBox::new(msg, nonce);
+    let obox = OpenBox::<Message>::new(msg, nonce);
     let bbox = obox.encode();
 
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);

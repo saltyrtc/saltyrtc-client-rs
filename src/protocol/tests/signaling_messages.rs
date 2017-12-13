@@ -113,7 +113,7 @@ impl TestMsgBuilder {
                                self.src.expect("Source not set"),
                                self.dest.expect("Destination not set"),
                                CombinedSequenceSnapshot::random());
-        let obox = OpenBox::new(self.msg, nonce);
+        let obox = OpenBox::<Message>::new(self.msg, nonce);
         obox.encrypt(ks, pubkey)
     }
 
