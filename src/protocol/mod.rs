@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use boxes::{ByteBox, OpenBox};
 use crypto::{KeyStore, AuthToken, PublicKey};
 use errors::{SignalingError, SignalingResult};
+use rmpv::{Value};
 
 pub(crate) mod context;
 pub(crate) mod cookie;
@@ -237,6 +238,15 @@ pub(crate) trait Signaling {
                 return Err(SignalingError::Crash(reason)),
         };
 
+        match self.common().signaling_state() {
+            SignalingState::ServerHandshake => self.handle_handshake_message(bbox),
+            SignalingState::PeerHandshake => self.handle_handshake_message(bbox),
+            SignalingState::Task => self.handle_task_message(bbox),
+        }
+    }
+
+    /// Handle an incoming handshake message.
+    fn handle_handshake_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
         // Decode message depending on source
         let obox: OpenBox<Message> = if bbox.nonce.source().is_server() {
             self.decode_server_message(bbox)?
@@ -255,8 +265,17 @@ pub(crate) trait Signaling {
                 self.handle_peer_message(obox),
 
             SignalingState::Task =>
-                unimplemented!("TODO: Handle task messages"),
+                return Err(SignalingError::Crash("Illegal signaling state: Task".into())),
         }
+    }
+
+    /// Handle an incoming task message.
+    fn handle_task_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+        // Decode message
+        let obox: OpenBox<Value> = self.decode_task_message(bbox)?;
+
+        // Pass message to task
+        unimplemented!("TODO: Finish implementing handle_task_message");
     }
 
 
@@ -279,6 +298,15 @@ pub(crate) trait Signaling {
 
     /// Decrypt a binary message coming from a peer.
     fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Message>>;
+
+    /// Decrypt a binary message after the handshake has been finished.
+    fn decode_task_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Value>> {
+        let peer = self.get_peer()
+            .ok_or(SignalingError::Crash("Peer not set".into()))?;
+        let session_key = peer.session_key()
+            .ok_or(SignalingError::Crash("Peer session key not set".into()))?;
+        OpenBox::<Value>::decrypt(bbox, peer.keystore(), session_key)
+    }
 
 
     // Message handling: Dispatching

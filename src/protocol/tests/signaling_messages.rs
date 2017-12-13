@@ -2,7 +2,6 @@ use ::helpers::TestRandom;
 use self::cookie::{Cookie, CookiePair};
 use self::csn::{CombinedSequenceSnapshot};
 use self::messages::*;
-use self::types::{Identity};
 
 use super::*;
 

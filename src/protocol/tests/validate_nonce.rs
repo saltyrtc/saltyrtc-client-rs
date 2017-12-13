@@ -1,10 +1,7 @@
-use std::default::Default;
-
 use ::helpers::TestRandom;
-use self::cookie::{Cookie, CookiePair};
+use self::cookie::{Cookie};
 use self::csn::{CombinedSequenceSnapshot};
 use self::messages::*;
-use self::types::{Identity};
 
 use super::*;
 
