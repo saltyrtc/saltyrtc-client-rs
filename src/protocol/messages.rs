@@ -19,8 +19,8 @@ use super::{Address, Cookie};
 use super::send_error::{SendErrorId};
 
 
-/// The `Message` enum contains all possible message types that may be used in
-/// the SaltyRTC protocol.
+/// The `Message` enum contains all possible message types that may be used
+/// during the handshake in the SaltyRTC protocol.
 ///
 /// When converting a `Message` to msgpack bytes, it is serialized as
 /// internally tagged enum. This is why the inner structs don't actually need

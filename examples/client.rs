@@ -225,7 +225,7 @@ impl Task for ChatTask {
 
     /// This method is called by SaltyRTC when a task related message
     /// arrives through the WebSocket.
-    fn on_task_message(&mut self, message: Vec<u8>) {
+    fn on_task_message(&mut self, message: Value) {
         info!("New message arrived: {:?}", message);
     }
 

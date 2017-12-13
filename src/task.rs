@@ -33,7 +33,7 @@ pub trait Task : Debug {
 
     /// This method is called by SaltyRTC when a task related message
     /// arrives through the WebSocket.
-    fn on_task_message(&mut self, message: Vec<u8>);
+    fn on_task_message(&mut self, message: Value);
 
     /// Send bytes through the task signaling channel.
     ///
@@ -111,7 +111,7 @@ mod tests {
             true
         }
 
-        fn on_task_message(&mut self, message: Vec<u8>) {
+        fn on_task_message(&mut self, message: Value) {
             unimplemented!()
         }
 
