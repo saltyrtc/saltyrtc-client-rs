@@ -11,11 +11,26 @@ use super::types::{Identity, Address};
 
 
 pub(crate) trait PeerContext {
+    /// Return the peer identity.
     fn identity(&self) -> Identity;
+
+    /// Return the peer public permanent key.
     fn permanent_key(&self) -> Option<&PublicKey>;
+
+    /// Return the peer public session key.
     fn session_key(&self) -> Option<&PublicKey>;
+
+    /// Return our session keystore with this peer.
+    fn keystore(&self) -> &KeyStore;
+
+    /// Return our CSN pair with this peer.
+    /// The returned reference is a RefCell, providing interior mutability.
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair>;
+
+    /// Return our cookie pair with this peer.
     fn cookie_pair(&self) -> &CookiePair;
+
+    /// Return our mutable cookie pair with this peer.
     fn cookie_pair_mut(&mut self) -> &mut CookiePair;
 }
 
@@ -64,6 +79,10 @@ impl PeerContext for ServerContext {
 
     fn session_key(&self) -> Option<&PublicKey> {
         self.session_key.as_ref()
+    }
+
+    fn keystore(&self) -> &KeyStore {
+        unimplemented!() // TODO: Move session keystore into server context
     }
 
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
@@ -127,6 +146,10 @@ impl PeerContext for InitiatorContext {
 
     fn session_key(&self) -> Option<&PublicKey> {
         self.session_key.as_ref()
+    }
+
+    fn keystore(&self) -> &KeyStore {
+        &self.keystore
     }
 
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
@@ -198,6 +221,10 @@ impl PeerContext for ResponderContext {
 
     fn session_key(&self) -> Option<&PublicKey> {
         self.session_key.as_ref()
+    }
+
+    fn keystore(&self) -> &KeyStore {
+        &self.keystore
     }
 
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
