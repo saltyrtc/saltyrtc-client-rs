@@ -8,8 +8,7 @@ log = "0.3"
 websocket = "0.20.2"
 native-tls = "0.1.4"
 tokio-core = "0.1.9"
-failure = "0.1.0"
-failure_derive = "0.1.1"
+failure = "0.1.1"
 futures = "0.1.0"  # Make sure to use same version as websocket
 rmp-serde = "0.13"
 rmpv = { version = "0.4", features = ["with-serde"] }

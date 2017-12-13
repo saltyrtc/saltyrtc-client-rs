@@ -3,7 +3,6 @@
 use std::cell::RefCell;
 
 use crypto::{PublicKey, KeyStore};
-use errors::{SignalingError, SignalingResult};
 
 use super::cookie::{CookiePair};
 use super::csn::{CombinedSequencePair};

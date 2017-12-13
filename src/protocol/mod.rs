@@ -25,6 +25,7 @@ pub(crate) mod types;
 
 #[cfg(test)] mod tests;
 
+use super::task::Tasks;
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth, NewResponder};
@@ -460,6 +461,9 @@ pub(crate) struct Common {
 
     /// The server context.
     pub(crate) server: ServerContext,
+
+    /// The task instances
+    pub(crate) tasks: Tasks,
 }
 
 impl Common {
@@ -747,7 +751,8 @@ impl Signaling for InitiatorSignaling {
 }
 
 impl InitiatorSignaling {
-    pub(crate) fn new(permanent_keypair: KeyStore) -> Self {
+    pub(crate) fn new(permanent_keypair: KeyStore,
+                      tasks: Tasks) -> Self {
         InitiatorSignaling {
             common: Common {
                 signaling_state: SignalingState::ServerHandshake,
@@ -756,6 +761,7 @@ impl InitiatorSignaling {
                 permanent_keypair: permanent_keypair,
                 auth_token: Some(AuthToken::new()),
                 server: ServerContext::new(),
+                tasks: tasks,
             },
             responders: HashMap::new(),
             responder: None,
@@ -1118,7 +1124,8 @@ impl Signaling for ResponderSignaling {
 impl ResponderSignaling {
     pub(crate) fn new(permanent_keypair: KeyStore,
                       initiator_pubkey: PublicKey,
-                      auth_token: Option<AuthToken>) -> Self {
+                      auth_token: Option<AuthToken>,
+                      tasks: Tasks) -> Self {
         ResponderSignaling {
             common: Common {
                 signaling_state: SignalingState::ServerHandshake,
@@ -1127,6 +1134,7 @@ impl ResponderSignaling {
                 permanent_keypair: permanent_keypair,
                 auth_token: auth_token,
                 server: ServerContext::new(),
+                tasks: tasks,
             },
             initiator: InitiatorContext::new(initiator_pubkey),
         }

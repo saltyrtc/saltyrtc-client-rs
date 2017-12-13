@@ -13,7 +13,7 @@ use super::*;
 #[test]
 fn first_message_wrong_destination() {
     let ks = KeyStore::new();
-    let mut s = InitiatorSignaling::new(ks);
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]));
 
     let msg = ServerHello::random().into_message();
     let cs = CombinedSequenceSnapshot::random();
@@ -37,7 +37,7 @@ fn first_message_wrong_destination() {
 #[test]
 fn wrong_source_initiator() {
     let ks = KeyStore::new();
-    let mut s = InitiatorSignaling::new(ks);
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]));
 
     let make_msg = |src: u8, dest: u8| {
         let msg = ServerHello::random().into_message();
@@ -87,7 +87,7 @@ fn wrong_source_initiator() {
 fn wrong_source_responder() {
     let ks = KeyStore::new();
     let initiator_pubkey = PublicKey::from_slice(&[0u8; 32]).unwrap();
-    let mut s = ResponderSignaling::new(ks, initiator_pubkey, None);
+    let mut s = ResponderSignaling::new(ks, initiator_pubkey, None, Tasks(vec![]));
 
     let make_msg = |src: u8, dest: u8| {
         let msg = ServerHello::random().into_message();
@@ -134,7 +134,7 @@ fn wrong_source_responder() {
 #[test]
 fn first_message_bad_overflow_number() {
     let ks = KeyStore::new();
-    let mut s = InitiatorSignaling::new(ks);
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]));
 
     let msg = ServerHello::random().into_message();
     let cs = CombinedSequenceSnapshot::new(1, 1234);
@@ -164,7 +164,7 @@ fn sequence_number_incremented() {
 #[test]
 fn cookie_differs_from_own() {
     let ks = KeyStore::new();
-    let mut s = InitiatorSignaling::new(ks);
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]));
 
     let msg = ServerHello::random().into_message();
     let cookie = s.server().cookie_pair.ours.clone();

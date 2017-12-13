@@ -10,7 +10,7 @@ use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
 use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError};
-use helpers::{libsodium_init, libsodium_init_or_panic};
+use helpers::{libsodium_init_or_panic};
 use protocol::Nonce;
 
 /// A public key used for decrypting data.

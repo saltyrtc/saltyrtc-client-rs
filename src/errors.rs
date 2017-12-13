@@ -96,3 +96,10 @@ impl From<SerdeDecodeError> for SignalingError {
         SignalingError::Decode(format!("Could not decode msgpack data: {}", e))
     }
 }
+
+#[derive(Fail, Debug, PartialEq)]
+pub enum BuilderError {
+    /// No task has been added.
+    #[fail(display = "No task specified")]
+    MissingTask,
+}

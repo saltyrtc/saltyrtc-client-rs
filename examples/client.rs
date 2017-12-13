@@ -4,11 +4,15 @@ extern crate clap;
 extern crate data_encoding;
 extern crate dotenv;
 extern crate env_logger;
+#[macro_use] extern crate failure;
+#[macro_use] extern crate log;
 extern crate native_tls;
 extern crate saltyrtc_client;
 extern crate tokio_core;
 
+use std::borrow::Cow;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -16,12 +20,14 @@ use std::process;
 use std::rc::Rc;
 
 use clap::{Arg, App, SubCommand};
-use data_encoding::HEXLOWER;
+use data_encoding::{HEXLOWER};
+use failure::{Error};
 use native_tls::{TlsConnector, Certificate, Protocol};
-use tokio_core::reactor::Core;
+use tokio_core::reactor::{Core};
 
 use saltyrtc_client::{SaltyClientBuilder, KeyStore, Role, AuthToken, Task};
 use saltyrtc_client::utils::{public_key_from_hex_str};
+use saltyrtc_client::rmpv::{Value};
 
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -113,21 +119,24 @@ fn main() {
     // Create new SaltyRTC client instance
     let (salty, auth_token_hex) = match role {
         Role::Initiator => {
-            let salty = SaltyClientBuilder::new(keystore).initiator();
+            let task = ChatTask::new("initiat0r");
+            let salty = SaltyClientBuilder::new(keystore)
+                .add_task(Box::new(task))
+                .initiator()
+                .expect("Could not create SaltyClient instance");
             let auth_token_hex = HEXLOWER.encode(salty.auth_token().unwrap().secret_key_bytes());
-            (
-                salty,
-                auth_token_hex
-            )
+            (salty, auth_token_hex)
         },
         Role::Responder => {
+            let task = ChatTask::new("r3spond3r");
             let auth_token_hex = args.value_of(ARG_AUTHTOKEN).expect("Auth token not supplied").to_string();
             let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
             let initiator_pubkey = public_key_from_hex_str(&path).unwrap();
-            (
-                SaltyClientBuilder::new(keystore).responder(initiator_pubkey, Some(auth_token)),
-                auth_token_hex
-            )
+            let salty = SaltyClientBuilder::new(keystore)
+                .add_task(Box::new(task))
+                .responder(initiator_pubkey, Some(auth_token))
+                .expect("Could not create SaltyClient instance");
+            (salty, auth_token_hex)
         },
     };
 
@@ -161,4 +170,86 @@ fn main() {
             process::exit(1);
         },
     };
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+struct ChatTask {
+    our_name: String,
+    peer_name: Option<String>,
+}
+
+impl ChatTask {
+    pub fn new<S: Into<String>>(our_name: S) -> Self {
+        ChatTask {
+            our_name: our_name.into(),
+            peer_name: None,
+        }
+    }
+}
+
+impl Task for ChatTask {
+
+    /// Initialize the task with the task data from the peer, sent in the `Auth` message.
+    ///
+    /// The task should keep track internally whether it has been initialized or not.
+    fn init(&mut self, data: Option<HashMap<String, Value>>) -> Result<(), Error> {
+        let peer_name: String = match data {
+            Some(map) => match map.get("nickname") {
+                Some(&Value::String(ref nickname)) => nickname.to_string(),
+                Some(ref val) => bail!("The \"nickname\" field has the wrong type: {:?}", val),
+                None => bail!("No \"nickname\" field in data passed to task initialization"),
+            },
+            None => bail!("No data passed to task initialization"),
+        };
+        self.peer_name = Some(peer_name);
+        Ok(())
+    }
+
+    /// Used by the signaling class to notify task that the peer handshake is over.
+    ///
+    /// This is the point where the task can take over.
+    fn on_peer_handshake_done(&mut self) {
+        // TODO
+    }
+
+    /// Return the list of supported message types.
+    ///
+    /// Incoming messages with this type will be passed to the task.
+    fn supported_message_types(&self) -> &[&str] {
+        &["msg", "nick_change"]
+    }
+
+    /// This method is called by SaltyRTC when a task related message
+    /// arrives through the WebSocket.
+    fn on_task_message(&mut self, message: Vec<u8>) {
+        info!("New message arrived: {:?}", message);
+    }
+
+    /// Send bytes through the task signaling channel.
+    ///
+    /// This method should only be called after the handover.
+    ///
+    /// Note that the data passed in to this method should *not* already be encrypted. Otherwise,
+    /// data will be encrypted twice.
+    fn send_signaling_message(&self, payload: &[u8]) {
+        panic!("send_signaling_message called even though task does not implement handover");
+    }
+
+    /// Return the task protocol name.
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("v1.simplechat.tasks.saltyrtc.org")
+    }
+
+    /// Return the task data used for negotiation in the `auth` message.
+    /// This data will be sent to the peer.
+    fn get_data(&self) -> Option<HashMap<String, Value>> {
+        let mut map = HashMap::new();
+        map.insert("nickname".to_string(), self.our_name.clone().into());
+        Some(map)
+    }
+
+    /// This method is called by the signaling class when sending and receiving 'close' messages.
+    fn close(&mut self, reason: u8) {
+        // TODO
+    }
 }

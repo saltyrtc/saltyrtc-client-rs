@@ -7,16 +7,14 @@
 
 extern crate byteorder;
 extern crate data_encoding;
-extern crate failure;
-#[macro_use]
-extern crate failure_derive;
+#[macro_use] extern crate failure;
 #[macro_use]
 extern crate futures;
 #[macro_use]
 extern crate log;
 extern crate native_tls;
 extern crate rmp_serde;
-extern crate rmpv;
+pub extern crate rmpv;
 extern crate rust_sodium;
 extern crate rust_sodium_sys;
 extern crate serde;
@@ -54,9 +52,9 @@ use websocket::message::OwnedMessage;
 
 // Re-exports
 pub use crypto::{KeyStore, PublicKey, PrivateKey, AuthToken};
-pub use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError};
+pub use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
 pub use protocol::{Role};
-pub use task::{Task};
+pub use task::{Task, Tasks};
 
 pub mod utils {
     pub use crypto::{public_key_from_hex_str};
@@ -86,33 +84,43 @@ macro_rules! boxed {
 
 pub struct SaltyClientBuilder {
     permanent_key: KeyStore,
+    tasks: Vec<Box<Task>>,
 }
 
 impl SaltyClientBuilder {
     pub fn new(permanent_key: KeyStore) -> Self {
         SaltyClientBuilder {
             permanent_key,
+            tasks: vec![],
         }
+    }
+
+    pub fn add_task(mut self, task: Box<Task>) -> Self {
+        self.tasks.push(task);
+        self
     }
 
     /// Create a new SaltyRTC initiator.
-    pub fn initiator(self) -> SaltyClient {
-        let signaling = InitiatorSignaling::new(self.permanent_key);
-        SaltyClient {
+    pub fn initiator(self) -> Result<SaltyClient, BuilderError> {
+        let tasks = Tasks::from_vec(self.tasks).map_err(|_| BuilderError::MissingTask)?;
+        let signaling = InitiatorSignaling::new(self.permanent_key, tasks);
+        Ok(SaltyClient {
             signaling: Box::new(signaling),
-        }
+        })
     }
 
     /// Create a new SaltyRTC responder.
-    pub fn responder(self, initiator_pubkey: PublicKey, auth_token: Option<AuthToken>) -> SaltyClient {
+    pub fn responder(self, initiator_pubkey: PublicKey, auth_token: Option<AuthToken>) -> Result<SaltyClient, BuilderError> {
+        let tasks = Tasks::from_vec(self.tasks).map_err(|_| BuilderError::MissingTask)?;
         let signaling = ResponderSignaling::new(
             self.permanent_key,
             initiator_pubkey,
-            auth_token
+            auth_token,
+            tasks,
         );
-        SaltyClient {
+        Ok(SaltyClient {
             signaling: Box::new(signaling),
-        }
+        })
     }
 }
 

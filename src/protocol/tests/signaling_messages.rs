@@ -29,7 +29,8 @@ impl TestContext<InitiatorSignaling> {
         let server_ks = KeyStore::new();
         let our_cookie = Cookie::random();
         let server_cookie = Cookie::random();
-        let mut signaling = InitiatorSignaling::new(KeyStore::from_private_key(our_ks.private_key().clone()));
+        let ks = KeyStore::from_private_key(our_ks.private_key().clone());
+        let mut signaling = InitiatorSignaling::new(ks, Tasks(vec![]));
         signaling.common_mut().identity = identity;
         signaling.server_mut().set_handshake_state(server_handshake_state);
         signaling.server_mut().cookie_pair = CookiePair {
@@ -64,7 +65,8 @@ impl TestContext<ResponderSignaling> {
                 Some(pk) => pk,
                 None => PublicKey::from_slice(&[0u8; 32]).unwrap(),
             };
-            ResponderSignaling::new(KeyStore::from_private_key(our_ks.private_key().clone()), pk, auth_token)
+            let ks = KeyStore::from_private_key(our_ks.private_key().clone());
+            ResponderSignaling::new(ks, pk, auth_token, Tasks(vec![]))
         };
         signaling.common_mut().identity = identity;
         signaling.server_mut().set_handshake_state(server_handshake_state);
