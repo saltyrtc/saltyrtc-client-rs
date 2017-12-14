@@ -293,7 +293,7 @@ impl<'de> Deserialize<'de> for SignedKeys {
 }
 
 #[cfg(test)]
-use helpers::TestRandom;
+use test_helpers::TestRandom;
 #[cfg(test)]
 impl TestRandom for PublicKey {
     fn random() -> PublicKey {

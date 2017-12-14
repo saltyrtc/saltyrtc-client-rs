@@ -110,9 +110,9 @@ mod tests {
 
     #[test]
     fn create_tasks() {
-        let t1 = Box::new(DummyTask(1));
-        let t2 = Box::new(DummyTask(2));
-        let t3 = Box::new(DummyTask(3));
+        let t1 = Box::new(DummyTask::new(1));
+        let t2 = Box::new(DummyTask::new(2));
+        let t3 = Box::new(DummyTask::new(3));
 
         let mut tasks = Tasks::new(t1);
         assert_eq!(tasks.len(), 1);
@@ -128,8 +128,8 @@ mod tests {
     #[test]
     fn choose_common_task() {
         fn make_tasks() -> Tasks {
-            let t1 = Box::new(DummyTask(1));
-            let t2 = Box::new(DummyTask(2));
+            let t1 = Box::new(DummyTask::new(1));
+            let t2 = Box::new(DummyTask::new(2));
             Tasks::from_vec(vec![t1, t2]).unwrap()
         };
 

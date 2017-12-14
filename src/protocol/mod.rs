@@ -958,7 +958,10 @@ impl InitiatorSignaling {
 
         // The initiator MUST drop all other connected responders with a 'drop-responder'
         // message containing the close code 3004 (Dropped by Initiator) in the reason field.
-        // TODO
+        if !self.responders.is_empty() {
+            info!("Dropping {} other responders", self.responders.len())
+            // TODO
+        }
 
         // State transition
         responder.set_handshake_state(ResponderHandshakeState::AuthReceived);
