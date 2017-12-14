@@ -356,7 +356,7 @@ pub(crate) trait Signaling {
 
     /// Handle an incoming [`ServerHello`](messages/struct.ServerHello.html) message.
     fn handle_server_hello(&mut self, msg: ServerHello) -> SignalingResult<Vec<HandleAction>> {
-        debug!("--> Received server-hello");
+        debug!("--> Received server-hello from server");
 
         let mut actions = Vec::with_capacity(2);
 
@@ -386,7 +386,7 @@ pub(crate) trait Signaling {
                 self.server().csn_pair().borrow_mut().ours.increment()?,
             );
             let reply = OpenBox::<Message>::new(client_hello, client_hello_nonce);
-            debug!("<-- Enqueuing client-hello");
+            debug!("<-- Enqueuing client-hello to server");
             actions.push(HandleAction::Reply(reply.encode()));
         }
 
@@ -406,7 +406,7 @@ pub(crate) trait Signaling {
         let reply = OpenBox::<Message>::new(client_auth, client_auth_nonce);
         match self.server().permanent_key {
             Some(ref pubkey) => {
-                debug!("<-- Enqueuing client-auth");
+                debug!("<-- Enqueuing client-auth to server");
                 actions.push(HandleAction::Reply(reply.encrypt(&self.common().permanent_keypair, pubkey)));
             },
             None => return Err(SignalingError::Crash("Missing server permanent key".into())),
@@ -419,7 +419,7 @@ pub(crate) trait Signaling {
 
     /// Handle an incoming [`ServerAuth`](messages/struct.ServerAuth.html) message.
     fn handle_server_auth(&mut self, msg: ServerAuth) -> SignalingResult<Vec<HandleAction>> {
-        debug!("--> Received server-auth");
+        debug!("--> Received server-auth from server");
 
         // When the client receives a 'server-auth' message, it MUST
         // have accepted and set its identity as described in the
@@ -469,7 +469,7 @@ pub(crate) trait Signaling {
 
     /// Handle an incoming [`SendError`](messages/struct.ServerAuth.html) message.
     fn handle_send_error(&mut self, msg: SendError) -> SignalingResult<Vec<HandleAction>> {
-        warn!("--> Received send-error");
+        warn!("--> Received send-error from server");
         debug!("Message that could not be relayed: {:#?}", msg.id);
         return Err(SignalingError::SendError);
     }
@@ -757,7 +757,7 @@ impl Signaling for InitiatorSignaling {
     }
 
     fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
-        debug!("--> Received new-responder");
+        debug!("--> Received new-responder ({}) from server", msg.id);
 
         // An initiator who receives a 'new-responder' message SHALL validate
         // that the id field contains a valid responder address (0x02..0xff).
@@ -808,7 +808,7 @@ impl InitiatorSignaling {
 
     /// Handle an incoming [`Token`](messages/struct.Token.html) message.
     fn handle_token(&mut self, msg: Token, source: Address) -> SignalingResult<Vec<HandleAction>> {
-        debug!("--> Received token");
+        debug!("--> Received token from {}", Identity::from(source));
 
         // Find responder instance
         let responder = self.responders.get_mut(&source)
@@ -832,7 +832,8 @@ impl InitiatorSignaling {
 
     /// Handle an incoming [`Key`](messages/struct.Key.html) message.
     fn handle_key(&mut self, msg: Key, source: Address) -> SignalingResult<Vec<HandleAction>> {
-        debug!("--> Received key");
+        let source_identity = Identity::from(source);
+        debug!("--> Received key from {}", source_identity);
 
         // Find responder instance
         let responder = self.responders.get_mut(&source)
@@ -882,13 +883,13 @@ impl InitiatorSignaling {
         // State transition
         responder.set_handshake_state(ResponderHandshakeState::KeySent);
 
-        debug!("<-- Enqueuing key");
+        debug!("<-- Enqueuing key to {}", source_identity);
         Ok(vec![HandleAction::Reply(bbox)])
     }
 
     /// Handle an incoming [`Auth`](messages/struct.Auth.html) message.
     fn handle_auth(&mut self, msg: Auth, source: Address) -> SignalingResult<Vec<HandleAction>> {
-        debug!("--> Received auth");
+        debug!("--> Received auth from {}", Identity::from(source));
 
         let mut actions = vec![];
 
@@ -1243,7 +1244,7 @@ impl ResponderSignaling {
         // message, the secret key MUST be invalidated immediately and SHALL
         // NOT be used for any other message.
 
-        debug!("<-- Enqueuing token");
+        debug!("<-- Enqueuing token to {}", self.initiator.identity());
         Ok(HandleAction::Reply(bbox))
     }
 
@@ -1265,13 +1266,13 @@ impl ResponderSignaling {
         // permanent key pair and the other client's permanent key pair.
         let bbox = obox.encrypt(&self.common().permanent_keypair, &self.initiator.permanent_key);
 
-        debug!("<-- Enqueuing key");
+        debug!("<-- Enqueuing key to {}", self.initiator.identity());
         Ok(HandleAction::Reply(bbox))
     }
 
     /// Handle an incoming [`Key`](messages/struct.Key.html) message.
     fn handle_key(&mut self, msg: Key, nonce: &Nonce) -> SignalingResult<Vec<HandleAction>> {
-        debug!("--> Received key");
+        debug!("--> Received key from {}", nonce.source_identity());
 
         // Sanity check
         if self.initiator.session_key.is_some() {
@@ -1315,7 +1316,7 @@ impl ResponderSignaling {
         // State transition
         self.initiator.set_handshake_state(InitiatorHandshakeState::AuthSent);
 
-        debug!("<-- Enqueuing auth");
+        debug!("<-- Enqueuing auth to {}", self.initiator.identity());
         Ok(vec![HandleAction::Reply(bbox)])
     }
 }

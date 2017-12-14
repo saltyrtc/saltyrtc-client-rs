@@ -69,7 +69,7 @@ impl fmt::Display for Identity {
         match *self {
             Identity::Unknown => write!(f, "unknown"),
             Identity::Initiator => write!(f, "initiator"),
-            Identity::Responder(id) => write!(f, "responder {}", id),
+            Identity::Responder(id) => write!(f, "responder {:#04x}", id),
             Identity::Server => write!(f, "server"),
         }
     }
@@ -132,7 +132,7 @@ impl Address {
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Address({:#04x})", self.0)
+        write!(f, "{:#04x}", self.0)
     }
 }
 
@@ -247,9 +247,9 @@ mod tests {
 
     #[test]
     fn address_display() {
-        assert_eq!(format!("{}", Address(0)), "Address(0x00)");
-        assert_eq!(format!("{}", Address(3)), "Address(0x03)");
-        assert_eq!(format!("{}", Address(255)), "Address(0xff)");
+        assert_eq!(format!("{}", Address(0)), "0x00");
+        assert_eq!(format!("{}", Address(3)), "0x03");
+        assert_eq!(format!("{}", Address(255)), "0xff");
     }
 
     #[test]

@@ -12,7 +12,7 @@ use errors::{SignalingError, SignalingResult};
 
 use super::cookie::Cookie;
 use super::csn::CombinedSequenceSnapshot;
-use super::types::{Address};
+use super::types::{Address, Identity};
 
 
 /// The SaltyRTC nonce.
@@ -91,11 +91,13 @@ impl Nonce {
     }
 
     /// Return the source.
-    ///
-    /// TODO: Does it make sense to provide these accessors instead of making
-    /// the fields public?
     pub(crate) fn source(&self) -> Address {
         self.source
+    }
+
+    /// Return the source identity.
+    pub(crate) fn source_identity(&self) -> Identity {
+        Identity::from(self.source)
     }
 
     /// Return the destination.

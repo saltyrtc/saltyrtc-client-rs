@@ -22,7 +22,7 @@ fn first_message_wrong_destination() {
     assert_eq!(
         s.handle_message(bbox),
         Err(SignalingError::InvalidNonce(
-            "Bad destination: Address(0x01) (our identity is Unknown)".into()
+            "Bad destination: 0x01 (our identity is Unknown)".into()
         ))
     );
 }
