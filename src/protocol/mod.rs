@@ -30,14 +30,19 @@ pub(crate) mod types;
 use super::task::{Task, Tasks};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
-use self::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth, NewResponder};
-use self::messages::{SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder};
+use self::messages::{
+    Message, ServerHello, ServerAuth, ClientHello, ClientAuth,
+    NewResponder, DropResponder,
+    SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder,
+};
 pub(crate) use self::nonce::{Nonce};
 pub use self::types::{Role};
 pub(crate) use self::types::{HandleAction};
 use self::types::{Identity, ClientIdentity, Address};
-use self::state::{SignalingState, ServerHandshakeState};
-use self::state::{InitiatorHandshakeState, ResponderHandshakeState};
+use self::state::{
+    SignalingState, ServerHandshakeState,
+    InitiatorHandshakeState, ResponderHandshakeState,
+};
 
 
 /// The main signaling trait.
@@ -959,8 +964,29 @@ impl InitiatorSignaling {
         // The initiator MUST drop all other connected responders with a 'drop-responder'
         // message containing the close code 3004 (Dropped by Initiator) in the reason field.
         if !self.responders.is_empty() {
-            info!("Dropping {} other responders", self.responders.len())
-            // TODO
+            info!("Dropping {} other responders", self.responders.len());
+            for addr in self.responders.keys() {
+                let drop = DropResponder::new(addr.clone()).into_message();
+                let drop_nonce = Nonce::new(
+                    self.server().cookie_pair.ours.clone(),
+                    self.common.identity.into(),
+                    self.server().identity().into(),
+                    self.server().csn_pair().borrow_mut().ours.increment()?,
+                );
+                let obox = OpenBox::<Message>::new(drop, drop_nonce);
+                let bbox = obox.encrypt(
+                    &self.common().permanent_keypair,
+                    self.server().session_key()
+                        .ok_or(SignalingError::Crash("Server session key not set".into()))?
+                );
+                actions.push(HandleAction::Reply(bbox));
+            }
+
+            // Remove responders
+            self.responders.clear();
+
+            // Free the memory used for tracking responders
+            self.responders.shrink_to_fit();
         }
 
         // State transition
@@ -976,7 +1002,7 @@ impl InitiatorSignaling {
         let auth_nonce = Nonce::new(
             responder.cookie_pair().ours.clone(),
             self.common.identity.into(),
-            responder.identity().into(),
+            responder.address,
             responder.csn_pair().borrow_mut().ours.increment()?,
         );
         let obox = OpenBox::<Message>::new(auth, auth_nonce);

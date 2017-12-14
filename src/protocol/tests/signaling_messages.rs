@@ -589,16 +589,30 @@ mod auth {
 
     /// Prepare context and responder for auth message validation tests.
     fn _auth_msg_prepare_initiator() -> (TestContext<InitiatorSignaling>, ResponderContext) {
-        let ctx = TestContext::initiator(
+        let mut ctx = TestContext::initiator(
             ClientIdentity::Initiator,
             SignalingState::PeerHandshake, ServerHandshakeState::Done,
         );
 
-        // Create new responder context
+        // Create new main responder context
         let peer_session_pk = PublicKey::random();
         let mut responder = ResponderContext::new(Address(3));
         responder.set_handshake_state(ResponderHandshakeState::KeySent);
         responder.session_key = Some(peer_session_pk.clone());
+
+        fn make_responder(addr: u8, state: ResponderHandshakeState) -> ResponderContext {
+            let mut r = ResponderContext::new(Address(addr));
+            r.set_handshake_state(state);
+            r.session_key = Some(PublicKey::random());
+            r
+        }
+
+        // Add some additional responders
+        ctx.signaling.responders.insert(Address(4), make_responder(4, ResponderHandshakeState::New));
+        ctx.signaling.responders.insert(Address(7), make_responder(7, ResponderHandshakeState::KeySent));
+
+        // Set a server session key
+        ctx.signaling.server_mut().session_key = Some(PublicKey::random());
 
         (ctx, responder)
     }
@@ -745,6 +759,12 @@ mod auth {
         assert_eq!(ctx.signaling.common().task.as_ref().unwrap().name(), DummyTask::name_for(42));
 
         // Tasks list was removed
-        assert!(ctx.signaling.common().tasks.is_none())
+        assert!(ctx.signaling.common().tasks.is_none());
+
+        // Responders are being dropped
+        assert_eq!(ctx.signaling.responders.len(), 0);
+
+        // Number of reply messages
+        assert_eq!(actions.len(), 3); // auth + drop-responder(5) + drop-responder(7)
     }
 }
