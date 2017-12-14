@@ -56,8 +56,8 @@ impl Task for DummyTask {
         DummyTask::name_for(self.id).into()
     }
 
-    fn get_data(&self) -> Option<HashMap<String, Value>> {
-        unimplemented!()
+    fn data(&self) -> Option<HashMap<String, Value>> {
+        None
     }
 
     fn close(&mut self, reason: u8) {

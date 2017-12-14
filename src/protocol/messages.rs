@@ -15,8 +15,9 @@ use rmpv::Value;
 use crypto::{PublicKey, SignedKeys};
 use errors::{SignalingError, SignalingResult};
 
-use super::{Address, Cookie};
-use super::send_error::{SendErrorId};
+use ::protocol::{Address, Cookie};
+use ::protocol::send_error::{SendErrorId};
+use ::task::{Tasks};
 
 
 /// The `Message` enum contains all possible message types that may be used
@@ -383,6 +384,19 @@ impl ResponderAuthBuilder {
             None => panic!("tasks list not initialized!"),
         };
         self.auth.data.insert(name, data);
+        self
+    }
+
+    /// Add a `Tasks` instance.
+    pub(crate) fn add_tasks(mut self, tasks: &Tasks) -> Self {
+        for task in &tasks.0 {
+            let name: String = task.name().into();
+            match self.auth.tasks {
+                Some(ref mut tasks) => tasks.push(name.clone()),
+                None => panic!("tasks list not initialized!"),
+            };
+            self.auth.data.insert(name, task.data());
+        }
         self
     }
 

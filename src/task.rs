@@ -47,7 +47,7 @@ pub trait Task : Debug {
     fn name(&self) -> Cow<'static, str>;
 
     /// Return the task data used for negotiation in the `auth` message.
-    fn get_data(&self) -> Option<HashMap<String, Value>>;
+    fn data(&self) -> Option<HashMap<String, Value>>;
 
     /// This method is called by the signaling class when sending and receiving 'close' messages.
     fn close(&mut self, reason: u8);
@@ -93,7 +93,7 @@ impl Tasks {
 
     /// Choose the first task in our own list of supported tasks that is also contained in the list
     /// of supported tasks provided by the peer.
-    pub(crate) fn choose_common_task<S: AsRef<str>>(self, tasks: &[S]) -> Option<Box<Task>> {
+    pub(crate) fn choose_shared_task<S: AsRef<str>>(self, tasks: &[S]) -> Option<Box<Task>> {
         for task in self.0 {
             if tasks.iter().find(|p| p.as_ref() == &*task.name()).is_some() {
                 return Some(task);
@@ -126,7 +126,7 @@ mod tests {
     }
 
     #[test]
-    fn choose_common_task() {
+    fn choose_shared_task() {
         fn make_tasks() -> Tasks {
             let t1 = Box::new(DummyTask::new(1));
             let t2 = Box::new(DummyTask::new(2));
@@ -134,19 +134,19 @@ mod tests {
         };
 
         // Parameters as static string references
-        let chosen = make_tasks().choose_common_task(&["dummy.1", "dummy.3"]).expect("No common task found (1)");
+        let chosen = make_tasks().choose_shared_task(&["dummy.1", "dummy.3"]).expect("No shared task found (1)");
         assert_eq!(chosen.name(), "dummy.1");
 
         // Parameters from owned strings
-        let chosen = make_tasks().choose_common_task(&vec!["dummy.2".to_string()]).expect("No common task found (2)");
+        let chosen = make_tasks().choose_shared_task(&vec!["dummy.2".to_string()]).expect("No shared task found (2)");
         assert_eq!(chosen.name(), "dummy.2");
 
         // Return `None` if no common task is present
-        let chosen = make_tasks().choose_common_task(&vec!["dummy.3".to_string()]);
+        let chosen = make_tasks().choose_shared_task(&vec!["dummy.3".to_string()]);
         assert!(chosen.is_none());
 
         // Our preference wins
-        let chosen = make_tasks().choose_common_task(&["dummy.2", "dummy.1"]).expect("No common task found (3)");
+        let chosen = make_tasks().choose_shared_task(&["dummy.2", "dummy.1"]).expect("No shared task found (3)");
         assert_eq!(chosen.name(), "dummy.1");
     }
 }

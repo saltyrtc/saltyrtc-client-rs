@@ -938,11 +938,13 @@ impl InitiatorSignaling {
         // and raise an error event indicating that no common signalling task could be found.
         let our_tasks = mem::replace(&mut self.common_mut().tasks, None)
             .ok_or(SignalingError::Crash("No tasks defined".into()))?;
+        trace!("Our tasks: {:?}", &our_tasks);
+        trace!("Proposed tasks: {:?}", &proposed_tasks);
         let mut chosen_task: Box<Task> = our_tasks
-            .choose_common_task(&proposed_tasks)
+            .choose_shared_task(&proposed_tasks)
             .ok_or_else(|| {
                 // TODO
-                SignalingError::NoCommonTask
+                SignalingError::NoSharedTask
             })?;
 
         // Both initiator an responder SHALL verify that the data field contains a Map
@@ -954,7 +956,6 @@ impl InitiatorSignaling {
         // after processing this message is complete.
         chosen_task.init(task_data)
             .map_err(|e| SignalingError::TaskInitialization(format!("{}", e)))?;
-        self.common_mut().task = Some(chosen_task);
 
         // After the above procedure has been followed, the other client has successfully
         // authenticated it towards the client. The other client's public key MAY be stored
@@ -996,7 +997,7 @@ impl InitiatorSignaling {
         let responder_cookie = responder.cookie_pair.theirs.as_ref().cloned()
             .ok_or(SignalingError::Crash("Responder cookie not set".into()))?;
         let auth: Message = InitiatorAuthBuilder::new(responder_cookie)
-            .set_task("dummy", None) // TODO
+            .set_task(chosen_task.name(), chosen_task.data())
             .build()?
             .into_message();
         let auth_nonce = Nonce::new(
@@ -1012,6 +1013,9 @@ impl InitiatorSignaling {
                 .ok_or(SignalingError::Crash("Responder session key not set".into()))?,
         );
         actions.push(HandleAction::Reply(bbox));
+
+        // Store chosen task
+        self.common_mut().task = Some(chosen_task);
 
         // State transition
         responder.set_handshake_state(ResponderHandshakeState::AuthSent);
@@ -1287,7 +1291,12 @@ impl ResponderSignaling {
 
         // Reply with auth msg
         let auth: Message = ResponderAuthBuilder::new(nonce.cookie().clone())
-            .add_task("dummy", None) // TODO
+            .add_tasks(
+                self.common()
+                    .tasks
+                    .as_ref()
+                    .ok_or(SignalingError::Crash("Tasks are not set".into()))?
+            )
             .build()?
             .into_message();
         let auth_nonce = Nonce::new(

@@ -286,9 +286,12 @@ pub fn connect(
                                     SignalingError::Protocol(msg) => {
                                         return boxed!(future::err(SaltyError::Protocol(msg)));
                                     },
+                                    SignalingError::NoSharedTask => {
+                                        return boxed!(future::err(SaltyError::Crash("No shared task found (TODO)".into())));
+                                    }
                                     other => {
                                         return boxed!(future::err(SaltyError::Crash(
-                                            format!("Signaling error (FIXME): {}", other)
+                                            format!("Signaling error (TODO): {}", other)
                                         )));
                                     },
                                 },

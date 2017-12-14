@@ -66,7 +66,9 @@ impl TestContext<ResponderSignaling> {
                 None => PublicKey::from_slice(&[0u8; 32]).unwrap(),
             };
             let ks = KeyStore::from_private_key(our_ks.private_key().clone());
-            ResponderSignaling::new(ks, pk, auth_token, Tasks(vec![]))
+            let mut tasks = Tasks::new(Box::new(DummyTask::new(23)));
+            tasks.add_task(Box::new(DummyTask::new(42)));
+            ResponderSignaling::new(ks, pk, auth_token, tasks)
         };
         signaling.common_mut().identity = identity;
         signaling.server_mut().set_handshake_state(server_handshake_state);

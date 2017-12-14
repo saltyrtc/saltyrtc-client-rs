@@ -82,9 +82,9 @@ pub enum SignalingError {
     #[fail(display = "Server could not relay message")]
     SendError,
 
-    /// No common task was found during the handshake.
-    #[fail(display = "No common task found")]
-    NoCommonTask,
+    /// No shared task was found during the handshake.
+    #[fail(display = "No shared task found")]
+    NoSharedTask,
 
     /// Task initialization failed.
     #[fail(display = "Task initialization failed: {}", _0)]

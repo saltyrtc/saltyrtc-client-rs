@@ -246,7 +246,7 @@ impl Task for ChatTask {
 
     /// Return the task data used for negotiation in the `auth` message.
     /// This data will be sent to the peer.
-    fn get_data(&self) -> Option<HashMap<String, Value>> {
+    fn data(&self) -> Option<HashMap<String, Value>> {
         let mut map = HashMap::new();
         map.insert("nickname".to_string(), self.our_name.clone().into());
         Some(map)
