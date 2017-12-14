@@ -82,6 +82,14 @@ pub enum SignalingError {
     #[fail(display = "Server could not relay message")]
     SendError,
 
+    /// No common task was found during the handshake.
+    #[fail(display = "No common task found")]
+    NoCommonTask,
+
+    /// Task initialization failed.
+    #[fail(display = "Task initialization failed: {}", _0)]
+    TaskInitialization(String),
+
     /// An unexpected error. This should never happen and indicates a bug in
     /// the implementation.
     #[fail(display = "An unexpected error occurred: {}. This indicates a bug and should be reported!", _0)]

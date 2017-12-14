@@ -673,7 +673,7 @@ mod auth {
         let msg: Message = Auth {
             your_cookie: responder.cookie_pair.ours.clone(),
             task: None,
-            tasks: Some(HashSet::new()),
+            tasks: Some(vec![]),
             data: HashMap::new(),
         }.into_message();
 
@@ -689,7 +689,7 @@ mod auth {
         let msg: Message = Auth {
             your_cookie: responder.cookie_pair.ours.clone(),
             task: None,
-            tasks: Some({ let mut s = HashSet::new(); s.insert("a".into()); s.insert("b".into()); s }),
+            tasks: Some(vec!["a".into(), "b".into()]),
             data: { let mut m = HashMap::new(); m.insert("a".into(), None); m },
         }.into_message();
 
@@ -706,7 +706,7 @@ mod auth {
         let msg: Message = Auth {
             your_cookie: responder.cookie_pair.ours.clone(),
             task: None,
-            tasks: Some({ let mut s = HashSet::new(); s.insert("a".into()); s.insert("b".into()); s }),
+            tasks: Some(vec!["a".into(), "b".into()]),
             data: { let mut m = HashMap::new(); m.insert("a".into(), None); m.insert("c".into(), None); m },
         }.into_message();
 

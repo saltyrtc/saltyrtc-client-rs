@@ -18,7 +18,7 @@ pub trait Task : Debug {
     /// Initialize the task with the task data from the peer, sent in the `Auth` message.
     ///
     /// The task should keep track internally whether it has been initialized or not.
-    fn init(&mut self, data: Option<HashMap<String, Value>>) -> Result<(), Error>;
+    fn init(&mut self, data: &Option<HashMap<String, Value>>) -> Result<(), Error>;
 
     /// Used by the signaling class to notify task that the peer handshake is over.
     ///
@@ -93,12 +93,10 @@ impl Tasks {
 
     /// Choose the first task in our own list of supported tasks that is also contained in the list
     /// of supported tasks provided by the peer.
-    pub(crate) fn choose_common_task<'a, S>(&'a self, tasks: &[S])
-                                            -> Option<&'a Box<Task>>
-                                            where S: AsRef<str> {
-        for task in &self.0 {
-            if let Some(v) = tasks.iter().find(|p| p.as_ref() == &*task.name()) {
-                return Some(&task);
+    pub(crate) fn choose_common_task<S: AsRef<str>>(self, tasks: &[S]) -> Option<Box<Task>> {
+        for task in self.0 {
+            if tasks.iter().find(|p| p.as_ref() == &*task.name()).is_some() {
+                return Some(task);
             }
         }
         None
@@ -113,7 +111,7 @@ mod tests {
     struct DummyTask(pub u8);
 
     impl Task for DummyTask {
-        fn init(&mut self, data: Option<HashMap<String, Value>>) -> Result<(), Error> {
+        fn init(&mut self, data: &Option<HashMap<String, Value>>) -> Result<(), Error> {
             unimplemented!()
         }
 
@@ -165,25 +163,26 @@ mod tests {
 
     #[test]
     fn choose_common_task() {
-        let t1 = Box::new(DummyTask(1));
-        let t2 = Box::new(DummyTask(2));
-
-        let tasks = Tasks::from_vec(vec![t1, t2]).unwrap();
+        fn make_tasks() -> Tasks {
+            let t1 = Box::new(DummyTask(1));
+            let t2 = Box::new(DummyTask(2));
+            Tasks::from_vec(vec![t1, t2]).unwrap()
+        };
 
         // Parameters as static string references
-        let chosen = tasks.choose_common_task(&["dummy.1", "dummy.3"]).expect("No common task found (1)");
+        let chosen = make_tasks().choose_common_task(&["dummy.1", "dummy.3"]).expect("No common task found (1)");
         assert_eq!(chosen.name(), "dummy.1");
 
         // Parameters from owned strings
-        let chosen = tasks.choose_common_task(&vec!["dummy.2".to_string()]).expect("No common task found (2)");
+        let chosen = make_tasks().choose_common_task(&vec!["dummy.2".to_string()]).expect("No common task found (2)");
         assert_eq!(chosen.name(), "dummy.2");
 
         // Return `None` if no common task is present
-        let chosen = tasks.choose_common_task(&vec!["dummy.3".to_string()]);
+        let chosen = make_tasks().choose_common_task(&vec!["dummy.3".to_string()]);
         assert!(chosen.is_none());
 
         // Our preference wins
-        let chosen = tasks.choose_common_task(&["dummy.2", "dummy.1"]).expect("No common task found (3)");
+        let chosen = make_tasks().choose_common_task(&["dummy.2", "dummy.1"]).expect("No common task found (3)");
         assert_eq!(chosen.name(), "dummy.1");
     }
 }

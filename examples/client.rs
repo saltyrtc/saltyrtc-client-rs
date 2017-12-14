@@ -192,9 +192,9 @@ impl Task for ChatTask {
     /// Initialize the task with the task data from the peer, sent in the `Auth` message.
     ///
     /// The task should keep track internally whether it has been initialized or not.
-    fn init(&mut self, data: Option<HashMap<String, Value>>) -> Result<(), Error> {
-        let peer_name: String = match data {
-            Some(map) => match map.get("nickname") {
+    fn init(&mut self, data: &Option<HashMap<String, Value>>) -> Result<(), Error> {
+        let peer_name: String = match *data {
+            Some(ref map) => match map.get("nickname") {
                 Some(&Value::String(ref nickname)) => nickname.to_string(),
                 Some(ref val) => bail!("The \"nickname\" field has the wrong type: {:?}", val),
                 None => bail!("No \"nickname\" field in data passed to task initialization"),

@@ -6,7 +6,7 @@
 //! use and implementation of the library. Some values may be optimized to take
 //! references in a future version.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::convert::From;
 
 use rmp_serde as rmps;
@@ -310,7 +310,7 @@ impl Key {
 pub(crate) struct Auth {
     pub(crate) your_cookie: Cookie,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) tasks: Option<HashSet<String>>,
+    pub(crate) tasks: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) task: Option<String>,
     pub(crate) data: HashMap<String, Option<HashMap<String, Value>>>,
@@ -368,7 +368,7 @@ impl ResponderAuthBuilder {
         Self {
             auth: Auth {
                 your_cookie,
-                tasks: Some(HashSet::new()),
+                tasks: Some(vec![]),
                 task: None,
                 data: HashMap::new(),
             }
@@ -379,7 +379,7 @@ impl ResponderAuthBuilder {
     pub(crate) fn add_task<S: Into<String>>(mut self, name: S, data: Option<HashMap<String, Value>>) -> Self {
         let name: String = name.into();
         match self.auth.tasks {
-            Some(ref mut tasks) => tasks.insert(name.clone()),
+            Some(ref mut tasks) => tasks.push(name.clone()),
             None => panic!("tasks list not initialized!"),
         };
         self.auth.data.insert(name, data);
@@ -391,6 +391,7 @@ impl ResponderAuthBuilder {
         if self.auth.task.is_some() {
             panic!("task may not be set");
         }
+        // TODO: Check for duplicate tasks!
         match self.auth.tasks {
             Some(ref tasks) if tasks.len() == 0 => Err(
                 SignalingError::InvalidMessage("An `Auth` message must contain at least one task".to_string())
@@ -538,7 +539,6 @@ mod tests {
             data.insert("foo".to_string(), Value::Boolean(true));
             let cookie = Cookie::random();
             let builder = ResponderAuthBuilder::new(cookie.clone())
-                .add_task("data.none", None)
                 .add_task("data.none", None)
                 .add_task("data.some", Some(data.clone()));
             let result = builder.build();

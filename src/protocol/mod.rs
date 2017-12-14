@@ -9,6 +9,7 @@
 //! structs](context/index.html), depending on the role.
 
 use std::collections::{HashMap, HashSet};
+use std::mem;
 
 use boxes::{ByteBox, OpenBox};
 use crypto::{KeyStore, AuthToken, PublicKey};
@@ -26,7 +27,7 @@ pub(crate) mod types;
 
 #[cfg(test)] mod tests;
 
-use super::task::Tasks;
+use super::task::{Task, Tasks};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{Message, ServerHello, ServerAuth, ClientHello, ClientAuth, NewResponder};
@@ -490,8 +491,11 @@ pub(crate) struct Common {
     /// The server context.
     pub(crate) server: ServerContext,
 
-    /// The task instances
-    pub(crate) tasks: Tasks,
+    /// The list of possible task instances
+    pub(crate) tasks: Option<Tasks>,
+
+    /// The chosen task
+    pub(crate) task: Option<Box<Task>>,
 }
 
 impl Common {
@@ -789,7 +793,8 @@ impl InitiatorSignaling {
                 permanent_keypair: permanent_keypair,
                 auth_token: Some(AuthToken::new()),
                 server: ServerContext::new(),
-                tasks: tasks,
+                tasks: Some(tasks),
+                task: None,
             },
             responders: HashMap::new(),
             responder: None,
@@ -900,7 +905,7 @@ impl InitiatorSignaling {
         if msg.task.is_some() {
             return Err(SignalingError::InvalidMessage("We're an initiator, but the `task` field in the auth message is set".into()));
         }
-        let tasks = match msg.tasks {
+        let proposed_tasks = match msg.tasks {
             None => return Err(SignalingError::InvalidMessage("The `tasks` field in the auth message is not set".into())),
             Some(ref tasks) if tasks.len() == 0 => return Err(SignalingError::InvalidMessage("The `tasks` field in the auth message is empty".into())),
             Some(tasks) => tasks,
@@ -910,11 +915,11 @@ impl InitiatorSignaling {
         // -> Already covered in deserialization
 
         // Validate data field
-        if msg.data.len() != tasks.len() {
+        if msg.data.len() != proposed_tasks.len() {
             return Err(SignalingError::InvalidMessage("The `tasks` and `data` fields in the auth message have a different number of entries".into()));
         };
-        for task in tasks {
-            if !msg.data.contains_key(&task) {
+        for task in proposed_tasks.iter() {
+            if !msg.data.contains_key(task) {
                 return Err(SignalingError::InvalidMessage("The task \"b\" in the auth message does not have a corresponding data entry".into()));
             }
         }
@@ -926,12 +931,25 @@ impl InitiatorSignaling {
         // In case no common task could be found, the initiator SHALL send a 'close' message
         // to the responder containing the close code 3006 (No Shared Task Found) as reason
         // and raise an error event indicating that no common signalling task could be found.
-        // TODO
+        let our_tasks = mem::replace(&mut self.common_mut().tasks, None)
+            .ok_or(SignalingError::Crash("No tasks defined".into()))?;
+        let mut chosen_task: Box<Task> = our_tasks
+            .choose_common_task(&proposed_tasks)
+            .ok_or_else(|| {
+                // TODO
+                SignalingError::NoCommonTask
+            })?;
 
         // Both initiator an responder SHALL verify that the data field contains a Map
-        // and SHALL look up the chosen task's data value. The value MUST be handed
-        // over to the corresponding task after processing this message is complete.
-        // TODO
+        // and SHALL look up the chosen task's data value.
+        let task_data = msg.data.get(&*chosen_task.name())
+            .ok_or(SignalingError::Crash("Task data not found".into()))?;
+
+        // The value MUST be handed over to the corresponding task
+        // after processing this message is complete.
+        chosen_task.init(task_data)
+            .map_err(|e| SignalingError::TaskInitialization(format!("{}", e)))?;
+        self.common_mut().task = Some(chosen_task);
 
         // After the above procedure has been followed, the other client has successfully
         // authenticated it towards the client. The other client's public key MAY be stored
@@ -1162,7 +1180,8 @@ impl ResponderSignaling {
                 permanent_keypair: permanent_keypair,
                 auth_token: auth_token,
                 server: ServerContext::new(),
-                tasks: tasks,
+                tasks: Some(tasks),
+                task: None,
             },
             initiator: InitiatorContext::new(initiator_pubkey),
         }
