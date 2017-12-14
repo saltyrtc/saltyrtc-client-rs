@@ -37,7 +37,7 @@ impl TestContext<InitiatorSignaling> {
             ours: our_cookie.clone(),
             theirs: Some(server_cookie.clone()),
         };
-        signaling.server_mut().permanent_key = Some(server_ks.public_key().clone());
+        signaling.server_mut().session_key = Some(server_ks.public_key().clone());
         signaling.common_mut().set_signaling_state(signaling_state).expect("Could not set signaling state");
         TestContext {
             our_ks: our_ks,
@@ -76,7 +76,7 @@ impl TestContext<ResponderSignaling> {
             ours: our_cookie.clone(),
             theirs: Some(server_cookie.clone()),
         };
-        signaling.server_mut().permanent_key = Some(server_ks.public_key().clone());
+        signaling.server_mut().session_key = Some(server_ks.public_key().clone());
         signaling.common_mut().set_signaling_state(signaling_state).expect("Could not set signaling state");
         TestContext {
             our_ks: our_ks,

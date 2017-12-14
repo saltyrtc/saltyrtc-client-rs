@@ -296,9 +296,9 @@ pub(crate) trait Signaling {
         }
 
         // Otherwise, decrypt with server key
-        match self.server().permanent_key {
+        match self.server().session_key {
             Some(ref pubkey) => OpenBox::<Message>::decrypt(bbox, &self.common().permanent_keypair, pubkey),
-            None => Err(SignalingError::Crash("Missing server permanent key".into())),
+            None => Err(SignalingError::Crash("Missing server session key".into())),
         }
     }
 
@@ -360,14 +360,14 @@ pub(crate) trait Signaling {
 
         let mut actions = Vec::with_capacity(2);
 
-        // Set the server public permanent key
-        trace!("Server permanent key is {:?}", msg.key);
-        if self.server().permanent_key.is_some() {
+        // Set the server public session key
+        trace!("Server session key is {:?}", msg.key);
+        if self.server().session_key.is_some() {
             return Err(SignalingError::Protocol(
-                "Got a server-hello message, but server permanent key is already set".to_string()
+                "Got a server-hello message, but server session key is already set".to_string()
             ));
         }
-        self.common_mut().server.permanent_key = Some(msg.key);
+        self.common_mut().server.session_key = Some(msg.key);
 
         // Reply with client-hello message if we're a responder
         if self.role() == Role::Responder {
@@ -404,7 +404,7 @@ pub(crate) trait Signaling {
             self.server().csn_pair().borrow_mut().ours.increment()?,
         );
         let reply = OpenBox::<Message>::new(client_auth, client_auth_nonce);
-        match self.server().permanent_key {
+        match self.server().session_key {
             Some(ref pubkey) => {
                 debug!("<-- Enqueuing client-auth to server");
                 actions.push(HandleAction::Reply(reply.encrypt(&self.common().permanent_keypair, pubkey)));
