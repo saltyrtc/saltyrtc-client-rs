@@ -31,6 +31,8 @@ mod helpers;
 mod protocol;
 mod send_all;
 mod task;
+#[cfg(test)]
+mod test_helpers;
 
 // Rust imports
 use std::cell::RefCell;
