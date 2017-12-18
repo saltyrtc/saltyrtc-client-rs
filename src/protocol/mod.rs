@@ -981,6 +981,7 @@ impl InitiatorSignaling {
                     self.server().session_key()
                         .ok_or(SignalingError::Crash("Server session key not set".into()))?
                 );
+                debug!("<-- Enqueuing drop-responder to {}", self.server().identity());
                 actions.push(HandleAction::Reply(bbox));
             }
 
@@ -1013,6 +1014,7 @@ impl InitiatorSignaling {
             responder.session_key.as_ref()
                 .ok_or(SignalingError::Crash("Responder session key not set".into()))?,
         );
+        debug!("<-- Enqueuing auth to {}", &responder.identity());
         actions.push(HandleAction::Reply(bbox));
 
         // Store chosen task
