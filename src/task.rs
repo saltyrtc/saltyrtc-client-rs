@@ -8,6 +8,7 @@
 use std::borrow::{Cow};
 use std::collections::{HashMap};
 use std::fmt::Debug;
+use std::iter::IntoIterator;
 
 use failure::Error;
 use rmpv::Value;
@@ -100,6 +101,16 @@ impl Tasks {
             }
         }
         None
+    }
+}
+
+impl IntoIterator for Tasks {
+    type Item = Box<Task>;
+    type IntoIter = ::std::vec::IntoIter<Box<Task>>;
+
+    /// Return an iterator over the tasks.
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
