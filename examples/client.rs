@@ -1,5 +1,6 @@
 //! Connect to a server as initiator and print the connection info.
 
+extern crate chrono;
 extern crate clap;
 extern crate data_encoding;
 extern crate dotenv;
@@ -13,14 +14,17 @@ extern crate tokio_core;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::env;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process;
 use std::rc::Rc;
 
+use chrono::Local;
 use clap::{Arg, App, SubCommand};
 use data_encoding::{HEXLOWER};
+use env_logger::{Builder};
 use failure::{Error};
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::{Core};
@@ -34,7 +38,17 @@ pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 fn main() {
     dotenv::dotenv().ok();
-    env_logger::init().expect("Could not initialize env_logger");
+    Builder::new()
+        .format(|buf, record| {
+            writeln!(buf, "{} [{:<5}] {} ({}:{})",
+                     Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
+                     record.level(),
+                     record.args(),
+                     record.file().unwrap_or("?"),
+                     record.line().map(|num| num.to_string()).unwrap_or("?".to_string()))
+        })
+        .parse(&env::var("RUST_LOG").unwrap_or_default())
+        .init();
 
     const ARG_PATH: &'static str = "path";
     const ARG_AUTHTOKEN: &'static str = "authtoken";
