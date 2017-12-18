@@ -926,7 +926,7 @@ impl InitiatorSignaling {
         };
         for task in proposed_tasks.iter() {
             if !msg.data.contains_key(task) {
-                return Err(SignalingError::InvalidMessage("The task \"b\" in the auth message does not have a corresponding data entry".into()));
+                return Err(SignalingError::InvalidMessage(format!("The task \"{}\" in the auth message does not have a corresponding data entry", task)));
             }
         }
 
