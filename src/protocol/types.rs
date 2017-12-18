@@ -239,7 +239,7 @@ mod tests {
 
     /// Converting an invalid `Responder` into an `Address` should panic.
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "assertion failed: address > 1")]
     fn client_identity_invalid_responder_into_address() {
         let responder_invalid = ClientIdentity::Responder(0x01);
         let _: Address = responder_invalid.into();
