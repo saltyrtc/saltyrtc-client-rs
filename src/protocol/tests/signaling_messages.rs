@@ -341,7 +341,7 @@ mod server_auth {
     }
 
     #[test]
-    fn respond_initiator_with_token() { // TODO: Add similar test without token
+    fn respond_initiator_with_token() {
         let ctx = TestContext::responder(
             ClientIdentity::Responder(7),
             SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
@@ -352,7 +352,7 @@ mod server_auth {
     }
 
     #[test]
-    fn respond_initiator_without_token() { // TODO: Add similar test without token
+    fn respond_initiator_without_token() {
         let ctx = TestContext::responder(
             ClientIdentity::Responder(7),
             SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
@@ -447,7 +447,7 @@ mod token {
     /// a close code of 3005 (Initiator Could Not Decrypt) in the reason
     /// field.
     fn token_initiator_cannot_decrypt() {
-        // TODO!
+        // TODO (#19)!
     }
 
     /// If a token message is valid, set the responder permanent key.

@@ -3,7 +3,6 @@
 /// When establishing a connection with a SaltyRTC peer, the connection buildup
 /// can be in one of three stages: Server handshake, peer handshake or task.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[allow(dead_code)] // TODO remove
 pub enum SignalingState {
     /// The server handshake is in progress.
     ServerHandshake,
@@ -39,7 +38,6 @@ pub enum ServerHandshakeState {
 
 /// The states when doing a handshake with the initiator.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-#[allow(dead_code)] // TODO remove
 pub enum InitiatorHandshakeState {
     /// Initial state.
     New,
@@ -56,7 +54,6 @@ pub enum InitiatorHandshakeState {
 
 /// The states when doing a handshake with the responder.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-#[allow(dead_code)] // TODO remove
 pub enum ResponderHandshakeState {
     /// Initial state.
     New,

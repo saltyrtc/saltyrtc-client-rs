@@ -235,7 +235,7 @@ pub fn connect(
                             None
                         },
                         m => {
-                            // TODO: Handle ping messages
+                            // TODO (#4): Handle ping messages
                             warn!("Skipping non-binary message: {:?}", m);
                             None
                         },
@@ -287,11 +287,11 @@ pub fn connect(
                                         return boxed!(future::err(SaltyError::Protocol(msg)));
                                     },
                                     SignalingError::NoSharedTask => {
-                                        return boxed!(future::err(SaltyError::Crash("No shared task found (TODO)".into())));
+                                        return boxed!(future::err(SaltyError::Crash("No shared task found (TODO #5)".into())));
                                     }
                                     other => {
                                         return boxed!(future::err(SaltyError::Crash(
-                                            format!("Signaling error (TODO): {}", other)
+                                            format!("Signaling error (TODO #5): {}", other)
                                         )));
                                     },
                                 },

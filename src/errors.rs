@@ -39,8 +39,6 @@ pub type SaltyResult<T> = ::std::result::Result<T, SaltyError>;
 
 /// Internal errors that occur during signaling and that will probably result
 /// in the connection being closed.
-///
-/// TODO: Should the messages be represented as context instead?
 #[derive(Fail, Debug, PartialEq)]
 pub enum SignalingError {
     /// A problem with decoding data.

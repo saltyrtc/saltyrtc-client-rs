@@ -289,7 +289,7 @@ impl Token {
 /// The key message.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct Key {
-    // TODO: Do we want to differentiate between permanent key and session key
+    // TODO (#9): Do we want to differentiate between permanent key and session key
     // in the type system?
     pub(crate) key: PublicKey,
 }
@@ -405,7 +405,7 @@ impl ResponderAuthBuilder {
         if self.auth.task.is_some() {
             panic!("task may not be set");
         }
-        // TODO: Check for duplicate tasks!
+        // TODO (#10): Check for duplicate tasks!
         match self.auth.tasks {
             Some(ref tasks) if tasks.len() == 0 => Err(
                 SignalingError::InvalidMessage("An `Auth` message must contain at least one task".to_string())

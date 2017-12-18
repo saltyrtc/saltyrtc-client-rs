@@ -63,7 +63,7 @@ impl ServerContext {
     /// Update the server handshake state.
     pub fn set_handshake_state(&mut self, new_state: ServerHandshakeState) {
         trace!("Server handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
-        // TODO: Validate state transitions
+        // TODO (#22): Validate state transitions
         self.handshake_state = new_state;
     }
 }
@@ -82,7 +82,7 @@ impl PeerContext for ServerContext {
     }
 
     fn keystore(&self) -> &KeyStore {
-        unimplemented!() // TODO: Move session keystore into server context
+        unimplemented!() // TODO (#23): Move session keystore into server context
     }
 
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
@@ -130,7 +130,7 @@ impl InitiatorContext {
     /// Update the initiator handshake state.
     pub fn set_handshake_state(&mut self, new_state: InitiatorHandshakeState) {
         trace!("Initiator handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
-        // TODO: Validate state transitions
+        // TODO (#22): Validate state transitions
         self.handshake_state = new_state;
     }
 }
@@ -205,7 +205,7 @@ impl ResponderContext {
     /// Update the responder handshake state.
     pub fn set_handshake_state(&mut self, new_state: ResponderHandshakeState) {
         trace!("Responder handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
-        // TODO: Validate state transitions
+        // TODO (#22): Validate state transitions
         self.handshake_state = new_state;
     }
 }

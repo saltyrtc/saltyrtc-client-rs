@@ -408,8 +408,8 @@ pub(crate) trait Signaling {
         let client_auth = ClientAuth {
             your_cookie: self.server().cookie_pair().theirs.clone().unwrap(),
             subprotocols: vec![::SUBPROTOCOL.into()],
-            ping_interval: 0, // TODO
-            your_key: None, // TODO
+            ping_interval: 0, // TODO (#11)
+            your_key: None, // TODO (#12)
         }.into_message();
         let client_auth_nonce = Nonce::new(
             self.server().cookie_pair().ours.clone(),
@@ -426,7 +426,7 @@ pub(crate) trait Signaling {
             None => return Err(SignalingError::Crash("Missing server permanent key".into())),
         };
 
-        // TODO: Can we prevent confusing an incoming and an outgoing nonce?
+        // TODO (#13): Can we prevent confusing an incoming and an outgoing nonce?
         self.server_mut().set_handshake_state(ServerHandshakeState::ClientInfoSent);
         Ok(actions)
     }
@@ -462,7 +462,7 @@ pub(crate) trait Signaling {
         // the signed_keys is present but the client does not have
         // knowledge of the server's permanent key, it SHALL log a
         // warning.
-        // TODO: Implement
+        // TODO (#12): Implement
 
         // Moreover, the client MUST do some checks depending on its role
         let actions = self.handle_server_auth_impl(&msg)?;
@@ -680,7 +680,7 @@ impl Signaling for InitiatorSignaling {
                 OpenBox::<Message>::decrypt(bbox, &responder.keystore, responder_session_key(&responder)?)
             },
             other => {
-                // TODO: Maybe remove these states?
+                // TODO (#14): Maybe remove these states?
                 Err(SignalingError::Crash(format!("Invalid responder handshake state: {:?}", other)))
             },
         }
@@ -763,7 +763,7 @@ impl Signaling for InitiatorSignaling {
         // Additionally, the initiator MUST keep its path clean
         // by following the procedure described in the Path
         // Cleaning section.
-        // TODO: Implement
+        // TODO (#15): Implement
 
         Ok(vec![])
     }
@@ -792,7 +792,7 @@ impl Signaling for InitiatorSignaling {
 
         // Furthermore, the initiator MUST keep its path clean by following the
         // procedure described in the Path Cleaning section.
-        // TODO: Implement
+        // TODO (#15): Implement
 
         Ok(vec![])
     }
@@ -956,7 +956,7 @@ impl InitiatorSignaling {
         let mut chosen_task: Box<Task> = our_tasks
             .choose_shared_task(&proposed_tasks)
             .ok_or_else(|| {
-                // TODO
+                // TODO (#17)
                 SignalingError::NoSharedTask
             })?;
 
@@ -1158,7 +1158,7 @@ impl Signaling for ResponderSignaling {
                 OpenBox::<Message>::decrypt(bbox, &self.initiator.keystore, initiator_session_key)
             },
             other => {
-                // TODO: Maybe remove these states?
+                // TODO (#14): Maybe remove these states?
                 Err(SignalingError::Crash(format!("Invalid initiator handshake state: {:?}", other)))
             },
         }
@@ -1257,7 +1257,7 @@ impl ResponderSignaling {
         // initiator created and issued to the responder.
         let bbox = obox.encrypt_token(&token);
 
-        // TODO: In case the initiator has successfully decrypted the 'token'
+        // TODO (#18): In case the initiator has successfully decrypted the 'token'
         // message, the secret key MUST be invalidated immediately and SHALL
         // NOT be used for any other message.
 

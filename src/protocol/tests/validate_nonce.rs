@@ -64,16 +64,6 @@ fn wrong_source_initiator() {
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
     // Send only client-auth
     assert_eq!(actions.len(), 1);
-
-    // Handling messages from responder is valid as soon as the identity
-    // has been assigned.
-    // TODO once state transition has been implemented
-//        s.server_mut().handshake_state = ServerHandshakeState::Done;
-//        s.identity = ClientIdentity::Initiator;
-//        assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
-//        let actions = s.handle_message(make_msg(0xff, 0x01)).unwrap();
-//        assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
-//        assert_eq!(actions, vec![]);
 }
 
 /// A responder SHALL ONLY process messages from the server (0x00). As soon
@@ -114,16 +104,6 @@ fn wrong_source_responder() {
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
     // Send client-hello and client-auth
     assert_eq!(actions.len(), 2);
-
-    // Handling messages from initiator is valid as soon as the identity
-    // has been assigned.
-    // TODO once state transition has been implemented
-//        s.server_mut().handshake_state = ServerHandshakeState::Done;
-//        s.identity = ClientIdentity::Initiator;
-//        assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
-//        let actions = s.handle_message(make_msg(0x01, 0x03)).unwrap();
-//        assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
-//        assert_eq!(actions, vec![]);
 }
 
 /// In case this is the first message received from the sender, the peer
@@ -152,7 +132,7 @@ fn first_message_bad_overflow_number() {
 /// peer has been increased by 1 and has not reset to 0.
 #[test]
 fn sequence_number_incremented() {
-    // TODO: Write once ServerAuth message has been implemented
+    // TODO (#20): Write once ServerAuth message has been implemented
 }
 
 /// In case this is the first message received from the sender, the
@@ -181,5 +161,5 @@ fn cookie_differs_from_own() {
 /// The peer MUST check that the cookie of the sender does not change.
 #[test]
 fn cookie_did_not_change() {
-    // TODO: Write once ServerAuth message has been implemented
+    // TODO (#21): Write once ServerAuth message has been implemented
 }
