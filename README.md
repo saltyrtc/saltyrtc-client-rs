@@ -1,6 +1,7 @@
 # saltyrtc-client-rs
 
 [![CircleCI][circle-ci-badge]][circle-ci]
+[![Join our chat on Gitter](https://badges.gitter.im/saltyrtc/Lobby.svg)](https://gitter.im/saltyrtc/Lobby)
 
 **Note:** This library is in early development stage. During this phase,
 force-pushes may happen to the `develop` branch. Once the codebase stabilizes a
