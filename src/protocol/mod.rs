@@ -1020,8 +1020,10 @@ impl InitiatorSignaling {
         // Store chosen task
         self.common_mut().task = Some(chosen_task);
 
-        // State transition
+        // State transitions
         responder.set_handshake_state(ResponderHandshakeState::AuthSent);
+        self.common.set_signaling_state(SignalingState::Task)?;
+        info!("Peer handshake completed");
 
         self.responder = Some(responder);
         Ok(actions)
@@ -1160,6 +1162,7 @@ impl Signaling for ResponderSignaling {
         match (old_state, obox.message) {
             // Valid state transitions
             (InitiatorHandshakeState::KeySent, Message::Key(msg)) => self.handle_key(msg, &obox.nonce),
+            (InitiatorHandshakeState::AuthSent, Message::Auth(msg)) => self.handle_auth(msg, obox.nonce.source()),
 
             // Any undefined state transition results in an error
             (s, message) => Err(SignalingError::InvalidStateTransition(
@@ -1320,6 +1323,70 @@ impl ResponderSignaling {
 
         debug!("<-- Enqueuing auth to {}", self.initiator.identity());
         Ok(vec![HandleAction::Reply(bbox)])
+    }
+
+    /// Handle an incoming [`Auth`](messages/struct.Auth.html) message.
+    fn handle_auth(&mut self, msg: Auth, source: Address) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received auth from {}", Identity::from(source));
+
+        // The cookie provided in the `your_cookie` field SHALL contain the cookie
+        // we have used in our previous messages to the responder.
+        // TODO: Extract into `validate_repeated_cookie` method
+        if msg.your_cookie != self.initiator.cookie_pair().ours {
+            debug!("Our cookie: {:?}", &self.initiator.cookie_pair().ours);
+            debug!("Their cookie: {:?}", msg.your_cookie);
+            return Err(SignalingError::Protocol("Peer repeated cookie in auth message does not match our cookie".into()));
+        }
+
+        // A responder SHALL validate that the task field is present and contains one of the tasks it has previously offered to the initiator.
+        if msg.tasks.is_some() {
+            return Err(SignalingError::InvalidMessage("We're a responder, but the `tasks` field in the auth message is set".into()));
+        }
+        let mut chosen_task: Box<Task> = match msg.task {
+            Some(task) => {
+                let our_tasks = mem::replace(&mut self.common_mut().tasks, None)
+                    .ok_or(SignalingError::Crash("No tasks defined".into()))?;
+                our_tasks
+                    .into_iter()
+                    .filter(|t: &Box<Task>| t.name() == task)
+                    .next()
+                    .ok_or(SignalingError::Protocol("The `task` field in the auth message contains an unknown task".into()))?
+            },
+            None => return Err(SignalingError::InvalidMessage("The `task` field in the auth message is not set".into())),
+        };
+
+        // Make sure that there is only one data entry.
+        if msg.data.is_empty() {
+            return Err(SignalingError::Protocol("The `data` field in the auth message is empty".into()));
+        }
+        if msg.data.len() > 1 {
+            return Err(SignalingError::Protocol("The `data` field in the auth message contains more than one entry".into()));
+        }
+
+        // Both initiator an responder SHALL verify that the data field contains a Map
+        // and SHALL look up the chosen task's data value.
+        let task_data = msg.data.get(&*chosen_task.name())
+            .ok_or(SignalingError::Protocol("The task in the auth message does not have a corresponding data entry".into()))?;
+
+        // The value MUST be handed over to the corresponding task
+        // after processing this message is complete.
+        chosen_task.init(task_data)
+            .map_err(|e| SignalingError::TaskInitialization(format!("{}", e)))?;
+
+        // After the above procedure has been followed, the other client has successfully
+        // authenticated it towards the client. The other client's public key MAY be stored
+        // as trusted for that path if the application desires it.
+        info!("Initiator authenticated");
+
+        // Store chosen task
+        self.common_mut().task = Some(chosen_task);
+
+        // State transitions
+        self.initiator.set_handshake_state(InitiatorHandshakeState::AuthReceived);
+        self.common.set_signaling_state(SignalingState::Task)?;
+        info!("Peer handshake completed");
+
+        Ok(vec![])
     }
 }
 

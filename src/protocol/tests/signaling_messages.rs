@@ -619,6 +619,25 @@ mod auth {
         (ctx, responder)
     }
 
+    /// Prepare context and initiator for auth message validation tests.
+    fn _auth_msg_prepare_responder() -> TestContext<ResponderSignaling> {
+        let mut ctx = TestContext::responder(
+            ClientIdentity::Responder(3),
+            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            Some(PublicKey::random()),
+            Some(AuthToken::new()),
+        );
+
+        // Create new initiator context
+        ctx.signaling.initiator.set_handshake_state(InitiatorHandshakeState::AuthSent);
+        ctx.signaling.initiator.session_key = Some(PublicKey::random());
+
+        // Set a server session key
+        ctx.signaling.server_mut().session_key = Some(PublicKey::random());
+
+        ctx
+    }
+
     /// Handle a message for auth message validation tests.
     fn _auth_msg_handle_initiator(msg: Message,
                                   ctx: &mut TestContext<InitiatorSignaling>,
@@ -630,6 +649,20 @@ mod auth {
 
         // Store responder in signaling instance
         ctx.signaling.responders.insert(responder.address, responder);
+
+        // Handle message
+        ctx.signaling.handle_message(bbox)
+    }
+
+    /// Handle a message for auth message validation tests.
+    fn _auth_msg_handle_responder(msg: Message,
+                                  ctx: &mut TestContext<ResponderSignaling>)
+                                  -> SignalingResult<Vec<HandleAction>> {
+        // Encrypt message
+        let bbox = TestMsgBuilder::new(msg).from(1).to(3)
+            .build(Cookie::random(),
+                   &ctx.signaling.initiator.keystore,
+                   ctx.signaling.initiator.session_key.as_ref().unwrap());
 
         // Handle message
         ctx.signaling.handle_message(bbox)
@@ -647,6 +680,21 @@ mod auth {
             .into_message();
 
         let err = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap_err();
+        assert_eq!(err, SignalingError::Protocol("Peer repeated cookie in auth message does not match our cookie".into()));
+    }
+
+    /// The cookie provided in the your_cookie field SHALL contain the cookie it has used in its previous messages to the other client.
+    #[test]
+    fn responder_validate_repeated_cookie() {
+        let mut ctx = _auth_msg_prepare_responder();
+
+        let msg: Message = ResponderAuthBuilder::new(Cookie::random()) // Note: Not our cookie
+            .add_task("dummy", None)
+            .build()
+            .unwrap()
+            .into_message();
+
+        let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
         assert_eq!(err, SignalingError::Protocol("Peer repeated cookie in auth message does not match our cookie".into()));
     }
 
@@ -698,6 +746,55 @@ mod auth {
         assert_eq!(err, SignalingError::InvalidMessage("The `tasks` field in the auth message is empty".into()));
     }
 
+
+    /// A responder SHALL validate that the tasks field contains an array with at least one element.
+    #[test]
+    fn responder_tasks_field() {
+        let mut ctx = _auth_msg_prepare_responder();
+
+        let msg: Message = Auth {
+            your_cookie: ctx.signaling.initiator.cookie_pair.ours.clone(),
+            task: None,
+            tasks: Some(vec!["asdf".into()]),
+            data: HashMap::new(),
+        }.into_message();
+
+        let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
+        assert_eq!(err, SignalingError::InvalidMessage("We're a responder, but the `tasks` field in the auth message is set".into()));
+    }
+
+    /// Make sure that the `task` field is a known task.
+    #[test]
+    fn responder_task_field_missing() {
+        let mut ctx = _auth_msg_prepare_responder();
+
+        let msg: Message = Auth {
+            your_cookie: ctx.signaling.initiator.cookie_pair.ours.clone(),
+            task: None,
+            tasks: None,
+            data: HashMap::new(),
+        }.into_message();
+
+        let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
+        assert_eq!(err, SignalingError::InvalidMessage("The `task` field in the auth message is not set".into()));
+    }
+
+    /// Make sure that the `task` field is a known task.
+    #[test]
+    fn responder_task_field_unknown() {
+        let mut ctx = _auth_msg_prepare_responder();
+
+        let msg: Message = Auth {
+            your_cookie: ctx.signaling.initiator.cookie_pair.ours.clone(),
+            task: Some("unknown".into()),
+            tasks: None,
+            data: HashMap::new(),
+        }.into_message();
+
+        let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
+        assert_eq!(err, SignalingError::Protocol("The `task` field in the auth message contains an unknown task".into()));
+    }
+
     /// Validate that the number of data items matches the number of tasks
     #[test]
     fn initiator_data_field_length_mismatch() {
@@ -715,6 +812,36 @@ mod auth {
             "The `tasks` and `data` fields in the auth message have a different number of entries".into()));
     }
 
+    /// Validate that there is exactly one data entry
+    #[test]
+    fn responder_data_field_empty() {
+        let mut ctx = _auth_msg_prepare_responder();
+
+        let msg: Message = Auth {
+            your_cookie: ctx.signaling.initiator.cookie_pair.ours.clone(),
+            task: Some("dummy.42".into()),
+            tasks: None,
+            data: HashMap::new(),
+        }.into_message();
+        let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
+        assert_eq!(err, SignalingError::Protocol("The `data` field in the auth message is empty".into()));
+    }
+
+    /// Validate that there is exactly one data entry
+    #[test]
+    fn responder_data_field_multiple() {
+        let mut ctx = _auth_msg_prepare_responder();
+
+        let msg: Message = Auth {
+            your_cookie: ctx.signaling.initiator.cookie_pair.ours.clone(),
+            task: Some("dummy.42".into()),
+            tasks: None,
+            data: { let mut m = HashMap::new(); m.insert("a".into(), None); m.insert("b".into(), None); m },
+        }.into_message();
+        let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
+        assert_eq!(err, SignalingError::Protocol("The `data` field in the auth message contains more than one entry".into()));
+    }
+
     /// Validate that all tasks have corresponding data entries.
     #[test]
     fn initiator_data_field_key_mismatch() {
@@ -730,6 +857,21 @@ mod auth {
         let err = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap_err();
         assert_eq!(err, SignalingError::InvalidMessage(
             "The task \"b\" in the auth message does not have a corresponding data entry".into()));
+    }
+
+    /// Validate that the task has a corresponding data entry.
+    #[test]
+    fn responder_data_key_not_found() {
+        let mut ctx = _auth_msg_prepare_responder();
+
+        let msg: Message = Auth {
+            your_cookie: ctx.signaling.initiator.cookie_pair.ours.clone(),
+            task: Some(DummyTask::name_for(42)),
+            tasks: None,
+            data: { let mut m = HashMap::new(); m.insert("a".into(), None); m },
+        }.into_message();
+        let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
+        assert_eq!(err, SignalingError::Protocol("The task in the auth message does not have a corresponding data entry".into()));
     }
 
     #[test]
@@ -754,6 +896,9 @@ mod auth {
         // List of valid tasks contains 1 entry
         assert_eq!(ctx.signaling.common().tasks.as_ref().unwrap().len(), 1);
 
+        // Signaling state is peer handshake
+        assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::PeerHandshake);
+
         let actions = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap();
 
         // Task was set!
@@ -766,7 +911,60 @@ mod auth {
         // Responders are being dropped
         assert_eq!(ctx.signaling.responders.len(), 0);
 
+        // Peer was set
+        assert!(ctx.signaling.get_peer().is_some());
+        assert_eq!(ctx.signaling.get_peer().as_ref().unwrap().identity(), ctx.signaling.responder.as_ref().unwrap().identity());
+
         // Number of reply messages
         assert_eq!(actions.len(), 3); // auth + drop-responder(5) + drop-responder(7)
+
+        // State transitions
+        assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::Task);
+        assert_eq!(ctx.signaling.responder.unwrap().handshake_state(), ResponderHandshakeState::AuthSent);
+    }
+
+    #[test]
+    fn responder_choose_task() {
+        let mut ctx = _auth_msg_prepare_responder();
+
+        let msg: Message = Auth {
+            your_cookie: ctx.signaling.initiator.cookie_pair.ours.clone(),
+            task: Some(DummyTask::name_for(42)),
+            tasks: None,
+            data: {
+                let mut m = HashMap::new();
+                m.insert(DummyTask::name_for(42), None);
+                m
+            },
+        }.into_message();
+
+        // No task set so far
+        assert!(ctx.signaling.common().task.is_none());
+
+        // List of valid tasks contains 2 entries
+        assert_eq!(ctx.signaling.common().tasks.as_ref().unwrap().len(), 2);
+
+        // Signaling state is peer handshake
+        assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::PeerHandshake);
+
+        let actions = _auth_msg_handle_responder(msg, &mut ctx).unwrap();
+
+        // Task was set!
+        assert!(ctx.signaling.common().task.is_some());
+        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().name(), DummyTask::name_for(42));
+
+        // Tasks list was removed
+        assert!(ctx.signaling.common().tasks.is_none());
+
+        // Peer was set
+        assert!(ctx.signaling.get_peer().is_some());
+        assert_eq!(ctx.signaling.get_peer().as_ref().unwrap().identity(), ctx.signaling.initiator.identity());
+
+        // Number of reply messages
+        assert_eq!(actions.len(), 0);
+
+        // State transitions
+        assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::Task);
+        assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::AuthReceived);
     }
 }
