@@ -87,11 +87,25 @@ pub(crate) trait Signaling {
     }
 
     /// Validate the nonce.
-    fn validate_nonce<'a>(&'a mut self, nonce: &Nonce) -> Result<(), ValidationError> {
+    fn validate_nonce(&mut self, nonce: &Nonce) -> Result<(), ValidationError> {
         self.validate_nonce_destination(nonce)?;
         self.validate_nonce_source(nonce)?;
         self.validate_nonce_csn(nonce)?;
         self.validate_nonce_cookie(nonce)?;
+        Ok(())
+    }
+
+    /// Validate the repeated cookie from the `Auth` message.
+    fn validate_repeated_cookie(&self, repeated_cookie: &Cookie,
+                                our_cookie: &Cookie, identity: Identity)
+                                -> Result<(), SignalingError> {
+        if repeated_cookie != our_cookie {
+            debug!("Our cookie: {:?}", our_cookie);
+            debug!("Their cookie: {:?}", repeated_cookie);
+            return Err(SignalingError::Protocol(
+                format!("Repeated cookie in auth message from {} does not match our cookie", identity)
+            ))
+        }
         Ok(())
     }
 
@@ -433,13 +447,11 @@ pub(crate) trait Signaling {
         // It MUST check that the cookie provided in the your_cookie
         // field contains the cookie the client has used in its
         // previous and messages to the server.
-        if msg.your_cookie != self.server().cookie_pair().ours {
-            trace!("Our cookie as sent by server: {:?}", msg.your_cookie);
-            trace!("Our actual cookie: {:?}", self.server().cookie_pair().ours);
-            return Err(SignalingError::InvalidMessage(
-                "Cookie sent in server-auth message does not match our cookie".into()
-            ));
-        }
+        self.validate_repeated_cookie(
+            &msg.your_cookie,
+            &self.server().cookie_pair().ours,
+            self.server().identity(),
+        )?;
 
         // If the client has knowledge of the server's public permanent
         // key, it SHALL decrypt the signed_keys field by using the
@@ -901,11 +913,11 @@ impl InitiatorSignaling {
 
         // The cookie provided in the `your_cookie` field SHALL contain the cookie
         // we have used in our previous messages to the responder.
-        if msg.your_cookie != responder.cookie_pair().ours {
-            debug!("Our cookie: {:?}", &responder.cookie_pair().ours);
-            debug!("Their cookie: {:?}", msg.your_cookie);
-            return Err(SignalingError::Protocol("Peer repeated cookie in auth message does not match our cookie".into()));
-        }
+        self.validate_repeated_cookie(
+            &msg.your_cookie,
+            &responder.cookie_pair().ours,
+            responder.identity(),
+        )?;
 
         // An initiator SHALL validate that the tasks field contains an array with at least one element.
         if msg.task.is_some() {
@@ -1331,12 +1343,11 @@ impl ResponderSignaling {
 
         // The cookie provided in the `your_cookie` field SHALL contain the cookie
         // we have used in our previous messages to the responder.
-        // TODO: Extract into `validate_repeated_cookie` method
-        if msg.your_cookie != self.initiator.cookie_pair().ours {
-            debug!("Our cookie: {:?}", &self.initiator.cookie_pair().ours);
-            debug!("Their cookie: {:?}", msg.your_cookie);
-            return Err(SignalingError::Protocol("Peer repeated cookie in auth message does not match our cookie".into()));
-        }
+        self.validate_repeated_cookie(
+            &msg.your_cookie,
+            &self.initiator.cookie_pair().ours,
+            self.initiator.identity(),
+        )?;
 
         // A responder SHALL validate that the task field is present and contains one of the tasks it has previously offered to the initiator.
         if msg.tasks.is_some() {

@@ -181,8 +181,8 @@ mod server_auth {
 
         // Handle message
         assert_client_info_sent_fail(&mut ctx, bbox,
-                                     SignalingError::InvalidMessage(
-                                         "Cookie sent in server-auth message does not match our cookie".into()));
+                                     SignalingError::Protocol(
+                                         "Repeated cookie in auth message from server does not match our cookie".into()));
     }
 
     #[test]
@@ -680,7 +680,7 @@ mod auth {
             .into_message();
 
         let err = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap_err();
-        assert_eq!(err, SignalingError::Protocol("Peer repeated cookie in auth message does not match our cookie".into()));
+        assert_eq!(err, SignalingError::Protocol("Repeated cookie in auth message from responder 0x03 does not match our cookie".into()));
     }
 
     /// The cookie provided in the your_cookie field SHALL contain the cookie it has used in its previous messages to the other client.
@@ -695,7 +695,7 @@ mod auth {
             .into_message();
 
         let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
-        assert_eq!(err, SignalingError::Protocol("Peer repeated cookie in auth message does not match our cookie".into()));
+        assert_eq!(err, SignalingError::Protocol("Repeated cookie in auth message from initiator does not match our cookie".into()));
     }
 
     /// An initiator SHALL validate that the tasks field contains an array with at least one element.
