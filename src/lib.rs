@@ -67,6 +67,7 @@ pub mod crypto {
 }
 
 // Internal imports
+use boxes::ByteBox;
 use crypto_types::{KeyPair, PublicKey, AuthToken};
 use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
 use helpers::libsodium_init;
@@ -187,7 +188,7 @@ impl SaltyClient {
     }
 
     /// Handle an incoming message.
-    fn handle_message(&mut self, bbox: boxes::ByteBox) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
         self.signaling.handle_message(bbox)
     }
 }
@@ -269,6 +270,18 @@ pub fn connect(
         Err(e) => return Err(SaltyError::Decode(format!("Could not parse URL: {}", e))),
     };
 
+    /// Wrapper type for all websocket message types that we want to handle.
+    enum WsMessage {
+        Bytes(Vec<u8>),
+        Ping(Vec<u8>),
+    }
+
+    /// Wrapper type for decoded form of websocket message types that we want to handle.
+    enum WsMessageDecoded {
+        ByteBox(ByteBox),
+        Ping(Vec<u8>),
+    }
+
     // Initialize WebSocket client
     let client = ClientBuilder::from_url(&ws_url)
         .add_protocol(SUBPROTOCOL)
@@ -303,13 +316,17 @@ pub fn connect(
             info!("Connected to server as {}", role);
 
             // We're connected to the SaltyRTC server.
-            // Filter the incoming message stream. We're only interested in the binary ones.
+            // Filter the incoming message stream. We're only interested in some of them.
             let messages = client
                 .filter_map(|msg| {
                     match msg {
                         OwnedMessage::Binary(bytes) => {
                             debug!("Incoming binary message");
-                            Some(bytes)
+                            Some(WsMessage::Bytes(bytes))
+                        },
+                        OwnedMessage::Ping(bytes) => {
+                            debug!("Incoming ping message");
+                            Some(WsMessage::Ping(bytes))
                         },
                         OwnedMessage::Close(close_data) => {
                             match close_data{
@@ -331,7 +348,6 @@ pub fn connect(
                             None
                         },
                         m => {
-                            // TODO (#4): Handle ping messages
                             warn!("Skipping non-binary message: {:?}", m);
                             None
                         },
@@ -350,21 +366,50 @@ pub fn connect(
                     .map_err(|(e, _)| SaltyError::Network(format!("Could not receive message from server: {}", e)))
 
                     // Get nonce and message payload from the incoming bytes
-                    .and_then(|(bytes_option, client)| {
-                        // Unwrap bytes
-                        let bytes = bytes_option.ok_or(SaltyError::Network("Server message stream ended".into()))?;
-                        debug!("Received {} bytes", bytes.len());
+                    .and_then(|(msg_option, client)| {
+                        // Handle message depending on type
+                        let msg = msg_option.ok_or(SaltyError::Network("Server message stream ended".into()))?;
+                        let decoded: WsMessageDecoded = match msg {
 
-                        // Parse into ByteBox
-                        let bbox = boxes::ByteBox::from_slice(&bytes)
-                            .map_err(|e| SaltyError::Protocol(e.to_string()))?;
-                        trace!("ByteBox: {:?}", bbox);
+                            // Bytes can be decoded into a ByteBox
+                            WsMessage::Bytes(bytes) => {
+                                debug!("Received {} bytes", bytes.len());
 
-                        Ok((bbox, client))
+                                // Parse into ByteBox
+                                let bbox = ByteBox::from_slice(&bytes)
+                                    .map_err(|e| SaltyError::Protocol(e.to_string()))?;
+                                trace!("ByteBox: {:?}", bbox);
+
+                                WsMessageDecoded::ByteBox(bbox)
+                            },
+
+                            // Ping messages are kept as-is
+                            WsMessage::Ping(payload) => {
+                                WsMessageDecoded::Ping(payload)
+                            },
+
+                        };
+                        Ok((decoded, client))
                     })
 
                     // Process received message
-                    .and_then(move |(bbox, client)| {
+                    .and_then(move |(decoded, client)| {
+
+                        // Unwrap byte box, handle ping messages
+                        let bbox = match decoded {
+                            WsMessageDecoded::ByteBox(bbox) => bbox,
+                            WsMessageDecoded::Ping(payload) => {
+                                let pong = OwnedMessage::Pong(payload);
+                                let outbox = stream::iter_ok::<_, WebSocketError>(vec![pong]);
+                                let future = send_all::new(client, outbox)
+                                    .map_err(move |e| SaltyError::Network(format!("Could not send pong message: {}", e)))
+                                    .map(|(client, _)| {
+                                        debug!("Sent pong message");
+                                        Loop::Continue(client)
+                                    });
+                                return boxed!(future);
+                            }
+                        };
 
                         // Handle message bytes
                         let handle_actions = match salty.deref().try_borrow_mut() {
