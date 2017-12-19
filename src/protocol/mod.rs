@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::mem;
 
 use boxes::{ByteBox, OpenBox};
-use crypto::{KeyStore, AuthToken, PublicKey};
+use crypto::{KeyPair, AuthToken, PublicKey};
 use errors::{SignalingError, SignalingResult};
 use rmpv::{Value};
 
@@ -327,7 +327,7 @@ pub(crate) trait Signaling {
             .ok_or(SignalingError::Crash("Peer session key not set".into()))?;
         OpenBox::<Value>::decrypt(
             bbox,
-            peer.keystore().ok_or(SignalingError::Crash("Peer session keystore not available".into()))?,
+            peer.keypair().ok_or(SignalingError::Crash("Peer session keypair not available".into()))?,
             session_key,
         )
     }
@@ -498,7 +498,7 @@ pub(crate) struct Common {
     signaling_state: SignalingState,
 
     /// Our permanent keypair.
-    pub(crate) permanent_keypair: KeyStore,
+    pub(crate) permanent_keypair: KeyPair,
 
     /// An optional auth token.
     pub(crate) auth_token: Option<AuthToken>,
@@ -681,7 +681,7 @@ impl Signaling for InitiatorSignaling {
             ResponderHandshakeState::KeySent => {
                 // Expect auth message, encrypted with our public session key
                 // and responder private session key
-                OpenBox::<Message>::decrypt(bbox, &responder.keystore, responder_session_key(&responder)?)
+                OpenBox::<Message>::decrypt(bbox, &responder.keypair, responder_session_key(&responder)?)
             },
             other => {
                 // TODO (#14): Maybe remove these states?
@@ -804,7 +804,7 @@ impl Signaling for InitiatorSignaling {
 }
 
 impl InitiatorSignaling {
-    pub(crate) fn new(permanent_keypair: KeyStore,
+    pub(crate) fn new(permanent_keypair: KeyPair,
                       tasks: Tasks) -> Self {
         InitiatorSignaling {
             common: Common {
@@ -881,7 +881,7 @@ impl InitiatorSignaling {
 
         // Reply with our own key msg
         let key: Message = Key {
-            key: responder.keystore.public_key().clone(),
+            key: responder.keypair.public_key().clone(),
         }.into_message();
         let key_nonce = Nonce::new(
             responder.cookie_pair().ours.clone(),
@@ -1026,7 +1026,7 @@ impl InitiatorSignaling {
         );
         let obox = OpenBox::<Message>::new(auth, auth_nonce);
         let bbox = obox.encrypt(
-            &responder.keystore,
+            &responder.keypair,
             responder.session_key.as_ref()
                 .ok_or(SignalingError::Crash("Responder session key not set".into()))?,
         );
@@ -1159,7 +1159,7 @@ impl Signaling for ResponderSignaling {
                 // key and initiator private session key
                 let initiator_session_key = self.initiator.session_key.as_ref()
                     .ok_or(SignalingError::Crash("Initiator session key not set".into()))?;
-                OpenBox::<Message>::decrypt(bbox, &self.initiator.keystore, initiator_session_key)
+                OpenBox::<Message>::decrypt(bbox, &self.initiator.keypair, initiator_session_key)
             },
             other => {
                 // TODO (#14): Maybe remove these states?
@@ -1223,7 +1223,7 @@ impl Signaling for ResponderSignaling {
 }
 
 impl ResponderSignaling {
-    pub(crate) fn new(permanent_keypair: KeyStore,
+    pub(crate) fn new(permanent_keypair: KeyPair,
                       initiator_pubkey: PublicKey,
                       auth_token: Option<AuthToken>,
                       tasks: Tasks) -> Self {
@@ -1273,7 +1273,7 @@ impl ResponderSignaling {
     fn send_key(&self) -> SignalingResult<HandleAction> {
         // It MUST set the public key (32 bytes) of that key pair in the key field.
         let msg: Message = Key {
-            key: self.initiator.keystore.public_key().to_owned(),
+            key: self.initiator.keypair.public_key().to_owned(),
         }.into_message();
         let nonce = Nonce::new(
             self.initiator.cookie_pair().ours.clone(),
@@ -1329,7 +1329,7 @@ impl ResponderSignaling {
         );
         let obox = OpenBox::<Message>::new(auth, auth_nonce);
         let bbox = obox.encrypt(
-            &self.initiator.keystore,
+            &self.initiator.keypair,
             self.initiator.session_key.as_ref()
                 .ok_or(SignalingError::Crash("Initiator session key not set".into()))?,
         );

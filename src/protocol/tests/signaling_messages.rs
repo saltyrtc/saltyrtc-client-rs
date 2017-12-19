@@ -6,10 +6,10 @@ use self::messages::*;
 use super::*;
 
 struct TestContext<S: Signaling> {
-    /// Our permanent keystore.
-    pub our_ks: KeyStore,
-    /// The server permanent keystore.
-    pub server_ks: KeyStore,
+    /// Our permanent keypair.
+    pub our_ks: KeyPair,
+    /// The server permanent keypair.
+    pub server_ks: KeyPair,
     /// Our cookie towards the server.
     pub our_cookie: Cookie,
     /// The server cookie.
@@ -24,11 +24,11 @@ impl TestContext<InitiatorSignaling> {
             signaling_state: SignalingState,
             server_handshake_state: ServerHandshakeState,
     ) -> TestContext<InitiatorSignaling> {
-        let our_ks = KeyStore::new();
-        let server_ks = KeyStore::new();
+        let our_ks = KeyPair::new();
+        let server_ks = KeyPair::new();
         let our_cookie = Cookie::random();
         let server_cookie = Cookie::random();
-        let ks = KeyStore::from_private_key(our_ks.private_key().clone());
+        let ks = KeyPair::from_private_key(our_ks.private_key().clone());
         let tasks = Tasks::new(Box::new(DummyTask::new(42)));
         let mut signaling = InitiatorSignaling::new(ks, tasks);
         signaling.common_mut().identity = identity;
@@ -56,8 +56,8 @@ impl TestContext<ResponderSignaling> {
             initiator_pubkey: Option<PublicKey>,
             auth_token: Option<AuthToken>,
     ) -> TestContext<ResponderSignaling> {
-        let our_ks = KeyStore::new();
-        let server_ks = KeyStore::new();
+        let our_ks = KeyPair::new();
+        let server_ks = KeyPair::new();
         let our_cookie = Cookie::random();
         let server_cookie = Cookie::random();
         let mut signaling = {
@@ -65,7 +65,7 @@ impl TestContext<ResponderSignaling> {
                 Some(pk) => pk,
                 None => PublicKey::from_slice(&[0u8; 32]).unwrap(),
             };
-            let ks = KeyStore::from_private_key(our_ks.private_key().clone());
+            let ks = KeyPair::from_private_key(our_ks.private_key().clone());
             let mut tasks = Tasks::new(Box::new(DummyTask::new(23)));
             tasks.add_task(Box::new(DummyTask::new(42)));
             ResponderSignaling::new(ks, pk, auth_token, tasks)
@@ -110,7 +110,7 @@ impl TestMsgBuilder {
         self
     }
 
-    pub fn build(self, cookie: Cookie, ks: &KeyStore, pubkey: &PublicKey) -> ByteBox {
+    pub fn build(self, cookie: Cookie, ks: &KeyPair, pubkey: &PublicKey) -> ByteBox {
         let nonce = Nonce::new(cookie,
                                self.src.expect("Source not set"),
                                self.dest.expect("Destination not set"),
@@ -645,7 +645,7 @@ mod auth {
                                   -> SignalingResult<Vec<HandleAction>> {
         // Encrypt message
         let bbox = TestMsgBuilder::new(msg).from(3).to(1)
-            .build(Cookie::random(), &responder.keystore, responder.session_key.as_ref().unwrap());
+            .build(Cookie::random(), &responder.keypair, responder.session_key.as_ref().unwrap());
 
         // Store responder in signaling instance
         ctx.signaling.responders.insert(responder.address, responder);
@@ -661,7 +661,7 @@ mod auth {
         // Encrypt message
         let bbox = TestMsgBuilder::new(msg).from(1).to(3)
             .build(Cookie::random(),
-                   &ctx.signaling.initiator.keystore,
+                   &ctx.signaling.initiator.keypair,
                    ctx.signaling.initiator.session_key.as_ref().unwrap());
 
         // Handle message

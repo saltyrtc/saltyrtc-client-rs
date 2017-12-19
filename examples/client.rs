@@ -30,7 +30,7 @@ use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::{Core};
 
 use saltyrtc_client::{SaltyClientBuilder, Role, Task};
-use saltyrtc_client::crypto::{KeyStore, AuthToken, public_key_from_hex_str};
+use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
 use saltyrtc_client::rmpv::{Value};
 
 
@@ -122,11 +122,11 @@ fn main() {
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e));
 
     // Create new public permanent keypair
-    let keystore = KeyStore::new();
+    let keypair = KeyPair::new();
 
     // Determine websocket path
     let path: String = match role {
-        Role::Initiator => keystore.public_key_hex(),
+        Role::Initiator => keypair.public_key_hex(),
         Role::Responder => args.value_of(ARG_PATH).expect("Path not supplied").to_lowercase(),
     };
 
@@ -134,7 +134,7 @@ fn main() {
     let (salty, auth_token_hex) = match role {
         Role::Initiator => {
             let task = ChatTask::new("initiat0r");
-            let salty = SaltyClientBuilder::new(keystore)
+            let salty = SaltyClientBuilder::new(keypair)
                 .add_task(Box::new(task))
                 .initiator()
                 .expect("Could not create SaltyClient instance");
@@ -146,7 +146,7 @@ fn main() {
             let auth_token_hex = args.value_of(ARG_AUTHTOKEN).expect("Auth token not supplied").to_string();
             let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
             let initiator_pubkey = public_key_from_hex_str(&path).unwrap();
-            let salty = SaltyClientBuilder::new(keystore)
+            let salty = SaltyClientBuilder::new(keypair)
                 .add_task(Box::new(task))
                 .responder(initiator_pubkey, Some(auth_token))
                 .expect("Could not create SaltyClient instance");

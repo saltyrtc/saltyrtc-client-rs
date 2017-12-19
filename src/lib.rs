@@ -60,12 +60,12 @@ pub use task::{Task};
 
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
-    pub use crypto_types::{KeyStore, PublicKey, PrivateKey, AuthToken};
+    pub use crypto_types::{KeyPair, PublicKey, PrivateKey, AuthToken};
     pub use crypto_types::{public_key_from_hex_str};
 }
 
 // Internal imports
-use crypto_types::{KeyStore, PublicKey, AuthToken};
+use crypto_types::{KeyPair, PublicKey, AuthToken};
 use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
 use helpers::libsodium_init;
 use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
@@ -92,13 +92,13 @@ macro_rules! boxed {
 
 /// The builder used to create a [`SaltyClient`](struct.SaltyClient.html) instance.
 pub struct SaltyClientBuilder {
-    permanent_key: KeyStore,
+    permanent_key: KeyPair,
     tasks: Vec<Box<Task>>,
 }
 
 impl SaltyClientBuilder {
     /// Instantiate a new builder.
-    pub fn new(permanent_key: KeyStore) -> Self {
+    pub fn new(permanent_key: KeyPair) -> Self {
         SaltyClientBuilder {
             permanent_key,
             tasks: vec![],

@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 
-use crypto::{PublicKey, KeyStore};
+use crypto::{PublicKey, KeyPair};
 
 use super::cookie::{CookiePair};
 use super::csn::{CombinedSequencePair};
@@ -20,8 +20,8 @@ pub(crate) trait PeerContext {
     /// Return the peer public session key.
     fn session_key(&self) -> Option<&PublicKey>;
 
-    /// Return our session keystore with this peer.
-    fn keystore(&self) -> Option<&KeyStore>;
+    /// Return our session keypair with this peer.
+    fn keypair(&self) -> Option<&KeyPair>;
 
     /// Return our CSN pair with this peer.
     /// The returned reference is a RefCell, providing interior mutability.
@@ -90,8 +90,8 @@ impl PeerContext for ServerContext {
         self.session_key.as_ref()
     }
 
-    fn keystore(&self) -> Option<&KeyStore> {
-        None // There is no session keystore between the client and the server
+    fn keypair(&self) -> Option<&KeyPair> {
+        None // There is no session keypair between the client and the server
     }
 
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
@@ -119,8 +119,8 @@ pub(crate) struct InitiatorContext {
     /// The public session key of the initiator.
     pub(crate) session_key: Option<PublicKey>,
 
-    /// Our session keystore for the initiator.
-    pub(crate) keystore: KeyStore,
+    /// Our session keypair for the initiator.
+    pub(crate) keypair: KeyPair,
 
     /// The combined sequence number.
     pub(crate) csn_pair: RefCell<CombinedSequencePair>,
@@ -135,7 +135,7 @@ impl InitiatorContext {
             handshake_state: InitiatorHandshakeState::New,
             permanent_key: permanent_key,
             session_key: None,
-            keystore: KeyStore::new(),
+            keypair: KeyPair::new(),
             csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
@@ -167,8 +167,8 @@ impl PeerContext for InitiatorContext {
         self.session_key.as_ref()
     }
 
-    fn keystore(&self) -> Option<&KeyStore> {
-        Some(&self.keystore)
+    fn keypair(&self) -> Option<&KeyPair> {
+        Some(&self.keypair)
     }
 
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
@@ -199,8 +199,8 @@ pub(crate) struct ResponderContext {
     /// Public session key of the responder
     pub(crate) session_key: Option<PublicKey>,
 
-    /// Our session keystore for this responder
-    pub(crate) keystore: KeyStore,
+    /// Our session keypair for this responder
+    pub(crate) keypair: KeyPair,
 
     /// Our combined sequence pair for this responder
     pub(crate) csn_pair: RefCell<CombinedSequencePair>,
@@ -216,7 +216,7 @@ impl ResponderContext {
             address: address,
             permanent_key: None,
             session_key: None,
-            keystore: KeyStore::new(),
+            keypair: KeyPair::new(),
             csn_pair: RefCell::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
@@ -248,8 +248,8 @@ impl PeerContext for ResponderContext {
         self.session_key.as_ref()
     }
 
-    fn keystore(&self) -> Option<&KeyStore> {
-        Some(&self.keystore)
+    fn keypair(&self) -> Option<&KeyPair> {
+        Some(&self.keypair)
     }
 
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {

@@ -37,16 +37,16 @@ pub fn public_key_from_hex_str(hex_str: &str) -> SaltyResult<PublicKey> {
 }
 
 
-/// Wrapper for holding a keypair and encrypting / decrypting messages.
+/// Wrapper for holding a public/private key pair and encrypting/decrypting messages.
 #[derive(Debug, PartialEq, Eq)]
-pub struct KeyStore {
+pub struct KeyPair {
     public_key: PublicKey,
     private_key: PrivateKey,
 }
 
-impl KeyStore {
+impl KeyPair {
 
-    /// Create a new key pair and wrap it in a key store.
+    /// Create a new key pair and wrap it in a `KeyPair`.
     ///
     /// ## Panics
     ///
@@ -61,7 +61,7 @@ impl KeyStore {
         let (pk, sk) = box_::gen_keypair();
         trace!("Public key: {:?}", pk);
 
-        KeyStore {
+        KeyPair {
             public_key: pk,
             private_key: sk,
         }
@@ -69,7 +69,7 @@ impl KeyStore {
 
     /// Create a new key pair from an existing private key.
     ///
-    /// The private key is consumed and transferred into the `KeyStore`.
+    /// The private key is consumed and transferred into the `KeyPair`.
     pub fn from_private_key(private_key: PrivateKey) -> Self {
         let public_key = unsafe {
             // Use crypto_scalarmult_base as described here:
@@ -78,7 +78,7 @@ impl KeyStore {
             crypto_scalarmult_base(buf.as_mut_ptr(), private_key.0.as_ptr());
             box_::PublicKey(buf)
         };
-        KeyStore {
+        KeyPair {
             public_key: public_key,
             private_key: private_key,
         }
@@ -86,9 +86,9 @@ impl KeyStore {
 
     /// Create a new key pair from an existing public and private key.
     ///
-    /// The two keys are consumed and transferred into the `KeyStore`.
+    /// The two keys are consumed and transferred into the `KeyPair`.
     pub fn from_keypair(public_key: PublicKey, private_key: PrivateKey) -> Self {
-        KeyStore {
+        KeyPair {
             public_key: public_key,
             private_key: private_key,
         }
@@ -313,8 +313,8 @@ mod tests {
     #[test]
     fn new() {
         for _ in 0..255 {
-            let ks1 = KeyStore::new();
-            let ks2 = KeyStore::new();
+            let ks1 = KeyPair::new();
+            let ks2 = KeyPair::new();
             assert_ne!(ks1.public_key(), ks2.public_key());
             assert_ne!(ks1.private_key(), ks2.private_key());
             assert_ne!(ks1, ks2);
@@ -324,8 +324,8 @@ mod tests {
     #[test]
     fn from_private_key() {
         for _ in 0..255 {
-            let ks1 = KeyStore::new();
-            let ks2 = KeyStore::from_private_key(ks1.private_key().clone());
+            let ks1 = KeyPair::new();
+            let ks2 = KeyPair::from_private_key(ks1.private_key().clone());
             assert_eq!(ks1.public_key(), ks2.public_key());
         }
     }
@@ -333,30 +333,30 @@ mod tests {
     #[test]
     fn from_keypair() {
         for _ in 0..255 {
-            let ks1 = KeyStore::new();
-            let ks2 = KeyStore::new();
-            let ks3 = KeyStore::from_keypair(ks1.public_key().clone(), ks1.private_key().clone());
+            let ks1 = KeyPair::new();
+            let ks2 = KeyPair::new();
+            let ks3 = KeyPair::from_keypair(ks1.public_key().clone(), ks1.private_key().clone());
             assert_ne!(ks1, ks2);
             assert_ne!(ks2, ks3);
             assert_eq!(ks1, ks3);
         }
     }
 
-    /// Test the `KeyStore::from_private_key` method against a precomputed
+    /// Test the `KeyPair::from_private_key` method against a precomputed
     /// public/private key pair.
     #[test]
     fn from_private_key_precomputed() {
         let sk_hex = b"8bb6b6ae1497bf0288e6f82923e8875f2fdeab2ab6833e770182b35936232af9";
         let sk_bytes = HEXLOWER.decode(sk_hex).unwrap();
         let sk = PrivateKey::from_slice(&sk_bytes).unwrap();
-        let ks = KeyStore::from_private_key(sk);
+        let ks = KeyPair::from_private_key(sk);
         assert_eq!(
             ks.public_key_hex(),
             "133798235bc42d37ce009b4b202cfe08bfd133c8e6eea75037fabb88f01fd959"
         );
     }
 
-    /// Test the `KeyStore::encrypt` method against a precomputed
+    /// Test the `KeyPair::encrypt` method against a precomputed
     /// value. The value of the encrypted bytes was computed using
     /// tweetnacl-js.
     #[test]
@@ -373,7 +373,7 @@ mod tests {
         let nonce_bytes = HEXLOWER.decode(nonce_hex).unwrap();
         let nonce = Nonce::from_bytes(&nonce_bytes).unwrap();
 
-        let ks = KeyStore::from_private_key(sk);
+        let ks = KeyPair::from_private_key(sk);
 
         let plaintext = b"hello";
         let encrypted = ks.encrypt(plaintext, nonce, &other_key);
@@ -381,7 +381,7 @@ mod tests {
         assert_eq!(encrypted_hex, "687f2cb605d80a0660bacb2c6ce6e076591b58f9c9");
     }
 
-    /// Test the `KeyStore::decrypt` method.
+    /// Test the `KeyPair::decrypt` method.
     #[test]
     fn decrypt_precomputed() {
         let sk_hex = b"717284c21d52489ddd8afa1adda32fa332cb0410b72ef83b415314cb12521bfe";
@@ -396,7 +396,7 @@ mod tests {
         let nonce_bytes = HEXLOWER.decode(nonce_hex).unwrap();
         let nonce = Nonce::from_bytes(&nonce_bytes).unwrap();
 
-        let ks = KeyStore::from_private_key(sk);
+        let ks = KeyPair::from_private_key(sk);
 
         // This should succeed
         let good_ciphertext_hex = b"687f2cb605d80a0660bacb2c6ce6e076591b58f9c9";

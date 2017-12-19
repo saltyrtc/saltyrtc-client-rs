@@ -9,7 +9,7 @@ use rmpv::Value;
 use rust_sodium::crypto::box_::NONCEBYTES;
 
 use errors::{SignalingError, SignalingResult};
-use crypto::{KeyStore, PublicKey, AuthToken};
+use crypto::{KeyPair, PublicKey, AuthToken};
 use protocol::Nonce;
 use protocol::messages::Message;
 
@@ -35,8 +35,8 @@ impl OpenBox<Message> {
     }
 
     /// Encrypt message for the `other_key` using public key cryptography.
-    pub(crate) fn encrypt(self, keystore: &KeyStore, other_key: &PublicKey) -> ByteBox {
-        let encrypted = keystore.encrypt(
+    pub(crate) fn encrypt(self, keypair: &KeyPair, other_key: &PublicKey) -> ByteBox {
+        let encrypted = keypair.encrypt(
             // The message bytes to be encrypted
             &self.message.to_msgpack(),
             // The nonce. The unsafe call to `clone()` is required because the
@@ -73,8 +73,8 @@ impl OpenBox<Message> {
     }
 
     /// Decrypt an encrypted message into an [`OpenBox`](struct.OpenBox.html).
-    pub(crate) fn decrypt(bbox: ByteBox, keystore: &KeyStore, other_key: &PublicKey) -> SignalingResult<Self> {
-        let decrypted: Vec<u8> = keystore.decrypt(
+    pub(crate) fn decrypt(bbox: ByteBox, keypair: &KeyPair, other_key: &PublicKey) -> SignalingResult<Self> {
+        let decrypted: Vec<u8> = keypair.decrypt(
             // The message bytes to be decrypted
             &bbox.bytes,
             // The nonce. The unsafe call to `clone()` is required because the
@@ -113,8 +113,8 @@ impl OpenBox<Value> {
     }
 
     /// Encrypt message for the `other_key` using public key cryptography.
-    pub(crate) fn encrypt(self, keystore: &KeyStore, other_key: &PublicKey) -> ByteBox {
-        let encrypted = keystore.encrypt(
+    pub(crate) fn encrypt(self, keypair: &KeyPair, other_key: &PublicKey) -> ByteBox {
+        let encrypted = keypair.encrypt(
             // The message bytes to be encrypted
             &rmps::to_vec_named(&self.message).expect("Failed to serialize value"),
             // The nonce. The unsafe call to `clone()` is required because the
@@ -130,8 +130,8 @@ impl OpenBox<Value> {
     /// Decrypt a task message into a dynamically typed msgpack `Value`.
     ///
     /// This should be used after the handshake has finished.
-    pub(crate) fn decrypt(bbox: ByteBox, keystore: &KeyStore, other_key: &PublicKey) -> SignalingResult<OpenBox<Value>> {
-        let decrypted: Vec<u8> = keystore.decrypt(
+    pub(crate) fn decrypt(bbox: ByteBox, keypair: &KeyPair, other_key: &PublicKey) -> SignalingResult<OpenBox<Value>> {
+        let decrypted: Vec<u8> = keypair.decrypt(
             // The message bytes to be decrypted
             &bbox.bytes,
             // The nonce. The unsafe call to `clone()` is required because the
@@ -279,11 +279,11 @@ mod tests {
     fn byte_box_decrypt_message() {
         let nonce = create_test_nonce();
         let bytes = create_test_msg_bytes();
-        let keystore_tx = KeyStore::new();
-        let keystore_rx = KeyStore::new();
-        let encrypted = keystore_tx.encrypt(&bytes, unsafe { nonce.clone() }, keystore_rx.public_key());
+        let keypair_tx = KeyPair::new();
+        let keypair_rx = KeyPair::new();
+        let encrypted = keypair_tx.encrypt(&bytes, unsafe { nonce.clone() }, keypair_rx.public_key());
         let bbox = ByteBox::new(encrypted, nonce);
-        let obox = OpenBox::<Message>::decrypt(bbox, &keystore_rx, keystore_tx.public_key()).unwrap();
+        let obox = OpenBox::<Message>::decrypt(bbox, &keypair_rx, keypair_tx.public_key()).unwrap();
         assert_eq!(obox.message.get_type(), "server-hello");
     }
 
@@ -315,18 +315,18 @@ mod tests {
             (Value::String("number".into()), Value::Integer(42.into())),
         ]);
         let bytes = rmps::to_vec_named(&value).unwrap();
-        let keystore_tx = KeyStore::new();
-        let keystore_rx = KeyStore::new();
-        let encrypted = keystore_tx.encrypt(&bytes, unsafe { nonce.clone() }, keystore_rx.public_key());
+        let keypair_tx = KeyPair::new();
+        let keypair_rx = KeyPair::new();
+        let encrypted = keypair_tx.encrypt(&bytes, unsafe { nonce.clone() }, keypair_rx.public_key());
 
         // First, make sure that decrypting this as message fails.
         let bbox = ByteBox::new(encrypted.clone(), unsafe { nonce.clone() });
-        let decrypt_as_message = OpenBox::<Message>::decrypt(bbox, &keystore_rx, keystore_tx.public_key());
+        let decrypt_as_message = OpenBox::<Message>::decrypt(bbox, &keypair_rx, keypair_tx.public_key());
         assert!(decrypt_as_message.is_err());
 
         // Then decrypt as value.
         let bbox = ByteBox::new(encrypted, nonce);
-        let obox = OpenBox::<Value>::decrypt(bbox, &keystore_rx, keystore_tx.public_key()).unwrap();
+        let obox = OpenBox::<Value>::decrypt(bbox, &keypair_rx, keypair_tx.public_key()).unwrap();
         match obox.message {
             Value::Map(values) => {
                 assert_eq!(values.len(), 2);

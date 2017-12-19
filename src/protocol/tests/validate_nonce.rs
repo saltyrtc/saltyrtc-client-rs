@@ -9,7 +9,7 @@ use super::*;
 /// identity (or 0x00 during authentication).
 #[test]
 fn first_message_wrong_destination() {
-    let ks = KeyStore::new();
+    let ks = KeyPair::new();
     let mut s = InitiatorSignaling::new(ks, Tasks(vec![]));
 
     let msg = ServerHello::random().into_message();
@@ -33,7 +33,7 @@ fn first_message_wrong_destination() {
 /// discarded and SHOULD trigger a warning.
 #[test]
 fn wrong_source_initiator() {
-    let ks = KeyStore::new();
+    let ks = KeyPair::new();
     let mut s = InitiatorSignaling::new(ks, Tasks(vec![]));
 
     let make_msg = |src: u8, dest: u8| {
@@ -72,7 +72,7 @@ fn wrong_source_initiator() {
 /// and SHOULD trigger a warning.
 #[test]
 fn wrong_source_responder() {
-    let ks = KeyStore::new();
+    let ks = KeyPair::new();
     let initiator_pubkey = PublicKey::from_slice(&[0u8; 32]).unwrap();
     let mut s = ResponderSignaling::new(ks, initiator_pubkey, None, Tasks(vec![]));
 
@@ -110,7 +110,7 @@ fn wrong_source_responder() {
 /// MUST check that the overflow number of the source peer is 0
 #[test]
 fn first_message_bad_overflow_number() {
-    let ks = KeyStore::new();
+    let ks = KeyPair::new();
     let mut s = InitiatorSignaling::new(ks, Tasks(vec![]));
 
     let msg = ServerHello::random().into_message();
@@ -140,7 +140,7 @@ fn sequence_number_incremented() {
 /// cookie.
 #[test]
 fn cookie_differs_from_own() {
-    let ks = KeyStore::new();
+    let ks = KeyPair::new();
     let mut s = InitiatorSignaling::new(ks, Tasks(vec![]));
 
     let msg = ServerHello::random().into_message();
