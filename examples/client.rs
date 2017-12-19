@@ -53,14 +53,23 @@ fn main() {
 
     const ARG_PATH: &'static str = "path";
     const ARG_AUTHTOKEN: &'static str = "authtoken";
+    const ARG_PING_INTERVAL: &'static str = "ping_interval";
 
     // Set up CLI arguments
+    let arg_ping_interval = Arg::with_name(ARG_PING_INTERVAL)
+        .short("i")
+        .takes_value(true)
+        .value_name("SECONDS")
+        .required(false)
+        .default_value("0")
+        .help("The WebSocket ping interval (set to 0 to disable pings)");
     let app = App::new("SaltyRTC Test Client")
         .version(VERSION)
         .author("Danilo Bargen <mail@dbrgn.ch>")
         .about("Test client for SaltyRTC.")
         .subcommand(SubCommand::with_name("initiator")
-            .about("Start client as initiator"))
+            .about("Start client as initiator")
+            .arg(arg_ping_interval.clone()))
         .subcommand(SubCommand::with_name("responder")
             .about("Start client as responder")
             .arg(Arg::with_name(ARG_PATH)
@@ -76,7 +85,8 @@ fn main() {
                 .takes_value(true)
                 .value_name("AUTHTOKEN")
                 .required(true)
-                .help("The auth token (hex encoded)")));
+                .help("The auth token (hex encoded)"))
+            .arg(arg_ping_interval));
 
     // Parse arguments
     let subcommand = app.get_matches().subcommand.unwrap_or_else(|| {
@@ -131,13 +141,19 @@ fn main() {
         Role::Responder => args.value_of(ARG_PATH).expect("Path not supplied").to_lowercase(),
     };
 
+    // Determine ping interval
+    let ping_interval = {
+        let seconds: u64 = args.value_of(ARG_PING_INTERVAL).expect("Ping interval not supplied")
+                               .parse().expect("Could not parse interval seconds to a number");
+        Duration::from_secs(seconds)
+    };
     // Create new SaltyRTC client instance
     let (salty, auth_token_hex) = match role {
         Role::Initiator => {
             let task = ChatTask::new("initiat0r");
             let salty = SaltyClientBuilder::new(keypair)
                 .add_task(Box::new(task))
-                .with_ping_interval(Some(Duration::from_secs(30)))
+                .with_ping_interval(Some(ping_interval))
                 .initiator()
                 .expect("Could not create SaltyClient instance");
             let auth_token_hex = HEXLOWER.encode(salty.auth_token().unwrap().secret_key_bytes());

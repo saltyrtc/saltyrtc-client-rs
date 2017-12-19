@@ -414,11 +414,16 @@ pub(crate) trait Signaling {
             .ping_interval
             .map(|duration| duration.as_secs())
             .map(|secs| if secs > ::std::u32::MAX as u64 {
+                warn!("Ping interval is too large. Truncating it to {} seconds.", ::std::u32::MAX);
                 ::std::u32::MAX
             } else {
                 secs as u32
             })
             .unwrap_or(0u32);
+        match ping_interval {
+            0 => debug!("Requesting WebSocket ping messages to be disabled"),
+            n => debug!("Requesting WebSocket ping messages every {}s", n),
+        };
         let client_auth = ClientAuth {
             your_cookie: self.server().cookie_pair().theirs.clone().unwrap(),
             subprotocols: vec![::SUBPROTOCOL.into()],
