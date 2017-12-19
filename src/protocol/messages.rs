@@ -12,7 +12,7 @@ use std::convert::From;
 use rmp_serde as rmps;
 use rmpv::Value;
 
-use crypto::{PublicKey, SignedKeys};
+use crypto_types::{PublicKey, SignedKeys};
 use errors::{SignalingError, SignalingResult};
 
 use ::protocol::{Address, Cookie};

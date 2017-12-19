@@ -14,7 +14,6 @@ extern crate futures;
 extern crate log;
 extern crate native_tls;
 extern crate rmp_serde;
-pub extern crate rmpv;
 extern crate rust_sodium;
 extern crate rust_sodium_sys;
 extern crate serde;
@@ -23,10 +22,13 @@ extern crate serde_derive;
 extern crate tokio_core;
 extern crate websocket;
 
+// Re-exports
+pub extern crate rmpv;
+
 // Modules
 mod boxes;
-mod crypto;
-mod errors;
+mod crypto_types;
+pub mod errors;
 mod helpers;
 mod protocol;
 mod send_all;
@@ -53,16 +55,18 @@ use websocket::header::WebSocketProtocol;
 use websocket::message::OwnedMessage;
 
 // Re-exports
-pub use crypto::{KeyStore, PublicKey, PrivateKey, AuthToken};
-pub use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
 pub use protocol::{Role};
 pub use task::{Task};
 
-pub mod utils {
-    pub use crypto::{public_key_from_hex_str};
+/// Cryptography-related types like public/private keys.
+pub mod crypto {
+    pub use crypto_types::{KeyStore, PublicKey, PrivateKey, AuthToken};
+    pub use crypto_types::{public_key_from_hex_str};
 }
 
 // Internal imports
+use crypto_types::{KeyStore, PublicKey, AuthToken};
+use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
 use helpers::libsodium_init;
 use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
 use task::{Tasks};
@@ -86,12 +90,14 @@ macro_rules! boxed {
 }
 
 
+/// The builder used to create a [`SaltyClient`](struct.SaltyClient.html) instance.
 pub struct SaltyClientBuilder {
     permanent_key: KeyStore,
     tasks: Vec<Box<Task>>,
 }
 
 impl SaltyClientBuilder {
+    /// Instantiate a new builder.
     pub fn new(permanent_key: KeyStore) -> Self {
         SaltyClientBuilder {
             permanent_key,
@@ -99,6 +105,10 @@ impl SaltyClientBuilder {
         }
     }
 
+    /// Register a [`Task`](trait.Task.html) that should be accepted by the client.
+    ///
+    /// When calling this method multiple times, tasks added first
+    /// have the highest priority during task negotation.
     pub fn add_task(mut self, task: Box<Task>) -> Self {
         self.tasks.push(task);
         self

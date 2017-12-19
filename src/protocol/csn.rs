@@ -17,7 +17,7 @@ use helpers::libsodium_init_or_panic;
 ///
 /// This type cannot be cloned.
 #[derive(Debug, Hash, PartialEq, Eq)]
-pub struct CombinedSequence {
+pub(crate) struct CombinedSequence {
     /// The overflow number.
     overflow: u16,
     /// The sequence number.
@@ -27,7 +27,7 @@ pub struct CombinedSequence {
 impl CombinedSequence {
 
     /// Create a new `CombinedSequence` from the specified parts.
-    pub fn new(overflow: u16, sequence: u32) -> Self {
+    pub(crate) fn new(overflow: u16, sequence: u32) -> Self {
         CombinedSequence { overflow, sequence }
     }
 
@@ -35,7 +35,7 @@ impl CombinedSequence {
     ///
     /// The overflow number will be initialized to 0, while a cryptographically
     /// secure random value will be generated for the sequence number.
-    pub fn random() -> Self {
+    pub(crate) fn random() -> Self {
         // Make sure that libsodium is initialized
         libsodium_init_or_panic();
 
@@ -64,7 +64,7 @@ impl CombinedSequence {
     ///
     /// This will fail if the overflow number overflows. This is extremely
     /// unlikely and must be treated as a protocol error.
-    pub fn increment(&mut self) -> SignalingResult<CombinedSequenceSnapshot> {
+    pub(crate) fn increment(&mut self) -> SignalingResult<CombinedSequenceSnapshot> {
         let next = match self.sequence.checked_add(1) {
             Some(incremented) => CombinedSequence::new(self.overflow, incremented),
             None => match self.overflow.checked_add(1) {
@@ -182,14 +182,14 @@ impl cmp::PartialOrd<CombinedSequence> for CombinedSequenceSnapshot {
 /// A pair of a [`CombinedSequence`](struct.CombinedSequence.html) and a
 /// [`CombinedSequenceSnapshot`](struct.CombinedSequenceSnapshot.html).
 #[derive(Debug, PartialEq, Eq)]
-pub struct CombinedSequencePair {
-    pub ours: CombinedSequence,
-    pub theirs: Option<CombinedSequenceSnapshot>,
+pub(crate) struct CombinedSequencePair {
+    pub(crate) ours: CombinedSequence,
+    pub(crate) theirs: Option<CombinedSequenceSnapshot>,
 }
 
 impl CombinedSequencePair {
     /// Create a new [`CombinedSequencePair`](struct.CombinedSequencePair.html).
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         CombinedSequencePair {
             ours: CombinedSequence::random(),
             theirs: None,

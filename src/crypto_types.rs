@@ -15,20 +15,20 @@ use protocol::Nonce;
 
 /// A public key used for decrypting data.
 ///
-/// Re-exported from the [`rust_sodium`](../rust_sodium/) crate.
+/// Re-exported from the [`rust_sodium`](../rust_sodium/index.html) crate.
 pub type PublicKey = box_::PublicKey;
 
 /// A private key used for encrypting data.
 ///
-/// Re-exported from the [`rust_sodium`](../rust_sodium/) crate.
+/// Re-exported from the [`rust_sodium`](../rust_sodium/index.html) crate.
 pub type PrivateKey = box_::SecretKey;
 
 /// A symmetric key used for both encrypting and decrypting data.
 ///
-/// Re-exported from the [`rust_sodium`](../rust_sodium/) crate.
+/// Re-exported from the [`rust_sodium`](../rust_sodium/index.html) crate.
 pub type SecretKey = secretbox::Key;
 
-/// Create a `PublicKey` instance from hex bytes.
+/// Create a [`PublicKey`](../type.PublicKey.html) instance from hex bytes.
 pub fn public_key_from_hex_str(hex_str: &str) -> SaltyResult<PublicKey> {
     let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
         .map_err(|_| SaltyError::Decode("Could not decode public key hex string".to_string()))?;

@@ -29,8 +29,8 @@ use failure::{Error};
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::{Core};
 
-use saltyrtc_client::{SaltyClientBuilder, KeyStore, Role, AuthToken, Task};
-use saltyrtc_client::utils::{public_key_from_hex_str};
+use saltyrtc_client::{SaltyClientBuilder, Role, Task};
+use saltyrtc_client::crypto::{KeyStore, AuthToken, public_key_from_hex_str};
 use saltyrtc_client::rmpv::{Value};
 
 

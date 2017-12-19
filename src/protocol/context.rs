@@ -37,10 +37,19 @@ pub(crate) trait PeerContext {
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ServerContext {
+    /// The server handshake state.
     handshake_state: ServerHandshakeState,
+
+    /// The public permanent key of the server.
     pub(crate) permanent_key: Option<PublicKey>,
+
+    /// The public session key of the server.
     pub(crate) session_key: Option<PublicKey>,
+
+    /// The combined sequence number.
     pub(crate) csn_pair: RefCell<CombinedSequencePair>,
+
+    /// The cookie pair between us and the server.
     pub(crate) cookie_pair: CookiePair,
 }
 
@@ -101,12 +110,22 @@ impl PeerContext for ServerContext {
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct InitiatorContext {
+    /// The initiator handshake state.
     handshake_state: InitiatorHandshakeState,
+
+    /// The public permanent key of the initiator.
     pub(crate) permanent_key: PublicKey,
+
+    /// The public session key of the initiator.
     pub(crate) session_key: Option<PublicKey>,
-    /// Our session keystore for this initiator
+
+    /// Our session keystore for the initiator.
     pub(crate) keystore: KeyStore,
+
+    /// The combined sequence number.
     pub(crate) csn_pair: RefCell<CombinedSequencePair>,
+
+    /// The cookie pair between us and the initiator.
     pub(crate) cookie_pair: CookiePair,
 }
 
@@ -168,19 +187,25 @@ impl PeerContext for InitiatorContext {
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ResponderContext {
-    /// The handshake state with this receiver
+    /// The responder handshake state.
     handshake_state: ResponderHandshakeState,
-    /// The receiver address
+
+    /// The receiver address.
     pub(crate) address: Address,
-    /// Public permanent key of the responder
+
+    /// The public permanent key of the responder.
     pub(crate) permanent_key: Option<PublicKey>,
+
     /// Public session key of the responder
     pub(crate) session_key: Option<PublicKey>,
+
     /// Our session keystore for this responder
     pub(crate) keystore: KeyStore,
+
     /// Our combined sequence pair for this responder
     pub(crate) csn_pair: RefCell<CombinedSequencePair>,
-    /// Our cookie pair for this responder
+
+    /// The cookie pair between us and the responder.
     pub(crate) cookie_pair: CookiePair,
 }
 

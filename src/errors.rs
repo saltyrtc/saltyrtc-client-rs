@@ -40,7 +40,7 @@ pub type SaltyResult<T> = ::std::result::Result<T, SaltyError>;
 /// Internal errors that occur during signaling and that will probably result
 /// in the connection being closed.
 #[derive(Fail, Debug, PartialEq)]
-pub enum SignalingError {
+pub(crate) enum SignalingError {
     /// A problem with decoding data.
     #[fail(display = "Decoding error: {}", _0)]
     Decode(String),
@@ -95,7 +95,7 @@ pub enum SignalingError {
 }
 
 /// A result with [`SignalingError`](enum.SignalingError.html) as error type.
-pub type SignalingResult<T> = ::std::result::Result<T, SignalingError>;
+pub(crate) type SignalingResult<T> = ::std::result::Result<T, SignalingError>;
 
 impl From<SerdeDecodeError> for SignalingError {
     fn from(e: SerdeDecodeError) -> Self {
@@ -103,6 +103,7 @@ impl From<SerdeDecodeError> for SignalingError {
     }
 }
 
+/// Errors that may be returned by the [`SaltyClientBuilder`](../struct.SaltyClientBuilder.html).
 #[derive(Fail, Debug, PartialEq)]
 pub enum BuilderError {
     /// No task has been added.

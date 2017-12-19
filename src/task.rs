@@ -14,6 +14,10 @@ use failure::Error;
 use rmpv::Value;
 
 
+/// An interface that needs to be implemented by every signaling task.
+///
+/// A task defines how data is exchanged after the server- and peer-handshake
+/// have been completed.
 pub trait Task : Debug {
 
     /// Initialize the task with the task data from the peer, sent in the `Auth` message.
