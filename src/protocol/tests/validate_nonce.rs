@@ -22,7 +22,7 @@ fn first_message_wrong_destination() {
     assert_eq!(
         s.handle_message(bbox),
         Err(SignalingError::InvalidNonce(
-            "Bad destination: 0x01 (our identity is Unknown)".into()
+            "Bad destination: 0x01 (our identity is unknown)".into()
         ))
     );
 }
@@ -128,11 +128,61 @@ fn first_message_bad_overflow_number() {
     );
 }
 
+fn _test_sequence_number(first: CombinedSequenceSnapshot,
+                         second: CombinedSequenceSnapshot)
+                         -> SignalingResult<Vec<HandleAction>> {
+    let ks = KeyPair::new();
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]));
+
+    // Process ServerHello
+    let msg = ServerHello::random().into_message();
+    let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), first);
+    let obox = OpenBox::<Message>::new(msg, nonce);
+    let bbox = obox.encode();
+    assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
+    let actions = s.handle_message(bbox);
+    assert!(actions.is_ok());
+
+    // Process ServerAuth
+    let msg = ServerAuth::for_initiator(s.server().cookie_pair().ours.clone(), None, vec![]).into_message();
+    let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), second);
+    let obox = OpenBox::<Message>::new(msg, nonce);
+    let bbox = obox.encode();
+    assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+    s.handle_message(bbox)
+}
+
 /// The peer MUST check that the combined sequence number of the source
 /// peer has been increased by 1 and has not reset to 0.
 #[test]
-fn sequence_number_incremented() {
-    // TODO (#20): Write once ServerAuth message has been implemented
+fn sequence_number_not_incremented() {
+    let err = _test_sequence_number(
+        CombinedSequenceSnapshot::new(0, 1234),
+        CombinedSequenceSnapshot::new(0, 1234),
+    ).unwrap_err();
+    assert_eq!(err, SignalingError::InvalidNonce("The server CSN hasn't been incremented".into()));
+}
+
+/// The peer MUST check that the combined sequence number of the source
+/// peer has been increased by 1 and has not reset to 0.
+#[test]
+fn sequence_number_decremented() {
+    let err = _test_sequence_number(
+        CombinedSequenceSnapshot::new(0, 1234),
+        CombinedSequenceSnapshot::new(0, 1233),
+    ).unwrap_err();
+    assert_eq!(err, SignalingError::InvalidNonce("The server CSN is lower than last time".into()));
+}
+
+/// The peer MUST check that the combined sequence number of the source
+/// peer has been increased by 1 and has not reset to 0.
+#[test]
+fn sequence_number_reset() {
+    let err = _test_sequence_number(
+        CombinedSequenceSnapshot::new(0, 1234),
+        CombinedSequenceSnapshot::new(0, 0),
+    ).unwrap_err();
+    assert_eq!(err, SignalingError::InvalidNonce("The server CSN is lower than last time".into()));
 }
 
 /// In case this is the first message received from the sender, the

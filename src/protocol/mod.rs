@@ -158,10 +158,10 @@ pub(crate) trait Signaling {
             let previous = csn;
             let current = nonce.csn();
             if current < previous {
-                let msg = format!("{} CSN is lower than last time", peer_identity);
+                let msg = format!("The {} CSN is lower than last time", peer_identity);
                 return Err(ValidationError::Fail(msg));
             } else if current == previous {
-                let msg = format!("{} CSN hasn't been incremented", peer_identity);
+                let msg = format!("The {} CSN hasn't been incremented", peer_identity);
                 return Err(ValidationError::Fail(msg));
             } else {
                 *previous = current.clone();

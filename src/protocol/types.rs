@@ -93,9 +93,9 @@ pub(crate) enum ClientIdentity {
 impl fmt::Display for ClientIdentity {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ClientIdentity::Unknown => write!(f, "Unknown"),
-            ClientIdentity::Initiator => write!(f, "Initiator"),
-            ClientIdentity::Responder(ref val) => write!(f, "Responder[{:#04x}]", val),
+            ClientIdentity::Unknown => write!(f, "unknown"),
+            ClientIdentity::Initiator => write!(f, "initiator"),
+            ClientIdentity::Responder(ref val) => write!(f, "responder {:#04x}", val),
         }
     }
 }
@@ -258,8 +258,8 @@ mod tests {
         let initiator = ClientIdentity::Initiator;
         let responder = ClientIdentity::Responder(10);
 
-        assert_eq!(format!("{}", unknown), "Unknown");
-        assert_eq!(format!("{}", initiator), "Initiator");
-        assert_eq!(format!("{}", responder), "Responder[0x0a]");
+        assert_eq!(format!("{}", unknown), "unknown");
+        assert_eq!(format!("{}", initiator), "initiator");
+        assert_eq!(format!("{}", responder), "responder 0x0a");
     }
 }
