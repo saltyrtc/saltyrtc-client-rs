@@ -38,6 +38,7 @@ mod test_helpers;
 
 // Rust imports
 use std::cell::RefCell;
+use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::time::Duration;
@@ -192,6 +193,62 @@ impl SaltyClient {
 }
 
 
+/// Close codes used by SaltyRTC.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum CloseCode {
+    WsGoingAway,
+    WsProtocolError,
+    PathFull,
+    ProtocolError,
+    InternalError,
+    Handover,
+    DroppedByInitiator,
+    InitiatorCouldNotDecrypt,
+    NoSharedTask,
+    InvalidKey,
+}
+
+impl CloseCode {
+    fn as_number(&self) -> u16 {
+        use CloseCode::*;
+        match *self {
+            WsGoingAway => 1001,
+            WsProtocolError => 1002,
+            PathFull => 3000,
+            ProtocolError => 3001,
+            InternalError => 3002,
+            Handover => 3003,
+            DroppedByInitiator => 3004,
+            InitiatorCouldNotDecrypt => 3005,
+            NoSharedTask => 3006,
+            InvalidKey => 3007,
+        }
+    }
+
+    fn from_number(code: u16) -> Option<CloseCode> {
+        use CloseCode::*;
+        match code {
+            1001 => Some(WsGoingAway),
+            1002 => Some(WsProtocolError),
+            3000 => Some(PathFull),
+            3001 => Some(ProtocolError),
+            3002 => Some(InternalError),
+            3003 => Some(Handover),
+            3004 => Some(DroppedByInitiator),
+            3005 => Some(InitiatorCouldNotDecrypt),
+            3006 => Some(NoSharedTask),
+            3007 => Some(InvalidKey),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for CloseCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?} ({})", self, self.as_number())
+    }
+}
+
 
 /// Connect to the specified SaltyRTC server.
 ///
@@ -255,13 +312,21 @@ pub fn connect(
                             Some(bytes)
                         },
                         OwnedMessage::Close(close_data) => {
-                            match close_data {
-                                Some(data) => if data.reason.is_empty() {
-                                    info!("Server closed connection with status code {}", data.status_code);
-                                } else {
-                                    info!("Server closed connection with status code {} ({})", data.status_code, data.reason);
+                            match close_data{
+                                Some(data) => {
+                                    let close_code = CloseCode::from_number(data.status_code);
+                                    match close_code {
+                                        Some(code) if data.reason.is_empty() =>
+                                            info!("Server closed connection with close code {}", code),
+                                        Some(code) =>
+                                            info!("Server closed connection with close code {} ({})", code, data.reason),
+                                        None if data.reason.is_empty() =>
+                                            info!("Server closed connection with unknown close code {}", data.status_code),
+                                        None =>
+                                            info!("Server closed connection with unknown close code {} ({})", data.status_code, data.reason),
+                                    }
                                 },
-                                None => info!("Server closed connection without close reason"),
+                                None => info!("Server closed connection without close code"),
                             };
                             None
                         },
