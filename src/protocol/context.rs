@@ -21,7 +21,7 @@ pub(crate) trait PeerContext {
     fn session_key(&self) -> Option<&PublicKey>;
 
     /// Return our session keystore with this peer.
-    fn keystore(&self) -> &KeyStore;
+    fn keystore(&self) -> Option<&KeyStore>;
 
     /// Return our CSN pair with this peer.
     /// The returned reference is a RefCell, providing interior mutability.
@@ -90,8 +90,8 @@ impl PeerContext for ServerContext {
         self.session_key.as_ref()
     }
 
-    fn keystore(&self) -> &KeyStore {
-        unimplemented!() // TODO (#23): Move session keystore into server context
+    fn keystore(&self) -> Option<&KeyStore> {
+        None // There is no session keystore between the client and the server
     }
 
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
@@ -167,8 +167,8 @@ impl PeerContext for InitiatorContext {
         self.session_key.as_ref()
     }
 
-    fn keystore(&self) -> &KeyStore {
-        &self.keystore
+    fn keystore(&self) -> Option<&KeyStore> {
+        Some(&self.keystore)
     }
 
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
@@ -248,8 +248,8 @@ impl PeerContext for ResponderContext {
         self.session_key.as_ref()
     }
 
-    fn keystore(&self) -> &KeyStore {
-        &self.keystore
+    fn keystore(&self) -> Option<&KeyStore> {
+        Some(&self.keystore)
     }
 
     fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {

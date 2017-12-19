@@ -325,7 +325,11 @@ pub(crate) trait Signaling {
             .ok_or(SignalingError::Crash("Peer not set".into()))?;
         let session_key = peer.session_key()
             .ok_or(SignalingError::Crash("Peer session key not set".into()))?;
-        OpenBox::<Value>::decrypt(bbox, peer.keystore(), session_key)
+        OpenBox::<Value>::decrypt(
+            bbox,
+            peer.keystore().ok_or(SignalingError::Crash("Peer session keystore not available".into()))?,
+            session_key,
+        )
     }
 
 
