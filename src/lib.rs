@@ -40,6 +40,7 @@ mod test_helpers;
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
+use std::time::Duration;
 
 // Third party imports
 use native_tls::TlsConnector;
@@ -94,6 +95,7 @@ macro_rules! boxed {
 pub struct SaltyClientBuilder {
     permanent_key: KeyPair,
     tasks: Vec<Box<Task>>,
+    ping_interval: Option<Duration>,
 }
 
 impl SaltyClientBuilder {
@@ -102,6 +104,7 @@ impl SaltyClientBuilder {
         SaltyClientBuilder {
             permanent_key,
             tasks: vec![],
+            ping_interval: None,
         }
     }
 
@@ -114,10 +117,27 @@ impl SaltyClientBuilder {
         self
     }
 
+    /// Request that the server sends a WebSocket ping message at the specified interval.
+    ///
+    /// Set the `interval` argument to `None` or to a zero duration to disable intervals.
+    ///
+    /// Note: Fractions of seconds are ignored, so if you set the duration to 13.37s,
+    /// then the ping interval 13s will be requested.
+    ///
+    /// By default, ping messages are disabled.
+    pub fn with_ping_interval(mut self, interval: Option<Duration>) -> Self {
+        self.ping_interval = interval;
+        self
+    }
+
     /// Create a new SaltyRTC initiator.
     pub fn initiator(self) -> Result<SaltyClient, BuilderError> {
         let tasks = Tasks::from_vec(self.tasks).map_err(|_| BuilderError::MissingTask)?;
-        let signaling = InitiatorSignaling::new(self.permanent_key, tasks);
+        let signaling = InitiatorSignaling::new(
+            self.permanent_key,
+            tasks,
+            self.ping_interval,
+        );
         Ok(SaltyClient {
             signaling: Box::new(signaling),
         })
@@ -131,6 +151,7 @@ impl SaltyClientBuilder {
             initiator_pubkey,
             auth_token,
             tasks,
+            self.ping_interval,
         );
         Ok(SaltyClient {
             signaling: Box::new(signaling),

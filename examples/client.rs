@@ -20,6 +20,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::process;
 use std::rc::Rc;
+use std::time::Duration;
 
 use chrono::Local;
 use clap::{Arg, App, SubCommand};
@@ -136,6 +137,7 @@ fn main() {
             let task = ChatTask::new("initiat0r");
             let salty = SaltyClientBuilder::new(keypair)
                 .add_task(Box::new(task))
+                .with_ping_interval(Some(Duration::from_secs(30)))
                 .initiator()
                 .expect("Could not create SaltyClient instance");
             let auth_token_hex = HEXLOWER.encode(salty.auth_token().unwrap().secret_key_bytes());

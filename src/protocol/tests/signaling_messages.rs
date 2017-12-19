@@ -30,7 +30,7 @@ impl TestContext<InitiatorSignaling> {
         let server_cookie = Cookie::random();
         let ks = KeyPair::from_private_key(our_ks.private_key().clone());
         let tasks = Tasks::new(Box::new(DummyTask::new(42)));
-        let mut signaling = InitiatorSignaling::new(ks, tasks);
+        let mut signaling = InitiatorSignaling::new(ks, tasks, None);
         signaling.common_mut().identity = identity;
         signaling.server_mut().set_handshake_state(server_handshake_state);
         signaling.server_mut().cookie_pair = CookiePair {
@@ -68,7 +68,7 @@ impl TestContext<ResponderSignaling> {
             let ks = KeyPair::from_private_key(our_ks.private_key().clone());
             let mut tasks = Tasks::new(Box::new(DummyTask::new(23)));
             tasks.add_task(Box::new(DummyTask::new(42)));
-            ResponderSignaling::new(ks, pk, auth_token, tasks)
+            ResponderSignaling::new(ks, pk, auth_token, tasks, None)
         };
         signaling.common_mut().identity = identity;
         signaling.server_mut().set_handshake_state(server_handshake_state);
@@ -393,11 +393,77 @@ mod server_auth {
     }
 }
 
+mod client_auth {
+    use super::*;
+
+    fn _test_ping_interval(interval: Option<Duration>) -> ClientAuth {
+        let kp = KeyPair::new();
+        let mut s = InitiatorSignaling::new(kp, Tasks::new(Box::new(DummyTask::new(123))), interval);
+
+        // Create and encode ServerHello message
+        let server_pubkey = PublicKey::random();
+        let server_hello = ServerHello::new(server_pubkey.clone()).into_message();
+        let cs = CombinedSequenceSnapshot::random();
+        let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), cs);
+        let obox = OpenBox::<Message>::new(server_hello, nonce);
+        let bbox = obox.encode();
+
+        // Handle message
+        assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
+        let mut actions = s.handle_message(bbox).unwrap();
+        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(actions.len(), 1); // Reply with client-auth
+
+        // Action contains ClientAuth message, encrypted with our permanent key
+        // and the server session key. Decrypt it to take a look at its contents.
+        let action = actions.remove(0);
+        let bytes: ByteBox = match action {
+            HandleAction::Reply(bbox) => bbox,
+        };
+
+        let decrypted = OpenBox::<Message>::decrypt(
+            bytes, &s.common().permanent_keypair, &server_pubkey
+        ).unwrap();
+        match decrypted.message {
+            Message::ClientAuth(client_auth) => client_auth,
+            other => panic!("Expected ClientAuth, got {:?}", other)
+        }
+    }
+
+    /// If ping interval is None, send zero.
+    #[test]
+    fn ping_interval_none() {
+        let client_auth = _test_ping_interval(None);
+        assert_eq!(client_auth.ping_interval, 0);
+    }
+
+    /// If ping interval is 0s, send zero.
+    #[test]
+    fn ping_interval_zero() {
+        let client_auth = _test_ping_interval(Some(Duration::from_secs(0)));
+        assert_eq!(client_auth.ping_interval, 0);
+    }
+
+    /// If ping interval is a larger number, send that (as seconds).
+    #[test]
+    fn ping_interval_12345() {
+        let client_auth = _test_ping_interval(Some(Duration::from_secs(12345)));
+        assert_eq!(client_auth.ping_interval, 12345);
+    }
+
+    /// Ignore sub-second values.
+    #[test]
+    fn ping_interval_nanos() {
+        let client_auth = _test_ping_interval(Some(Duration::new(123, 45)));
+        assert_eq!(client_auth.ping_interval, 123);
+    }
+}
+
 mod token {
     use super::*;
 
     /// A receiving initiator MUST check that the message contains a valid NaCl
-/// public key (32 bytes) in the key field.
+    /// public key (32 bytes) in the key field.
     #[test]
     fn token_initiator_validate_public_key() {
         let mut ctx = TestContext::initiator(

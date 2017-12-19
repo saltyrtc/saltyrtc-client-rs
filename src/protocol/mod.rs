@@ -10,6 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::time::Duration;
 
 use boxes::{ByteBox, OpenBox};
 use crypto::{KeyPair, AuthToken, PublicKey};
@@ -409,10 +410,19 @@ pub(crate) trait Signaling {
         }
 
         // Send client-auth message
+        let ping_interval = self.common()
+            .ping_interval
+            .map(|duration| duration.as_secs())
+            .map(|secs| if secs > ::std::u32::MAX as u64 {
+                ::std::u32::MAX
+            } else {
+                secs as u32
+            })
+            .unwrap_or(0u32);
         let client_auth = ClientAuth {
             your_cookie: self.server().cookie_pair().theirs.clone().unwrap(),
             subprotocols: vec![::SUBPROTOCOL.into()],
-            ping_interval: 0, // TODO (#11)
+            ping_interval,
             your_key: None, // TODO (#12)
         }.into_message();
         let client_auth_nonce = Nonce::new(
@@ -512,11 +522,14 @@ pub(crate) struct Common {
     /// The server context.
     pub(crate) server: ServerContext,
 
-    /// The list of possible task instances
+    /// The list of possible task instances.
     pub(crate) tasks: Option<Tasks>,
 
-    /// The chosen task
+    /// The chosen task.
     pub(crate) task: Option<Box<Task>>,
+
+    /// The interval at which the server should send WebSocket ping messages.
+    pub(crate) ping_interval: Option<Duration>,
 }
 
 impl Common {
@@ -805,7 +818,8 @@ impl Signaling for InitiatorSignaling {
 
 impl InitiatorSignaling {
     pub(crate) fn new(permanent_keypair: KeyPair,
-                      tasks: Tasks) -> Self {
+                      tasks: Tasks,
+                      ping_interval: Option<Duration>) -> Self {
         InitiatorSignaling {
             common: Common {
                 signaling_state: SignalingState::ServerHandshake,
@@ -816,6 +830,7 @@ impl InitiatorSignaling {
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
+                ping_interval: ping_interval,
             },
             responders: HashMap::new(),
             responder: None,
@@ -1226,7 +1241,8 @@ impl ResponderSignaling {
     pub(crate) fn new(permanent_keypair: KeyPair,
                       initiator_pubkey: PublicKey,
                       auth_token: Option<AuthToken>,
-                      tasks: Tasks) -> Self {
+                      tasks: Tasks,
+                      ping_interval: Option<Duration>) -> Self {
         ResponderSignaling {
             common: Common {
                 signaling_state: SignalingState::ServerHandshake,
@@ -1237,6 +1253,7 @@ impl ResponderSignaling {
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
+                ping_interval: ping_interval,
             },
             initiator: InitiatorContext::new(initiator_pubkey),
         }
