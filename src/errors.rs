@@ -8,6 +8,11 @@ use std::convert::From;
 use rmp_serde::decode::Error as SerdeDecodeError;
 
 
+/// Re-exported [`Error`](../../failure/struct.Error.html) type from the
+/// [failure crate](https://crates.io/crates/failure).
+pub type Error = ::failure::Error;
+
+
 /// Errors that are exposed to the user of the library.
 #[derive(Fail, Debug, PartialEq)]
 pub enum SaltyError {

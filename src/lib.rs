@@ -7,7 +7,8 @@
 
 extern crate byteorder;
 extern crate data_encoding;
-#[macro_use] extern crate failure;
+#[macro_use]
+extern crate failure;
 #[macro_use]
 extern crate futures;
 #[macro_use]
