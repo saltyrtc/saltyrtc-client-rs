@@ -6,6 +6,7 @@ extern crate data_encoding;
 extern crate dotenv;
 extern crate env_logger;
 #[macro_use] extern crate failure;
+extern crate futures;
 #[macro_use] extern crate log;
 extern crate native_tls;
 extern crate saltyrtc_client;
@@ -27,6 +28,7 @@ use clap::{Arg, App, SubCommand};
 use data_encoding::{HEXLOWER};
 use env_logger::{Builder};
 use failure::{Error};
+use futures::future::{Future};
 use native_tls::{TlsConnector, Certificate, Protocol};
 use tokio_core::reactor::{Core};
 
@@ -173,14 +175,6 @@ fn main() {
         },
     };
 
-    // Create connect task
-    let task = saltyrtc_client::connect(
-            &format!("wss://localhost:8765/{}", path),
-            Some(tls_connector),
-            &core.handle(),
-            Rc::new(RefCell::new(salty)),
-        ).unwrap();
-
     println!("\n\x1B[32m******************************");
     println!("Connecting as {}", role);
     println!("");
@@ -194,10 +188,27 @@ fn main() {
     }
     println!("******************************\x1B[0m\n");
 
-    let client = match core.run(task) {
-        Ok(client) => {
-            println!("Success!");
-            client
+    // Wrap SaltyClient in a Rc<RefCell<>>
+    let salty_rc = Rc::new(RefCell::new(salty));
+
+    // Connect to server
+    let connect_future = saltyrtc_client::connect(
+            &format!("wss://localhost:8765/{}", path),
+            Some(tls_connector),
+            &core.handle(),
+            salty_rc.clone(),
+        )
+        .unwrap()
+        .map(|client| { println!("Connected to server"); client });
+
+    // Do handshake
+    let handshake_future = connect_future
+        .and_then(|client| saltyrtc_client::do_handshake(client, salty_rc.clone()))
+        .map(|client| { println!("Handshake done"); client });
+
+    match core.run(handshake_future) {
+        Ok(_) => {
+            println!("Success.");
         },
         Err(e) => {
             println!("{}", e);

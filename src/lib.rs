@@ -276,7 +276,7 @@ enum WsMessageDecoded {
 /// The future completes once the peer handshake is done, or if an error occurs.
 /// It returns the async websocket client instance.
 pub fn connect(
-    url: &str,
+    url: &str, // TODO: Derive from SaltyClient instance
     tls_config: Option<TlsConnector>,
     handle: &Handle,
     salty: Rc<RefCell<SaltyClient>>,
@@ -291,7 +291,7 @@ pub fn connect(
     };
 
     // Initialize WebSocket client
-    let client = ClientBuilder::from_url(&ws_url)
+    let future = ClientBuilder::from_url(&ws_url)
         .add_protocol(SUBPROTOCOL)
         .async_connect_secure(tls_config, handle)
         .map_err(|e: WebSocketError| SaltyError::Network(format!("Could not connect to server: {}", e)))
@@ -311,10 +311,7 @@ pub fn connect(
                     Err(SaltyError::Protocol("Websocket subprotocol not accepted by server".into()))
                 },
             }
-        });
-
-    // Send message to server
-    let future = client
+        })
         .and_then(move |client| {
             let role = salty
                 .deref()
@@ -322,161 +319,176 @@ pub fn connect(
                 .map(|s| s.role().to_string())
                 .unwrap_or_else(|_| "Unknown".to_string());
             info!("Connected to server as {}", role);
-
-            // Main loop
-            let main_loop = future::loop_fn(client, move |client| {
-
-                let salty = Rc::clone(&salty);
-
-                // Take the next incoming message
-                client.into_future()
-
-                    // Map errors to our custom error type
-                    .map_err(|(e, _)| SaltyError::Network(format!("Could not receive message from server: {}", e)))
-
-                    // Process incoming messages and convert them to a `WsMessageDecoded`.
-                    .and_then(|(msg_option, client)| {
-                        let decoded: WsMessageDecoded = match msg_option {
-                            Some(OwnedMessage::Binary(bytes)) => {
-                                debug!("Incoming binary message ({} bytes)", bytes.len());
-
-                                // Parse into ByteBox
-                                let bbox = ByteBox::from_slice(&bytes)
-                                    .map_err(|e| SaltyError::Protocol(e.to_string()))?;
-                                trace!("ByteBox: {:?}", bbox);
-
-                                WsMessageDecoded::ByteBox(bbox)
-                            },
-                            Some(OwnedMessage::Ping(payload)) => {
-                                debug!("Incoming ping message");
-                                WsMessageDecoded::Ping(payload)
-                            },
-                            Some(OwnedMessage::Close(close_data)) => {
-                                match close_data {
-                                    Some(data) => {
-                                        let close_code = CloseCode::from_number(data.status_code);
-                                        match close_code {
-                                            Some(code) if data.reason.is_empty() =>
-                                                info!("Server closed connection with close code {}", code),
-                                            Some(code) =>
-                                                info!("Server closed connection with close code {} ({})", code, data.reason),
-                                            None if data.reason.is_empty() =>
-                                                info!("Server closed connection with unknown close code {}", data.status_code),
-                                            None =>
-                                                info!("Server closed connection with unknown close code {} ({})", data.status_code, data.reason),
-                                        }
-                                    },
-                                    None => info!("Server closed connection without close code"),
-                                };
-                                return Err(SaltyError::Network("Server message stream ended".into()));
-                            },
-                            Some(m) => {
-                                warn!("Skipping non-binary message: {:?}", m);
-                                WsMessageDecoded::Ignore
-                            },
-                            None => {
-                                return Err(SaltyError::Network("Server message stream ended without close message".into()));
-                            }
-                        };
-                        Ok((decoded, client))
-                    })
-
-                    // Process received message
-                    .and_then(move |(decoded, client)| {
-
-                        // Unwrap byte box, handle ping messages
-                        let bbox = match decoded {
-                            WsMessageDecoded::ByteBox(bbox) => bbox,
-                            WsMessageDecoded::Ping(payload) => {
-                                let pong = OwnedMessage::Pong(payload);
-                                let outbox = stream::iter_ok::<_, WebSocketError>(vec![pong]);
-                                let future = send_all::new(client, outbox)
-                                    .map_err(move |e| SaltyError::Network(format!("Could not send pong message: {}", e)))
-                                    .map(|(client, _)| {
-                                        debug!("Sent pong message");
-                                        Loop::Continue(client)
-                                    });
-                                return boxed!(future);
-                            },
-                            WsMessageDecoded::Ignore => {
-                                debug!("Ignoring message");
-                                return boxed!(future::ok(Loop::Continue(client)));
-                            },
-                        };
-
-                        // Handle message bytes
-                        let handle_actions = match salty.deref().try_borrow_mut() {
-                            Ok(mut s) => match s.handle_message(bbox) {
-                                Ok(actions) => actions,
-                                Err(e) => match e {
-                                    SignalingError::Crash(msg) => {
-                                        return boxed!(future::err(SaltyError::Crash(
-                                            format!("Signaling error: {}", msg)
-                                        )));
-                                    },
-                                    SignalingError::SendError => {
-                                        return boxed!(future::err(SaltyError::Network(e.to_string())));
-                                    },
-                                    SignalingError::Protocol(msg) => {
-                                        return boxed!(future::err(SaltyError::Protocol(msg)));
-                                    },
-                                    SignalingError::NoSharedTask => {
-                                        return boxed!(future::err(SaltyError::Crash("No shared task found (TODO #5)".into())));
-                                    }
-                                    other => {
-                                        return boxed!(future::err(SaltyError::Crash(
-                                            format!("Signaling error (TODO #5): {}", other)
-                                        )));
-                                    },
-                                },
-                            },
-                            Err(e) => return boxed!(
-                                future::err(SaltyError::Crash(
-                                    format!("Could not get mutable reference to SaltyClient: {}", e)
-                                ))
-                            ),
-                        };
-
-                        // Extract messages that should be sent back to the server
-                        let mut messages = vec![];
-                        let mut handshake_done = false;
-                        for action in handle_actions {
-                            match action {
-                                HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
-                                HandleAction::HandshakeDone => handshake_done = true,
-                            }
-                        }
-
-                        macro_rules! loop_action {
-                            ($client:expr) => {
-                                match handshake_done {
-                                    false => Loop::Continue($client),
-                                    true => Loop::Break($client),
-                                }
-                            }
-                        };
-
-                        // If there are enqueued messages, send them
-                        if messages.is_empty() {
-                            boxed!(future::ok(loop_action!(client)))
-                        } else {
-                            for message in &messages {
-                                debug!("Sending {} bytes", message.size());
-                            }
-                            let outbox = stream::iter_ok::<_, WebSocketError>(messages);
-                            let future = send_all::new(client, outbox)
-                                .map_err(move |e| SaltyError::Network(format!("Could not send message: {}", e)))
-                                .map(move |(client, _)| {
-                                    trace!("Sent all messages");
-                                    loop_action!(client)
-                                });
-                            boxed!(future)
-                        }
-                    })
-            });
-
-            boxed!(main_loop)
+            Ok(client)
         });
 
     Ok(boxed!(future))
+}
+
+pub fn do_handshake(
+    client: WsClient,
+    salty: Rc<RefCell<SaltyClient>>,
+) -> BoxedFuture<WsClient, SaltyError> {
+
+    // Send message to server
+    let role = salty
+        .deref()
+        .try_borrow()
+        .map(|s| s.role().to_string())
+        .unwrap_or_else(|_| "Unknown".to_string());
+    info!("Connected to server as {}", role);
+
+    // Main loop
+    let main_loop = future::loop_fn(client, move |client| {
+
+        let salty = Rc::clone(&salty);
+
+        // Take the next incoming message
+        client.into_future()
+
+            // Map errors to our custom error type
+            .map_err(|(e, _)| SaltyError::Network(format!("Could not receive message from server: {}", e)))
+
+            // Process incoming messages and convert them to a `WsMessageDecoded`.
+            .and_then(|(msg_option, client)| {
+                let decoded: WsMessageDecoded = match msg_option {
+                    Some(OwnedMessage::Binary(bytes)) => {
+                        debug!("Incoming binary message ({} bytes)", bytes.len());
+
+                        // Parse into ByteBox
+                        let bbox = ByteBox::from_slice(&bytes)
+                            .map_err(|e| SaltyError::Protocol(e.to_string()))?;
+                        trace!("ByteBox: {:?}", bbox);
+
+                        WsMessageDecoded::ByteBox(bbox)
+                    },
+                    Some(OwnedMessage::Ping(payload)) => {
+                        debug!("Incoming ping message");
+                        WsMessageDecoded::Ping(payload)
+                    },
+                    Some(OwnedMessage::Close(close_data)) => {
+                        match close_data {
+                            Some(data) => {
+                                let close_code = CloseCode::from_number(data.status_code);
+                                match close_code {
+                                    Some(code) if data.reason.is_empty() =>
+                                        info!("Server closed connection with close code {}", code),
+                                    Some(code) =>
+                                        info!("Server closed connection with close code {} ({})", code, data.reason),
+                                    None if data.reason.is_empty() =>
+                                        info!("Server closed connection with unknown close code {}", data.status_code),
+                                    None =>
+                                        info!("Server closed connection with unknown close code {} ({})", data.status_code, data.reason),
+                                }
+                            },
+                            None => info!("Server closed connection without close code"),
+                        };
+                        return Err(SaltyError::Network("Server message stream ended".into()));
+                    },
+                    Some(m) => {
+                        warn!("Skipping non-binary message: {:?}", m);
+                        WsMessageDecoded::Ignore
+                    },
+                    None => {
+                        return Err(SaltyError::Network("Server message stream ended without close message".into()));
+                    }
+                };
+                Ok((decoded, client))
+            })
+
+            // Process received message
+            .and_then(move |(decoded, client)| {
+
+                // Unwrap byte box, handle ping messages
+                let bbox = match decoded {
+                    WsMessageDecoded::ByteBox(bbox) => bbox,
+                    WsMessageDecoded::Ping(payload) => {
+                        let pong = OwnedMessage::Pong(payload);
+                        let outbox = stream::iter_ok::<_, WebSocketError>(vec![pong]);
+                        let future = send_all::new(client, outbox)
+                            .map_err(move |e| SaltyError::Network(format!("Could not send pong message: {}", e)))
+                            .map(|(client, _)| {
+                                debug!("Sent pong message");
+                                Loop::Continue(client)
+                            });
+                        return boxed!(future);
+                    },
+                    WsMessageDecoded::Ignore => {
+                        debug!("Ignoring message");
+                        return boxed!(future::ok(Loop::Continue(client)));
+                    },
+                };
+
+                // Handle message bytes
+                let handle_actions = match salty.deref().try_borrow_mut() {
+                    Ok(mut s) => match s.handle_message(bbox) {
+                        Ok(actions) => actions,
+                        Err(e) => match e {
+                            SignalingError::Crash(msg) => {
+                                return boxed!(future::err(SaltyError::Crash(
+                                    format!("Signaling error: {}", msg)
+                                )));
+                            },
+                            SignalingError::SendError => {
+                                return boxed!(future::err(SaltyError::Network(e.to_string())));
+                            },
+                            SignalingError::Protocol(msg) => {
+                                return boxed!(future::err(SaltyError::Protocol(msg)));
+                            },
+                            SignalingError::NoSharedTask => {
+                                return boxed!(future::err(SaltyError::Crash("No shared task found (TODO #5)".into())));
+                            }
+                            other => {
+                                return boxed!(future::err(SaltyError::Crash(
+                                    format!("Signaling error (TODO #5): {}", other)
+                                )));
+                            },
+                        },
+                    },
+                    Err(e) => return boxed!(
+                        future::err(SaltyError::Crash(
+                            format!("Could not get mutable reference to SaltyClient: {}", e)
+                        ))
+                    ),
+                };
+
+                // Extract messages that should be sent back to the server
+                let mut messages = vec![];
+                let mut handshake_done = false;
+                for action in handle_actions {
+                    match action {
+                        HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
+                        HandleAction::HandshakeDone => handshake_done = true,
+                    }
+                }
+
+                macro_rules! loop_action {
+                    ($client:expr) => {
+                        match handshake_done {
+                            false => Loop::Continue($client),
+                            true => Loop::Break($client),
+                        }
+                    }
+                };
+
+                // If there are enqueued messages, send them
+                if messages.is_empty() {
+                    boxed!(future::ok(loop_action!(client)))
+                } else {
+                    for message in &messages {
+                        debug!("Sending {} bytes", message.size());
+                    }
+                    let outbox = stream::iter_ok::<_, WebSocketError>(messages);
+                    let future = send_all::new(client, outbox)
+                        .map_err(move |e| SaltyError::Network(format!("Could not send message: {}", e)))
+                        .map(move |(client, _)| {
+                            trace!("Sent all messages");
+                            loop_action!(client)
+                        });
+                    boxed!(future)
+                }
+            })
+    });
+
+    boxed!(main_loop)
 }
