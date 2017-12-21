@@ -206,7 +206,10 @@ fn main() {
         .and_then(|client| saltyrtc_client::do_handshake(client, salty_rc.clone()))
         .map(|client| { println!("Handshake done"); client });
 
-    match core.run(handshake_future) {
+    let task_future = handshake_future
+        .and_then(|client| saltyrtc_client::task_loop(client, salty_rc.clone()));
+
+    match core.run(task_future) {
         Ok(_) => {
             println!("Success.");
         },

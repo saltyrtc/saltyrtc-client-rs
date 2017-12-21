@@ -195,6 +195,11 @@ impl SaltyClient {
         self.signaling.auth_token()
     }
 
+    /// Return a reference to the selected task.
+    pub fn task(&self) -> Option<&Box<Task>> {
+        self.signaling.common().task.as_ref()
+    }
+
     /// Handle an incoming message.
     fn handle_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
         self.signaling.handle_message(bbox)
@@ -425,7 +430,6 @@ pub fn do_handshake(
     salty: Rc<RefCell<SaltyClient>>,
 ) -> BoxedFuture<WsClient, SaltyError> {
 
-    // Send message to server
     let role = salty
         .deref()
         .try_borrow()
@@ -450,9 +454,8 @@ pub fn do_handshake(
             // Preprocess messages, handle things like ping/pong and ignored messages
             .and_then(preprocess_ws_message)
 
-            // Process received message
+            // Process received signaling message
             .and_then(move |pipeline_action| {
-
                 let (client, bbox) = match pipeline_action {
                     PipelineAction::ByteBox(x) => x,
                     PipelineAction::Future(f) => return f,
@@ -464,11 +467,9 @@ pub fn do_handshake(
                         Ok(actions) => actions,
                         Err(e) => return boxed!(future::err(e.into())),
                     },
-                    Err(e) => return boxed!(
-                        future::err(SaltyError::Crash(
-                            format!("Could not get mutable reference to SaltyClient: {}", e)
-                        ))
-                    ),
+                    Err(e) => return boxed!(future::err(SaltyError::Crash(
+                        format!("Could not get mutable reference to SaltyClient: {}", e)
+                    ))),
                 };
 
                 // Extract messages that should be sent back to the server
@@ -510,4 +511,22 @@ pub fn do_handshake(
     });
 
     boxed!(main_loop)
+}
+
+pub fn task_loop(
+    _client: WsClient,
+    salty: Rc<RefCell<SaltyClient>>,
+) -> BoxedFuture<(), SaltyError> {
+    let task_name = salty
+        .deref()
+        .try_borrow()
+        .ok()
+        .map(|salty| match salty.task() {
+            Some(task) => task.name(),
+            None => "None".into(),
+        })
+        .unwrap_or("Unknown".into());
+    info!("Starting task loop for task {}", task_name);
+
+    boxed!(future::ok(()))
 }
