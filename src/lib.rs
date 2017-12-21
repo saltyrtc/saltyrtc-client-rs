@@ -1,6 +1,8 @@
 //! SaltyRTC client implementation in Rust.
 //!
-//! Early prototype.
+//! The implementation is asynchronous using Tokio / Futures.
+//!
+//! Early prototype. More docs will follow (#26).
 #![recursion_limit = "1024"]
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
@@ -273,7 +275,7 @@ enum WsMessageDecoded {
 /// This function returns a boxed future. The future must be run in a Tokio
 /// reactor core for something to actually happen.
 ///
-/// The future completes once the peer handshake is done, or if an error occurs.
+/// The future completes once the server connection is established.
 /// It returns the async websocket client instance.
 pub fn connect(
     url: &str, // TODO: Derive from SaltyClient instance
@@ -325,6 +327,99 @@ pub fn connect(
     Ok(boxed!(future))
 }
 
+/// Decode a websocket `OwnedMessage` and wrap it into a `WsMessageDecoded`.
+fn decode_ws_message((msg_option, client): (Option<OwnedMessage>, WsClient)) -> SaltyResult<(WsMessageDecoded, WsClient)> {
+    let decoded = match msg_option {
+        Some(OwnedMessage::Binary(bytes)) => {
+            debug!("Incoming binary message ({} bytes)", bytes.len());
+
+            // Parse into ByteBox
+            let bbox = ByteBox::from_slice(&bytes)
+                .map_err(|e| SaltyError::Protocol(e.to_string()))?;
+            trace!("ByteBox: {:?}", bbox);
+
+            WsMessageDecoded::ByteBox(bbox)
+        },
+        Some(OwnedMessage::Ping(payload)) => {
+            debug!("Incoming ping message");
+            WsMessageDecoded::Ping(payload)
+        },
+        Some(OwnedMessage::Close(close_data)) => {
+            match close_data {
+                Some(data) => {
+                    let close_code = CloseCode::from_number(data.status_code);
+                    match close_code {
+                        Some(code) if data.reason.is_empty() =>
+                            info!("Server closed connection with close code {}", code),
+                        Some(code) =>
+                            info!("Server closed connection with close code {} ({})", code, data.reason),
+                        None if data.reason.is_empty() =>
+                            info!("Server closed connection with unknown close code {}", data.status_code),
+                        None =>
+                            info!("Server closed connection with unknown close code {} ({})", data.status_code, data.reason),
+                    }
+                },
+                None => info!("Server closed connection without close code"),
+            };
+            return Err(SaltyError::Network("Server message stream ended".into()));
+        },
+        Some(m) => {
+            warn!("Skipping non-binary message: {:?}", m);
+            WsMessageDecoded::Ignore
+        },
+        None => {
+            return Err(SaltyError::Network("Server message stream ended without close message".into()));
+        }
+    };
+    Ok((decoded, client))
+}
+
+/// An action in our pipeline.
+///
+/// This is used to enable early-return inside the pipeline. If a step returns a `Future`,
+/// it should be passed directly to the `loop_fn`.
+enum PipelineAction {
+    /// We got a ByteBox to handle.
+    ByteBox((WsClient, ByteBox)),
+    /// Immediately pass on this future in the next step.
+    Future(BoxedFuture<Loop<WsClient, WsClient>, SaltyError>),
+}
+
+/// Preprocess a `WsMessageDecoded`.
+///
+/// Here pings and ignored messages are handled.
+fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> SaltyResult<PipelineAction> {
+    // Unwrap byte box, handle ping messages
+    let bbox = match decoded {
+        WsMessageDecoded::ByteBox(bbox) => bbox,
+        WsMessageDecoded::Ping(payload) => {
+            let pong = OwnedMessage::Pong(payload);
+            let outbox = stream::iter_ok::<_, WebSocketError>(vec![pong]);
+            let future = send_all::new(client, outbox)
+                .map_err(move |e| SaltyError::Network(format!("Could not send pong message: {}", e)))
+                .map(|(client, _)| {
+                    debug!("Sent pong message");
+                    Loop::Continue(client)
+                });
+            let action = PipelineAction::Future(boxed!(future));
+            return Ok(action);
+        },
+        WsMessageDecoded::Ignore => {
+            debug!("Ignoring message");
+            let action = PipelineAction::Future(boxed!(future::ok(Loop::Continue(client))));
+            return Ok(action);
+        },
+    };
+    Ok((PipelineAction::ByteBox((client, bbox))))
+}
+
+/// Do the server and peer handshake.
+///
+/// This function returns a boxed future. The future must be run in a Tokio
+/// reactor core for something to actually happen.
+///
+/// The future completes once the peer handshake is done, or if an error occurs.
+/// It returns the async websocket client instance.
 pub fn do_handshake(
     client: WsClient,
     salty: Rc<RefCell<SaltyClient>>,
@@ -350,73 +445,17 @@ pub fn do_handshake(
             .map_err(|(e, _)| SaltyError::Network(format!("Could not receive message from server: {}", e)))
 
             // Process incoming messages and convert them to a `WsMessageDecoded`.
-            .and_then(|(msg_option, client)| {
-                let decoded: WsMessageDecoded = match msg_option {
-                    Some(OwnedMessage::Binary(bytes)) => {
-                        debug!("Incoming binary message ({} bytes)", bytes.len());
+            .and_then(decode_ws_message)
 
-                        // Parse into ByteBox
-                        let bbox = ByteBox::from_slice(&bytes)
-                            .map_err(|e| SaltyError::Protocol(e.to_string()))?;
-                        trace!("ByteBox: {:?}", bbox);
-
-                        WsMessageDecoded::ByteBox(bbox)
-                    },
-                    Some(OwnedMessage::Ping(payload)) => {
-                        debug!("Incoming ping message");
-                        WsMessageDecoded::Ping(payload)
-                    },
-                    Some(OwnedMessage::Close(close_data)) => {
-                        match close_data {
-                            Some(data) => {
-                                let close_code = CloseCode::from_number(data.status_code);
-                                match close_code {
-                                    Some(code) if data.reason.is_empty() =>
-                                        info!("Server closed connection with close code {}", code),
-                                    Some(code) =>
-                                        info!("Server closed connection with close code {} ({})", code, data.reason),
-                                    None if data.reason.is_empty() =>
-                                        info!("Server closed connection with unknown close code {}", data.status_code),
-                                    None =>
-                                        info!("Server closed connection with unknown close code {} ({})", data.status_code, data.reason),
-                                }
-                            },
-                            None => info!("Server closed connection without close code"),
-                        };
-                        return Err(SaltyError::Network("Server message stream ended".into()));
-                    },
-                    Some(m) => {
-                        warn!("Skipping non-binary message: {:?}", m);
-                        WsMessageDecoded::Ignore
-                    },
-                    None => {
-                        return Err(SaltyError::Network("Server message stream ended without close message".into()));
-                    }
-                };
-                Ok((decoded, client))
-            })
+            // Preprocess messages, handle things like ping/pong and ignored messages
+            .and_then(preprocess_ws_message)
 
             // Process received message
-            .and_then(move |(decoded, client)| {
+            .and_then(move |pipeline_action| {
 
-                // Unwrap byte box, handle ping messages
-                let bbox = match decoded {
-                    WsMessageDecoded::ByteBox(bbox) => bbox,
-                    WsMessageDecoded::Ping(payload) => {
-                        let pong = OwnedMessage::Pong(payload);
-                        let outbox = stream::iter_ok::<_, WebSocketError>(vec![pong]);
-                        let future = send_all::new(client, outbox)
-                            .map_err(move |e| SaltyError::Network(format!("Could not send pong message: {}", e)))
-                            .map(|(client, _)| {
-                                debug!("Sent pong message");
-                                Loop::Continue(client)
-                            });
-                        return boxed!(future);
-                    },
-                    WsMessageDecoded::Ignore => {
-                        debug!("Ignoring message");
-                        return boxed!(future::ok(Loop::Continue(client)));
-                    },
+                let (client, bbox) = match pipeline_action {
+                    PipelineAction::ByteBox(x) => x,
+                    PipelineAction::Future(f) => return f,
                 };
 
                 // Handle message bytes
