@@ -296,7 +296,7 @@ pub(crate) trait Signaling {
     /// Handle an incoming task message.
     fn handle_task_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
         // Decode message
-        let obox: OpenBox<Value> = self.decode_task_message(bbox)?;
+        let _obox: OpenBox<Value> = self.decode_task_message(bbox)?;
 
         // Pass message to task
         unimplemented!("TODO: Finish implementing handle_task_message");
@@ -597,7 +597,6 @@ impl Signaling for InitiatorSignaling {
             Identity::Server => Some(&mut self.common.server as &mut PeerContext),
             Identity::Initiator => None,
             Identity::Responder(_) => self.responders.get_mut(&addr).map(|r| r as &mut PeerContext),
-            Identity::Unknown => unreachable!(),
         }
     }
 
@@ -1101,7 +1100,6 @@ impl Signaling for ResponderSignaling {
             Identity::Server => Some(&mut self.common.server),
             Identity::Initiator => Some(&mut self.initiator),
             Identity::Responder(_) => None,
-            Identity::Unknown => unreachable!(),
         }
     }
 

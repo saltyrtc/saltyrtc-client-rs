@@ -44,14 +44,12 @@ impl fmt::Display for Role {
 /// On the network level, this is encoded as a single unsigned byte.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Identity {
-    /// An unknown identity is initialized to `0x00`.
-    Unknown,
+    /// The server has the identity `0x00`.
+    Server,
     /// The initiator has the identity `0x01`.
     Initiator,
     /// The responder has an identity in the range `0x02-0xff`.
     Responder(u8),
-    /// The server has the identity `0x00`.
-    Server,
 }
 
 impl From<Address> for Identity {
@@ -67,7 +65,6 @@ impl From<Address> for Identity {
 impl fmt::Display for Identity {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Identity::Unknown => write!(f, "unknown"),
             Identity::Initiator => write!(f, "initiator"),
             Identity::Responder(id) => write!(f, "responder {:#04x}", id),
             Identity::Server => write!(f, "server"),
@@ -79,7 +76,8 @@ impl fmt::Display for Identity {
 /// A client identity.
 ///
 /// This is like the [`Identity`](enum.identity.html), but the `Server` value
-/// is not allowed.
+/// is not allowed. Additionally, the `Unknown` value can be used for identities
+/// that aren't initialized yet.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum ClientIdentity {
     /// An unknown identity is initialized to `0x00`.
@@ -164,7 +162,7 @@ impl From<Identity> for Address {
     /// Panics if a `Responder` with an out-of-range value is encountered.
     fn from(val: Identity) -> Self {
         Address(match val {
-            Identity::Unknown | Identity::Server => 0x00,
+            Identity::Server => 0x00,
             Identity::Initiator => 0x01,
             Identity::Responder(address) => { assert!(address > 0x01); address },
         })

@@ -6,7 +6,6 @@ use rust_sodium::randombytes::randombytes_into;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use errors::{SignalingError, SignalingResult};
 use helpers::libsodium_init_or_panic;
 
 
@@ -21,21 +20,6 @@ impl Cookie {
     /// Create a new `Cookie` from a byte array.
     pub(crate) fn new(bytes: [u8; COOKIE_BYTES]) -> Self {
         Cookie(bytes)
-    }
-
-    /// Create a new `Cookie` from a byte slice.
-    ///
-    /// This will fail if the byte slice does not contain exactly 16 bytes of
-    /// data.
-    pub(crate) fn from_slice(bytes: &[u8]) -> SignalingResult<Self> {
-        if bytes.len() != COOKIE_BYTES {
-            return Err(SignalingError::Decode(
-                format!("byte slice must be exactly {} bytes, not {}", COOKIE_BYTES, bytes.len())
-            ));
-        };
-        let mut array = [0; COOKIE_BYTES];
-        array[..COOKIE_BYTES].clone_from_slice(&bytes[..COOKIE_BYTES]);
-        Ok(Cookie(array))
     }
 
     /// Create a new random `Cookie`.

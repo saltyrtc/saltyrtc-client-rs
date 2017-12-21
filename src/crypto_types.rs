@@ -105,6 +105,7 @@ impl KeyPair {
     }
 
     /// Return a reference to the private key.
+    #[allow(dead_code)]
     pub(crate) fn private_key(&self) -> &PrivateKey {
         &self.private_key
     }

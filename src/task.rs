@@ -66,6 +66,7 @@ pub trait Task : Debug {
 pub(crate) struct Tasks(pub(crate) Vec<Box<Task>>);
 
 impl Tasks {
+    #[allow(dead_code)]
     pub(crate) fn new(task: Box<Task>) -> Self {
         Tasks(vec![task])
     }
@@ -83,6 +84,7 @@ impl Tasks {
     /// Add a task.
     ///
     /// This may fail if a task with the same `.name()` already exists.
+    #[allow(dead_code)]
     pub(crate) fn add_task(&mut self, task: Box<Task>) -> Result<&mut Self, String> {
         if self.0.iter().any(|t| t.name() == task.name()) {
             return Err(format!("Task with name \"{}\" cannot be added twice", task.name()));
@@ -92,6 +94,7 @@ impl Tasks {
     }
 
     /// Return the number of registered tasks.
+    #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }

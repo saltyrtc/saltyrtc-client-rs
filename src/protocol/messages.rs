@@ -97,6 +97,7 @@ macro_rules! impl_message_wrapping {
             }
         }
 
+        #[allow(dead_code)]
         impl $type {
             pub(crate) fn into_message(self) -> Message {
                 self.into()
@@ -146,6 +147,7 @@ pub(crate) struct ServerHello {
 }
 
 impl ServerHello {
+    #[cfg(test)]
     pub(crate) fn new(key: PublicKey) -> Self {
         Self { key }
     }
@@ -186,6 +188,7 @@ pub(crate) struct ServerAuth {
 
 impl ServerAuth {
     /// Create a new ServerAuth message targeted at an initiator.
+    #[cfg(test)]
     pub(crate) fn for_initiator(your_cookie: Cookie, signed_keys: Option<SignedKeys>, responders: Vec<Address>) -> Self {
         Self {
             your_cookie,
@@ -196,6 +199,7 @@ impl ServerAuth {
     }
 
     /// Create a new ServerAuth message targeted at a responder.
+    #[cfg(test)]
     pub(crate) fn for_responder(your_cookie: Cookie, signed_keys: Option<SignedKeys>, initiator_connected: bool) -> Self {
         Self {
             your_cookie,
@@ -213,6 +217,7 @@ pub(crate) struct NewInitiator;
 
 impl NewInitiator {
     /// Create a new `NewInitiator` message.
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self { }
     }
@@ -227,12 +232,14 @@ pub(crate) struct NewResponder {
 
 impl NewResponder {
     /// Create a new `NewResponder` message.
+    #[cfg(test)]
     pub(crate) fn new(id: Address) -> Self {
         Self { id }
     }
 }
 
 
+#[allow(dead_code)]
 pub(crate) enum DropReason {
     ProtocolError,
     InternalError,
@@ -261,11 +268,6 @@ pub(crate) struct DropResponder {
 }
 
 impl DropResponder {
-    /// Create a new `DropResponder` message without a reason code.
-    pub(crate) fn new(id: Address) -> Self {
-        Self { id, reason: None }
-    }
-
     /// Create a new `DropResponder` message with a reason code.
     pub(crate) fn with_reason(id: Address, reason: DropReason) -> Self {
         Self { id, reason: Some(reason.into()) }
@@ -277,13 +279,6 @@ impl DropResponder {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct SendError {
     pub(crate) id: SendErrorId,
-}
-
-impl SendError {
-    /// Create a new `SendError` message.
-    pub(crate) fn new(id: SendErrorId) -> Self {
-        Self { id }
-    }
 }
 
 
@@ -396,6 +391,7 @@ impl ResponderAuthBuilder {
     }
 
     /// Add a task.
+    #[cfg(test)]
     pub(crate) fn add_task<S: Into<String>>(mut self, name: S, data: Option<HashMap<String, Value>>) -> Self {
         let name: String = name.into();
         match self.auth.tasks {
@@ -522,8 +518,7 @@ mod tests {
 
         roundtrip!(client_hello, ClientHello::random());
         roundtrip!(server_hello, ServerHello::random());
-        roundtrip!(drop_responder_no_reason, DropResponder::new(4.into()));
-        roundtrip!(drop_responder_with_reason, DropResponder::with_reason(4.into(), 3004));
+        roundtrip!(drop_responder, DropResponder::with_reason(4.into(), DropReason::DroppedByInitiator));
         roundtrip!(token, Token::random());
         roundtrip!(key, Key::random());
         roundtrip!(auth_responder, InitiatorAuthBuilder::new(Cookie::random())
