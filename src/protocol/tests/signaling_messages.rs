@@ -419,6 +419,7 @@ mod client_auth {
         let action = actions.remove(0);
         let bytes: ByteBox = match action {
             HandleAction::Reply(bbox) => bbox,
+            HandleAction::HandshakeDone => panic!("Unexpected HandshakeDone"),
         };
 
         let decrypted = OpenBox::<Message>::decrypt(
@@ -982,7 +983,7 @@ mod auth {
         assert_eq!(ctx.signaling.get_peer().as_ref().unwrap().identity(), ctx.signaling.responder.as_ref().unwrap().identity());
 
         // Number of reply messages
-        assert_eq!(actions.len(), 3); // auth + drop-responder(5) + drop-responder(7)
+        assert_eq!(actions.len(), 4); // auth + drop-responder(5) + drop-responder(7) + HandshakeDone
 
         // State transitions
         assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::Task);
@@ -1026,8 +1027,8 @@ mod auth {
         assert!(ctx.signaling.get_peer().is_some());
         assert_eq!(ctx.signaling.get_peer().as_ref().unwrap().identity(), ctx.signaling.initiator.identity());
 
-        // Number of reply messages
-        assert_eq!(actions.len(), 0);
+        // Number of actionsmessages
+        assert_eq!(actions, vec![HandleAction::HandshakeDone]);
 
         // State transitions
         assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::Task);

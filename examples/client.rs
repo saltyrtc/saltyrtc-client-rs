@@ -147,6 +147,7 @@ fn main() {
                                .parse().expect("Could not parse interval seconds to a number");
         Duration::from_secs(seconds)
     };
+
     // Create new SaltyRTC client instance
     let (salty, auth_token_hex) = match role {
         Role::Initiator => {
@@ -193,9 +194,10 @@ fn main() {
     }
     println!("******************************\x1B[0m\n");
 
-    match core.run(task) {
-        Ok(x) => {
-            println!("Success: {:?}", x);
+    let client = match core.run(task) {
+        Ok(client) => {
+            println!("Success!");
+            client
         },
         Err(e) => {
             println!("{}", e);
@@ -241,6 +243,7 @@ impl Task for ChatTask {
     ///
     /// This is the point where the task can take over.
     fn on_peer_handshake_done(&mut self) {
+        info!("Peer handshake done");
         // TODO
     }
 
@@ -267,13 +270,13 @@ impl Task for ChatTask {
     ///
     /// Note that the data passed in to this method should *not* already be encrypted. Otherwise,
     /// data will be encrypted twice.
-    fn send_signaling_message(&self, payload: &[u8]) {
+    fn send_signaling_message(&self, _payload: &[u8]) {
         panic!("send_signaling_message called even though task does not implement handover");
     }
 
     /// Return the task protocol name.
     fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("v1.simplechat.tasks.saltyrtc.org")
+        Cow::Borrowed("v0.simplechat.tasks.saltyrtc.org")
     }
 
     /// Return the task data used for negotiation in the `auth` message.
@@ -285,7 +288,7 @@ impl Task for ChatTask {
     }
 
     /// This method is called by the signaling class when sending and receiving 'close' messages.
-    fn close(&mut self, reason: u8) {
+    fn close(&mut self, _reason: u8) {
         // TODO
     }
 }

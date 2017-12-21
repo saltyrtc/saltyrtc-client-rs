@@ -277,14 +277,17 @@ pub(crate) trait Signaling {
 
         // Handle message depending on state
         match self.common().signaling_state() {
+            // Server handshake
             SignalingState::ServerHandshake =>
                 self.handle_server_message(obox),
 
+            // Peer handshake
             SignalingState::PeerHandshake if obox.nonce.source().is_server() =>
                 self.handle_server_message(obox),
             SignalingState::PeerHandshake =>
                 self.handle_peer_message(obox),
 
+            // Task
             SignalingState::Task =>
                 return Err(SignalingError::Crash("Illegal signaling state: Task".into())),
         }
@@ -1060,6 +1063,7 @@ impl InitiatorSignaling {
         responder.set_handshake_state(ResponderHandshakeState::AuthSent);
         self.common.set_signaling_state(SignalingState::Task)?;
         info!("Peer handshake completed");
+        actions.push(HandleAction::HandshakeDone);
 
         self.responder = Some(responder);
         Ok(actions)
@@ -1423,7 +1427,7 @@ impl ResponderSignaling {
         self.common.set_signaling_state(SignalingState::Task)?;
         info!("Peer handshake completed");
 
-        Ok(vec![])
+        Ok(vec![HandleAction::HandshakeDone])
     }
 }
 
