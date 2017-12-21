@@ -112,9 +112,9 @@ fn main() {
     // Read server certificate bytes
     let mut server_cert_bytes: Vec<u8> = vec![];
     File::open(&Path::new("saltyrtc.der"))
-        .unwrap()
+        .expect("Could not open saltyrtc.der")
         .read_to_end(&mut server_cert_bytes)
-        .unwrap();
+        .expect("Could not read saltyrtc.der");
 
     // Parse server certificate
     let server_cert = Certificate::from_der(&server_cert_bytes)
