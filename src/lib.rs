@@ -74,7 +74,7 @@ pub mod crypto {
 // Internal imports
 use boxes::ByteBox;
 use crypto_types::{KeyPair, PublicKey, AuthToken};
-use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
+use errors::{SaltyResult, SaltyError, SignalingResult, BuilderError};
 use helpers::libsodium_init;
 use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
 use task::{Tasks};
@@ -462,27 +462,7 @@ pub fn do_handshake(
                 let handle_actions = match salty.deref().try_borrow_mut() {
                     Ok(mut s) => match s.handle_message(bbox) {
                         Ok(actions) => actions,
-                        Err(e) => match e {
-                            SignalingError::Crash(msg) => {
-                                return boxed!(future::err(SaltyError::Crash(
-                                    format!("Signaling error: {}", msg)
-                                )));
-                            },
-                            SignalingError::SendError => {
-                                return boxed!(future::err(SaltyError::Network(e.to_string())));
-                            },
-                            SignalingError::Protocol(msg) => {
-                                return boxed!(future::err(SaltyError::Protocol(msg)));
-                            },
-                            SignalingError::NoSharedTask => {
-                                return boxed!(future::err(SaltyError::Crash("No shared task found (TODO #5)".into())));
-                            }
-                            other => {
-                                return boxed!(future::err(SaltyError::Crash(
-                                    format!("Signaling error (TODO #5): {}", other)
-                                )));
-                            },
-                        },
+                        Err(e) => return boxed!(future::err(e.into())),
                     },
                     Err(e) => return boxed!(
                         future::err(SaltyError::Crash(

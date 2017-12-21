@@ -38,6 +38,18 @@ pub enum SaltyError {
     Crash(String),
 }
 
+impl From<SignalingError> for SaltyError {
+    fn from(e: SignalingError) -> Self {
+        match e {
+            SignalingError::Crash(msg) => SaltyError::Crash(format!("Signaling error: {}", msg)),
+            SignalingError::SendError => SaltyError::Network(e.to_string()),
+            SignalingError::Protocol(msg) => SaltyError::Protocol(msg),
+            SignalingError::NoSharedTask => SaltyError::Crash("No shared task found (TODO #5)".into()),
+            other => SaltyError::Crash(format!("Signaling error (TODO #5): {}", other)),
+        }
+    }
+}
+
 /// A result with [`SaltyError`](enum.SaltyError.html) as error type.
 pub type SaltyResult<T> = ::std::result::Result<T, SaltyError>;
 
