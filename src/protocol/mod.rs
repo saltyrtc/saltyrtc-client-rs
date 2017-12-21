@@ -33,7 +33,7 @@ use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderConte
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
     Message, ServerHello, ServerAuth, ClientHello, ClientAuth,
-    NewResponder, DropResponder,
+    NewResponder, DropResponder, DropReason,
     SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder,
 };
 pub(crate) use self::nonce::{Nonce};
@@ -1007,7 +1007,7 @@ impl InitiatorSignaling {
         if !self.responders.is_empty() {
             info!("Dropping {} other responders", self.responders.len());
             for addr in self.responders.keys() {
-                let drop = DropResponder::new(addr.clone()).into_message();
+                let drop = DropResponder::with_reason(addr.clone(), DropReason::DroppedByInitiator).into_message();
                 let drop_nonce = Nonce::new(
                     self.server().cookie_pair.ours.clone(),
                     self.common.identity.into(),

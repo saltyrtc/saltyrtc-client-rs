@@ -233,6 +233,25 @@ impl NewResponder {
 }
 
 
+pub(crate) enum DropReason {
+    ProtocolError,
+    InternalError,
+    DroppedByInitiator,
+    InitiatorCouldNotDecrypt,
+}
+
+impl Into<u16> for DropReason {
+    fn into(self) -> u16 {
+        use self::DropReason::*;
+        match self {
+            ProtocolError => 3001,
+            InternalError => 3002,
+            DroppedByInitiator => 3004,
+            InitiatorCouldNotDecrypt => 3005,
+        }
+    }
+}
+
 /// Sent by the initiator to the server when requesting to drop a responder.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct DropResponder {
@@ -248,8 +267,8 @@ impl DropResponder {
     }
 
     /// Create a new `DropResponder` message with a reason code.
-    pub(crate) fn with_reason(id: Address, reason: u16) -> Self {
-        Self { id, reason: Some(reason) }
+    pub(crate) fn with_reason(id: Address, reason: DropReason) -> Self {
+        Self { id, reason: Some(reason.into()) }
     }
 }
 
