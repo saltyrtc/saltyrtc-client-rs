@@ -169,6 +169,7 @@ fn main() {
             let initiator_pubkey = public_key_from_hex_str(&path).unwrap();
             let salty = SaltyClientBuilder::new(keypair)
                 .add_task(Box::new(task))
+                .with_ping_interval(Some(ping_interval))
                 .responder(initiator_pubkey, Some(auth_token))
                 .expect("Could not create SaltyClient instance");
             (salty, auth_token_hex)
