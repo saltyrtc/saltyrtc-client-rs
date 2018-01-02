@@ -63,7 +63,7 @@ fn main() {
         .takes_value(true)
         .value_name("SECONDS")
         .required(false)
-        .default_value("0")
+        .default_value("30")
         .help("The WebSocket ping interval (set to 0 to disable pings)");
     let app = App::new("SaltyRTC Test Client")
         .version(VERSION)
