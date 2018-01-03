@@ -47,7 +47,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 // Third party imports
-use native_tls::TlsConnector;
+use futures::{stream, Future, Stream};
+use futures::future::{self, Loop};
+use native_tls::{TlsConnector};
 use tokio_core::reactor::{Handle};
 use tokio_core::net::TcpStream;
 use websocket::{WebSocketError};
@@ -55,9 +57,6 @@ use websocket::client::{ClientBuilder};
 use websocket::client::async::{Client, TlsStream};
 use websocket::client::builder::{Url};
 use websocket::ws::dataframe::{DataFrame};
-use websocket::futures::{stream};
-use websocket::futures::{Future, Stream};
-use websocket::futures::future::{self, Loop};
 use websocket::header::{WebSocketProtocol};
 use websocket::message::{OwnedMessage};
 
@@ -72,7 +71,7 @@ pub mod crypto {
 }
 
 // Internal imports
-use boxes::ByteBox;
+use boxes::{ByteBox};
 use crypto_types::{KeyPair, PublicKey, AuthToken};
 use errors::{SaltyResult, SaltyError, SignalingResult, BuilderError};
 use helpers::libsodium_init;
@@ -287,7 +286,7 @@ pub fn connect(
     tls_config: Option<TlsConnector>,
     handle: &Handle,
     salty: Rc<RefCell<SaltyClient>>,
-) -> SaltyResult<BoxedFuture<WsClient, SaltyError>> {
+) -> SaltyResult<BoxedFuture<AsyncClient, SaltyError>> {
     // Initialize libsodium
     libsodium_init()?;
 
@@ -302,12 +301,12 @@ pub fn connect(
         .add_protocol(SUBPROTOCOL)
         .async_connect_secure(tls_config, handle)
         .map_err(|e: WebSocketError| SaltyError::Network(format!("Could not connect to server: {}", e)))
-        .and_then(|(client, headers)| {
+        .and_then(|(framed, headers)| {
             // Verify that the correct subprotocol was chosen
             trace!("Websocket server headers: {:?}", headers);
             match headers.get::<WebSocketProtocol>() {
                 Some(proto) if proto.len() == 1 && proto[0] == SUBPROTOCOL => {
-                    Ok(client)
+                    Ok(framed)
                 },
                 Some(proto) => {
                     error!("More than one chosen protocol: {:?}", proto);
@@ -319,21 +318,23 @@ pub fn connect(
                 },
             }
         })
-        .and_then(move |client| {
+        .map(move |framed| {
             let role = salty
                 .deref()
                 .try_borrow()
                 .map(|s| s.role().to_string())
                 .unwrap_or_else(|_| "Unknown".to_string());
             info!("Connected to server as {}", role);
-            Ok(client)
+            AsyncClient {
+                framed
+            }
         });
 
     Ok(boxed!(future))
 }
 
 /// Decode a websocket `OwnedMessage` and wrap it into a `WsMessageDecoded`.
-fn decode_ws_message((msg_option, client): (Option<OwnedMessage>, WsClient)) -> SaltyResult<(WsMessageDecoded, WsClient)> {
+fn decode_ws_message((msg_option, client): (Option<OwnedMessage>, AsyncClient)) -> SaltyResult<(WsMessageDecoded, AsyncClient)> {
     let decoded = match msg_option {
         Some(OwnedMessage::Binary(bytes)) => {
             debug!("Incoming binary message ({} bytes)", bytes.len());
@@ -385,26 +386,28 @@ fn decode_ws_message((msg_option, client): (Option<OwnedMessage>, WsClient)) -> 
 /// it should be passed directly to the `loop_fn`.
 enum PipelineAction {
     /// We got a ByteBox to handle.
-    ByteBox((WsClient, ByteBox)),
+    ByteBox((AsyncClient, ByteBox)),
     /// Immediately pass on this future in the next step.
-    Future(BoxedFuture<Loop<WsClient, WsClient>, SaltyError>),
+    Future(BoxedFuture<Loop<AsyncClient, AsyncClient>, SaltyError>),
 }
 
 /// Preprocess a `WsMessageDecoded`.
 ///
 /// Here pings and ignored messages are handled.
-fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> SaltyResult<PipelineAction> {
+fn preprocess_ws_message((decoded, client): (WsMessageDecoded, AsyncClient)) -> SaltyResult<PipelineAction> {
     // Unwrap byte box, handle ping messages
     let bbox = match decoded {
         WsMessageDecoded::ByteBox(bbox) => bbox,
         WsMessageDecoded::Ping(payload) => {
             let pong = OwnedMessage::Pong(payload);
             let outbox = stream::iter_ok::<_, WebSocketError>(vec![pong]);
-            let future = send_all::new(client, outbox)
+            let future = send_all::new(client.framed, outbox)
                 .map_err(move |e| SaltyError::Network(format!("Could not send pong message: {}", e)))
-                .map(|(client, _)| {
+                .map(|(framed, _)| {
                     debug!("Sent pong message");
-                    Loop::Continue(client)
+                    Loop::Continue(AsyncClient {
+                        framed
+                    })
                 });
             let action = PipelineAction::Future(boxed!(future));
             return Ok(action);
@@ -426,9 +429,9 @@ fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> Sal
 /// The future completes once the peer handshake is done, or if an error occurs.
 /// It returns the async websocket client instance.
 pub fn do_handshake(
-    client: WsClient,
+    client: AsyncClient,
     salty: Rc<RefCell<SaltyClient>>,
-) -> BoxedFuture<WsClient, SaltyError> {
+) -> BoxedFuture<AsyncClient, SaltyError> {
 
     let role = salty
         .deref()
@@ -443,10 +446,15 @@ pub fn do_handshake(
         let salty = Rc::clone(&salty);
 
         // Take the next incoming message
-        client.into_future()
+        client.framed.into_future()
 
             // Map errors to our custom error type
             .map_err(|(e, _)| SaltyError::Network(format!("Could not receive message from server: {}", e)))
+
+            // Wrap framed instance into `AsyncClient`
+            .map(|(msg_option, framed)| (msg_option, AsyncClient {
+                framed
+            }))
 
             // Process incoming messages and convert them to a `WsMessageDecoded`.
             .and_then(decode_ws_message)
@@ -499,11 +507,13 @@ pub fn do_handshake(
                         debug!("Sending {} bytes", message.size());
                     }
                     let outbox = stream::iter_ok::<_, WebSocketError>(messages);
-                    let future = send_all::new(client, outbox)
+                    let future = send_all::new(client.framed, outbox)
                         .map_err(move |e| SaltyError::Network(format!("Could not send message: {}", e)))
-                        .map(move |(client, _)| {
+                        .map(move |(framed, _)| {
                             trace!("Sent all messages");
-                            loop_action!(client)
+                            loop_action!(AsyncClient {
+                                framed
+                            })
                         });
                     boxed!(future)
                 }
@@ -513,10 +523,14 @@ pub fn do_handshake(
     boxed!(main_loop)
 }
 
+pub struct AsyncClient {
+    framed: WsClient,
+}
+
 pub fn task_loop(
-    _client: WsClient,
+    client: AsyncClient,
     salty: Rc<RefCell<SaltyClient>>,
-) -> BoxedFuture<(), SaltyError> {
+) -> BoxedFuture<AsyncClient, SaltyError> {
     let task_name = salty
         .deref()
         .try_borrow()
@@ -528,5 +542,5 @@ pub fn task_loop(
         .unwrap_or("Unknown".into());
     info!("Starting task loop for task {}", task_name);
 
-    boxed!(future::ok(()))
+    boxed!(future::ok(client))
 }
