@@ -49,7 +49,9 @@ use std::time::Duration;
 // Third party imports
 use futures::{stream, Future, Stream};
 use futures::future::{self, Loop};
+use futures::sync::mpsc::{channel, Receiver};
 use native_tls::{TlsConnector};
+use rmpv::Value;
 use tokio_core::reactor::{Handle};
 use tokio_core::net::TcpStream;
 use websocket::{WebSocketError};
@@ -83,6 +85,8 @@ use task::{Tasks};
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
 #[cfg(feature = "msgpack-debugging")]
 const DEFAULT_MSGPACK_DEBUG_URL: &'static str = "https://msgpack.dbrgn.ch/#base64=";
+const RECEIVE_CHANNEL_BUFFER: usize = 32;
+const SEND_CHANNEL_BUFFER: usize = 32;
 
 
 /// A type alias for a boxed future.
@@ -326,7 +330,8 @@ pub fn connect(
                 .unwrap_or_else(|_| "Unknown".to_string());
             info!("Connected to server as {}", role);
             AsyncClient {
-                framed
+                framed,
+                tx_receiver: None,
             }
         });
 
@@ -406,7 +411,8 @@ fn preprocess_ws_message((decoded, client): (WsMessageDecoded, AsyncClient)) -> 
                 .map(|(framed, _)| {
                     debug!("Sent pong message");
                     Loop::Continue(AsyncClient {
-                        framed
+                        framed,
+                        tx_receiver: None,
                     })
                 });
             let action = PipelineAction::Future(boxed!(future));
@@ -453,7 +459,8 @@ pub fn do_handshake(
 
             // Wrap framed instance into `AsyncClient`
             .map(|(msg_option, framed)| (msg_option, AsyncClient {
-                framed
+                framed,
+                tx_receiver: None,
             }))
 
             // Process incoming messages and convert them to a `WsMessageDecoded`.
@@ -512,7 +519,8 @@ pub fn do_handshake(
                         .map(move |(framed, _)| {
                             trace!("Sent all messages");
                             loop_action!(AsyncClient {
-                                framed
+                                framed,
+                                tx_receiver: None,
                             })
                         });
                     boxed!(future)
@@ -523,12 +531,15 @@ pub fn do_handshake(
     boxed!(main_loop)
 }
 
+/// This struct wraps the state for the asynchronous connection
+/// and associated communication channels.
 pub struct AsyncClient {
     framed: WsClient,
+    tx_receiver: Option<Receiver<Value>>,
 }
 
 pub fn task_loop(
-    client: AsyncClient,
+    mut client: AsyncClient,
     salty: Rc<RefCell<SaltyClient>>,
 ) -> BoxedFuture<AsyncClient, SaltyError> {
     let task_name = salty
@@ -542,5 +553,55 @@ pub fn task_loop(
         .unwrap_or("Unknown".into());
     info!("Starting task loop for task {}", task_name);
 
-    boxed!(future::ok(client))
+    // Create communication channels.
+    // These channels are themselves futures.
+    let (rx_sender, rx_receiver) = channel::<Value>(RECEIVE_CHANNEL_BUFFER);
+    let (tx_sender, tx_receiver) = channel::<Value>(SEND_CHANNEL_BUFFER);
+
+    // Update client
+    client.tx_receiver = Some(tx_receiver);
+
+    // Task (rx) loop
+    let task_loop = future::loop_fn(client, move |client| {
+
+        let salty = Rc::clone(&salty);
+
+        let AsyncClient { framed, tx_receiver } = client;
+
+        let rx_future = framed
+
+            // Take the next incoming message
+            .into_future()
+
+            // Map errors to our custom error type
+            .map_err(|(e, _)| SaltyError::Network(format!("Could not receive message from server: {}", e)))
+
+            // Wrap framed instance into `AsyncClient`
+            .map(move |(msg_option, framed)| (msg_option, AsyncClient {
+                framed,
+                tx_receiver,
+            }))
+
+            // Process incoming messages and convert them to a `WsMessageDecoded`.
+            .and_then(decode_ws_message)
+
+            // Preprocess messages, handle things like ping/pong and ignored messages
+            .and_then(preprocess_ws_message)
+
+            // Process received task message
+            .and_then(move |pipeline_action| {
+                let (client, bbox) = match pipeline_action {
+                    PipelineAction::ByteBox(x) => x,
+                    PipelineAction::Future(f) => return f,
+                };
+
+                info!("Task message bytes: {}", bbox.bytes.len());
+
+                boxed!(future::ok(Loop::Continue(client)))
+            });
+
+        rx_future
+    });
+
+    boxed!(task_loop)
 }
