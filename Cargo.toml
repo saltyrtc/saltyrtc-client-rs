@@ -5,11 +5,7 @@ authors = ["Danilo Bargen <danilo.bargen@threema.ch>"]
 
 [dependencies]
 log = "0.4.0-rc.1"
-websocket = "0.20.2"
-native-tls = "0.1.4"
-tokio-core = "0.1.9"
 failure = "0.1.1"
-futures = "0.1.0"  # Make sure to use same version as websocket
 rmp-serde = "0.13"
 rmpv = { version = "0.4", features = ["with-serde"] }
 serde = "1.0"
@@ -18,7 +14,10 @@ rust_sodium = { version = "0.5.0", features = ["serde"] }
 rust_sodium-sys = { version = "0.5.0" }
 byteorder = "1.1"
 data-encoding = "2.0.0-rc.2"
-clippy = {version = "0.0.165", optional = true}
+clippy = { version = "0.0.165", optional = true }
+ws = { version = "0.7", features = ["ssl"] }
+openssl = "0.9"  # Make sure to use same version as ws
+url = "1.6"
 
 [dev-dependencies]
 env_logger = "0.5.0-rc.1"
