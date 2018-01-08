@@ -39,9 +39,10 @@ use std::cell::RefCell;
 use std::borrow::Cow;
 use std::fmt;
 use std::io::ErrorKind;
+use std::mem;
 use std::ops::Deref;
 use std::rc::Rc;
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{channel, Sender};
 use std::thread;
 use std::time::Duration;
 
@@ -160,7 +161,9 @@ impl SaltyClientBuilder {
 enum ConnectionState {
     Disconnected,
     Connected {
-        thread: thread::JoinHandle<()>,
+        tx_thread: thread::JoinHandle<()>,
+        tx_channel: Sender<ws::Message>,
+        rx_thread: thread::JoinHandle<()>,
     }
 }
 
@@ -222,32 +225,55 @@ impl SaltyClient {
         let url = Url::parse(&url_string)
             .map_err(|e| SaltyError::Decode(format!("Invalid URL: {}", e)))?;
 
-        // Initialize the WebSocket struct
-        let mut socket = ws::WebSocket::new(|sender| Connection { ws: sender })
-            .map_err(|e| SaltyError::Network(format!("Could not create WebSocket: {}", e)))?;
+        // TODO: Get rid of the following unwraps inside the threads
 
-        // Connect to server
+        // Set up a one-time channel used to transfer the WebSocket sender outside the handler.
+        let (sender_tx, sender_rx) = channel::<ws::Sender>();
+
+        // Create new WebSocket
+        let mut socket = ws::WebSocket::new(move |sender: ws::Sender| {
+            // Send cloned sender through channel
+            sender_tx.send(sender.clone()).expect("Could not send ws::Sender through channel");
+
+            // Create a new [`Connection`](struct.Connection.html) instance
+            Connection { ws: sender }
+        }).map_err(|e| SaltyError::Network(format!("Could not create WebSocket: {}", e)))?;
+
+        // Prepare server connection
         socket.connect(url)
             .map_err(|e| SaltyError::Network(format!("Could not connect to WebSocket server: {}", e)))?;
 
-        // Initialize WebSocket thread
-        let ws_thread = named_thread("ws-connection").spawn(move || {
-            socket.run()
-                .expect("WebSocket error");
-            info!("THREAD DONE");
+        // Start receiving thread
+        let rx_thread = named_thread("saltyrtc-rx").spawn(move || {
+            socket.run().expect("WebSocket error");
+            info!("RX thread done");
+        }).map_err(|e| SaltyError::Io(e.to_string()))?;
+
+        // Get access to a WebSocket `Sender` instance
+        let ws_sender = sender_rx.recv().unwrap();
+        mem::drop(sender_rx);
+
+        // Start sending thread
+        let (tx, rx) = channel::<ws::Message>();
+        let tx_thread = named_thread("saltyrtc-tx").spawn(move || {
+            for msg in rx.iter() {
+                ws_sender.send(msg).expect("Error when sending message");
+            }
+            info!("TX thread done");
         }).map_err(|e| SaltyError::Io(e.to_string()))?;
 
         self.state = ConnectionState::Connected {
-            thread: ws_thread,
+            tx_thread,
+            tx_channel: tx,
+            rx_thread,
         };
-        info!("CONNECT DONE");
 
         Ok(self)
     }
 
     pub fn wait(self) {
         match self.state {
-            ConnectionState::Connected { thread: thread, .. } => thread.join(),
+            ConnectionState::Connected { tx_thread, rx_thread, .. } => rx_thread.join().unwrap(),
             ConnectionState::Disconnected => panic!("Cannot wait on disconnected client"),
         };
     }
@@ -272,8 +298,8 @@ impl ws::Handler for Connection {
 
     /// The WebSocket is now open!
     fn on_open(&mut self, shake: ws::Handshake) -> ws::Result<()> {
-        info!("WS on_open");
-        debug!("shake: {:?}", shake);
+        info!("WebSocket is open!");
+
         let protocols = shake.request.protocols()?;
 
         fn make_error<I>(msg: I) -> ws::Result<()> where I: Into<Cow<'static, str>> {
@@ -293,19 +319,31 @@ impl ws::Handler for Connection {
     }
 
     fn on_message(&mut self, msg: ws::Message) -> ws::Result<()> {
-        info!("WS on_message");
-        debug!("msg: {:?}", msg);
-        thread::sleep(Duration::from_millis(2000));
-        self.ws.send(ws::Message::Text("hello".into()))?;
+        match msg {
+            ws::Message::Text(_) => debug!("Incoming text message, ignoring"),
+            ws::Message::Binary(bytes) => debug!("Incoming message ({} bytes)", bytes.len()),
+        }
         Ok(())
     }
 
+    fn on_send_message(&mut self, msg: ws::Message) -> ws::Result<Option<ws::Message>> {
+        match msg {
+            ws::Message::Text(_) => debug!("Outgoing text message"),
+            ws::Message::Binary(ref bytes) => debug!("Outgoing message ({} bytes)", bytes.len()),
+        }
+        Ok(Some(msg))
+    }
+
     fn on_close(&mut self, code: ws::CloseCode, reason: &str) {
-        info!("WS on_close, code: {:?}, reason: {}", code, reason);
+        if reason.is_empty() {
+            info!("WebSocket connection closed, code: {:?}", code);
+        } else {
+            info!("WebSocket connection closed, code: {:?}, reason: {}", code, reason);
+        }
     }
 
     fn on_error(&mut self, err: ws::Error) {
-        info!("WS on_error: {:?}", err);
+        error!("WebSocket error: {:?}", err);
     }
 
     /// Upgrade the TcpStream to an SslStream.
