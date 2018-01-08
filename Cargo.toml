@@ -15,7 +15,7 @@ rust_sodium-sys = { version = "0.5.0" }
 byteorder = "1.1"
 data-encoding = "2.0.0-rc.2"
 clippy = { version = "0.0.165", optional = true }
-ws = { version = "0.7", features = ["ssl"] }
+ws = { git = "https://github.com/dbrgn/ws-rs", branch = "on_send_message", features = ["ssl"] }
 openssl = "0.9"  # Make sure to use same version as ws
 url = "1.6"
 
