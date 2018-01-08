@@ -134,7 +134,7 @@ fn main() {
                 .with_ping_interval(Some(ping_interval))
                 .initiator()
                 .expect("Could not create SaltyClient instance");
-            let auth_token_hex = HEXLOWER.encode(salty.auth_token().unwrap().secret_key_bytes());
+            let auth_token_hex = HEXLOWER.encode(salty.auth_token_bytes().unwrap().as_ref());
             (salty, auth_token_hex)
         },
         Role::Responder => {

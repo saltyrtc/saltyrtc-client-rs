@@ -28,7 +28,7 @@ pub(crate) mod types;
 
 #[cfg(test)] mod tests;
 
-use super::task::{Task, Tasks};
+use super::task::{Task, Tasks, BoxedTask};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
@@ -510,6 +510,9 @@ pub(crate) trait Signaling {
 }
 
 
+pub(crate) type BoxedSignaling = Box<Signaling + Send>;
+
+
 /// Common functionality and state for all signaling types.
 pub(crate) struct Common {
     /// The signaling state.
@@ -534,7 +537,7 @@ pub(crate) struct Common {
     pub(crate) tasks: Option<Tasks>,
 
     /// The chosen task.
-    pub(crate) task: Option<Box<Task>>,
+    pub(crate) task: Option<BoxedTask>,
 
     /// The interval at which the server should send WebSocket ping messages.
     pub(crate) ping_interval: Option<Duration>,
@@ -979,7 +982,7 @@ impl InitiatorSignaling {
             .ok_or(SignalingError::Crash("No tasks defined".into()))?;
         trace!("Our tasks: {:?}", &our_tasks);
         trace!("Proposed tasks: {:?}", &proposed_tasks);
-        let mut chosen_task: Box<Task> = our_tasks
+        let mut chosen_task: BoxedTask = our_tasks
             .choose_shared_task(&proposed_tasks)
             .ok_or_else(|| {
                 // TODO (#17)
@@ -1381,13 +1384,13 @@ impl ResponderSignaling {
         if msg.tasks.is_some() {
             return Err(SignalingError::InvalidMessage("We're a responder, but the `tasks` field in the auth message is set".into()));
         }
-        let mut chosen_task: Box<Task> = match msg.task {
+        let mut chosen_task: BoxedTask = match msg.task {
             Some(task) => {
                 let our_tasks = mem::replace(&mut self.common_mut().tasks, None)
                     .ok_or(SignalingError::Crash("No tasks defined".into()))?;
                 our_tasks
                     .into_iter()
-                    .filter(|t: &Box<Task>| t.name() == task)
+                    .filter(|t: &BoxedTask| t.name() == task)
                     .next()
                     .ok_or(SignalingError::Protocol("The `task` field in the auth message contains an unknown task".into()))?
             },
