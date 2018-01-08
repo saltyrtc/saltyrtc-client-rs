@@ -264,11 +264,13 @@ impl SaltyClient {
             .map_err(|e| SaltyError::Network(format!("Could not connect to WebSocket server: {}", e)))?;
 
         // Start receiving thread
-        let rx_thread = named_thread("saltyrtc-rx").spawn(move || {
-            info!("Started receiving thread");
-            socket.run().expect("WebSocket error");
-            info!("Stopped receiving thread");
-        }).map_err(|e| SaltyError::Io(e.to_string()))?;
+        let rx_thread = named_thread("saltyrtc-rx")
+            .spawn(move || {
+                info!("Started receiving thread");
+                socket.run().expect("WebSocket error");
+                info!("Stopped receiving thread");
+            })
+            .map_err(|e| SaltyError::Io(e.to_string()))?;
 
         // Get access to a WebSocket `Sender` instance
         let ws_sender = ws_sender_transfer_rx.recv().unwrap();
@@ -277,23 +279,14 @@ impl SaltyClient {
 
         // Start sending thread
         let (sender_tx, sender_rx) = mpsc::channel::<Vec<u8>>();
-        let tx_thread = named_thread("saltyrtc-tx").spawn(move || {
-            info!("Started sending thread");
-            for bytes in sender_rx.iter() {
-                let msg = ws::Message::Binary(bytes);
-                ws_sender.send(msg).expect("Error when sending message");
-            }
-            info!("Stopped sending thread");
-        }).map_err(|e| SaltyError::Io(e.to_string()))?;
+        let tx_thread = named_thread("saltyrtc-tx")
+            .spawn(move || Self::sending_thread(sender_rx, ws_sender))
+            .map_err(|e| SaltyError::Io(e.to_string()))?;
 
         // Start signaling thread
-        let signaling_thread = named_thread("saltyrtc-signaling").spawn(move || {
-            info!("Started signaling thread");
-            for bytes in receiver_rx {
-                info!("Message received");
-            }
-            info!("Stopped signaling thread");
-        }).map_err(|e| SaltyError::Io(e.to_string()))?;
+        let signaling_thread = named_thread("saltyrtc-signaling")
+            .spawn(move || Self::signaling_thread(receiver_rx))
+            .map_err(|e| SaltyError::Io(e.to_string()))?;
 
         self.state = ConnectionState::Connected {
             tx_channel: sender_tx,
@@ -303,6 +296,23 @@ impl SaltyClient {
         };
 
         Ok(self)
+    }
+
+    fn sending_thread(channel: mpsc::Receiver<Vec<u8>>, sender: ws::Sender) {
+        info!("Started sending thread");
+        for bytes in channel {
+            let msg = ws::Message::Binary(bytes);
+            sender.send(msg).expect("Error when sending message");
+        }
+        info!("Stopped sending thread");
+    }
+
+    fn signaling_thread(channel: mpsc::Receiver<Vec<u8>>) {
+        info!("Started signaling thread");
+        for bytes in channel {
+            info!("Message received");
+        }
+        info!("Stopped signaling thread");
     }
 
     pub fn wait(self) {
