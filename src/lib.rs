@@ -42,7 +42,7 @@ use std::io::ErrorKind;
 use std::mem;
 use std::ops::Deref;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -136,7 +136,7 @@ impl SaltyClientBuilder {
             self.ping_interval,
         );
         Ok(SaltyClient {
-            signaling: Box::new(signaling),
+            signaling: Arc::new(Mutex::new(Box::new(signaling))),
             state: ConnectionState::Disconnected,
         })
     }
@@ -152,7 +152,7 @@ impl SaltyClientBuilder {
             self.ping_interval,
         );
         Ok(SaltyClient {
-            signaling: Box::new(signaling),
+            signaling: Arc::new(Mutex::new(Box::new(signaling))),
             state: ConnectionState::Disconnected,
         })
     }
@@ -179,7 +179,7 @@ pub struct SaltyClient {
     /// [`InitiatorSignaling`](protocol/struct.InitiatorSignaling.html) or a
     /// [`ResponderSignaling`](protocol/struct.ResponderSignaling.html)
     /// instance.
-    signaling: Box<Signaling>,
+    signaling: Arc<Mutex<Box<Signaling>>>,
 
     /// The connection state.
     state: ConnectionState,
@@ -188,17 +188,20 @@ pub struct SaltyClient {
 impl SaltyClient {
     /// Return the assigned role.
     pub fn role(&self) -> Role {
-        self.signaling.role()
+        self.signaling.lock().expect("Could not lock mutex").role()
     }
 
     /// Return a reference to the auth token.
-    pub fn auth_token(&self) -> Option<&AuthToken> {
-        self.signaling.auth_token()
+    pub fn auth_token_bytes(&self) -> Option<Vec<u8>> {
+        self.signaling
+            .lock().expect("Could not lock mutex")
+            .auth_token()
+            .map(|t| t.secret_key_bytes().to_owned())
     }
 
     /// Return a reference to the selected task.
     pub fn task(&self) -> Option<&Box<Task>> {
-        self.signaling.common().task.as_ref()
+        unimplemented!("TODO")
     }
 
     /// Connect to server.
@@ -214,86 +217,92 @@ impl SaltyClient {
         // Initialize libsodium
         libsodium_init()?;
 
-        // Determine URL
-        let path = {
-            match self.signaling.role() {
-                Role::Initiator => self.signaling.common().permanent_keypair.public_key_hex(),
-                Role::Responder => HEXLOWER.encode(
-                    self.signaling
-                        .get_peer().expect("Initiator context not set")
-                        .permanent_key().expect("Initiator permanent key not set")
-                        .as_ref()
-                ),
-            }
-        };
-        let url_string = format!("wss://{}:{}/{}", hostname, port, path);
-        info!("Connecting to {}", url_string);
+        { // Scope for signaling MutexGuard
 
-        // Parse URL
-        let url = Url::parse(&url_string)
-            .map_err(|e| SaltyError::Decode(format!("Invalid URL: {}", e)))?;
+            // Acquire signaling lock
+            let signaling = self.signaling.lock().expect("Could not acquire signaling lock");
 
-        // TODO: Get rid of the following unwraps inside the threads
+            // Determine URL
+            let path = {
+                match signaling.role() {
+                    Role::Initiator => signaling.common().permanent_keypair.public_key_hex(),
+                    Role::Responder => HEXLOWER.encode(
+                        signaling
+                            .get_peer().expect("Initiator context not set")
+                            .permanent_key().expect("Initiator permanent key not set")
+                            .as_ref()
+                    ),
+                }
+            };
+            let url_string = format!("wss://{}:{}/{}", hostname, port, path);
+            info!("Connecting to {}", url_string);
 
-        // Set up a one-time channel used to transfer the WebSocket sender outside the handler.
-        let (ws_sender_transfer_tx, ws_sender_transfer_rx) = mpsc::channel::<ws::Sender>();
+            // Parse URL
+            let url = Url::parse(&url_string)
+                .map_err(|e| SaltyError::Decode(format!("Invalid URL: {}", e)))?;
 
-        // Set up a one-time channel used to transfer the message receiver outside the handler.
-        let (mpsc_receiver_transfer_tx, mpsc_receiver_transfer_rx) = mpsc::channel::<mpsc::Receiver<Vec<u8>>>();
+            // TODO: Get rid of the following unwraps inside the threads
 
-        // Create new WebSocket
-        let mut socket = ws::WebSocket::new(move |sender: ws::Sender| {
-            // Send cloned sender through channel
-            ws_sender_transfer_tx.send(sender.clone()).expect("Could not send ws::Sender through channel");
+            // Set up a one-time channel used to transfer the WebSocket sender outside the handler.
+            let (ws_sender_transfer_tx, ws_sender_transfer_rx) = mpsc::channel::<ws::Sender>();
 
-            // Create a channel
-            let (receiver_tx, receiver_rx) = mpsc::channel::<Vec<u8>>();
+            // Set up a one-time channel used to transfer the message receiver outside the handler.
+            let (mpsc_receiver_transfer_tx, mpsc_receiver_transfer_rx) = mpsc::channel::<mpsc::Receiver<Vec<u8>>>();
 
-            // Send receiver through channel
-            mpsc_receiver_transfer_tx.send(receiver_rx).expect("Could not send mpsc::Receiver through channel");
+            // Create new WebSocket
+            let mut socket = ws::WebSocket::new(move |sender: ws::Sender| {
+                // Send cloned sender through channel
+                ws_sender_transfer_tx.send(sender.clone()).expect("Could not send ws::Sender through channel");
 
-            // Create a new [`Connection`](struct.Connection.html) instance
-            Connection {
-                ws: sender,
-                channel: receiver_tx,
-            }
-        }).map_err(|e| SaltyError::Network(format!("Could not create WebSocket: {}", e)))?;
+                // Create a channel
+                let (receiver_tx, receiver_rx) = mpsc::channel::<Vec<u8>>();
 
-        // Prepare server connection
-        socket.connect(url)
-            .map_err(|e| SaltyError::Network(format!("Could not connect to WebSocket server: {}", e)))?;
+                // Send receiver through channel
+                mpsc_receiver_transfer_tx.send(receiver_rx).expect("Could not send mpsc::Receiver through channel");
 
-        // Start receiving thread
-        let rx_thread = named_thread("saltyrtc-rx")
-            .spawn(move || {
-                info!("Started receiving thread");
-                socket.run().expect("WebSocket error");
-                info!("Stopped receiving thread");
-            })
-            .map_err(|e| SaltyError::Io(e.to_string()))?;
+                // Create a new [`Connection`](struct.Connection.html) instance
+                Connection {
+                    ws: sender,
+                    channel: receiver_tx,
+                }
+            }).map_err(|e| SaltyError::Network(format!("Could not create WebSocket: {}", e)))?;
 
-        // Get access to a WebSocket `Sender` instance
-        let ws_sender = ws_sender_transfer_rx.recv().unwrap();
-        let receiver_rx = mpsc_receiver_transfer_rx.recv().unwrap();
-        mem::drop(ws_sender_transfer_rx);
+            // Prepare server connection
+            socket.connect(url)
+                .map_err(|e| SaltyError::Network(format!("Could not connect to WebSocket server: {}", e)))?;
 
-        // Start sending thread
-        let (sender_tx, sender_rx) = mpsc::channel::<Vec<u8>>();
-        let tx_thread = named_thread("saltyrtc-tx")
-            .spawn(move || Self::sending_thread(sender_rx, ws_sender))
-            .map_err(|e| SaltyError::Io(e.to_string()))?;
+            // Start receiving thread
+            let rx_thread = named_thread("saltyrtc-rx")
+                .spawn(move || {
+                    info!("Started receiving thread");
+                    socket.run().expect("WebSocket error");
+                    info!("Stopped receiving thread");
+                })
+                .map_err(|e| SaltyError::Io(e.to_string()))?;
 
-        // Start signaling thread
-        let signaling_thread = named_thread("saltyrtc-signaling")
-            .spawn(move || Self::signaling_thread(receiver_rx))
-            .map_err(|e| SaltyError::Io(e.to_string()))?;
+            // Get access to a WebSocket `Sender` instance
+            let ws_sender = ws_sender_transfer_rx.recv().unwrap();
+            let receiver_rx = mpsc_receiver_transfer_rx.recv().unwrap();
+            mem::drop(ws_sender_transfer_rx);
 
-        self.state = ConnectionState::Connected {
-            tx_channel: sender_tx,
-            tx_thread,
-            rx_thread,
-            signaling_thread,
-        };
+            // Start sending thread
+            let (sender_tx, sender_rx) = mpsc::channel::<Vec<u8>>();
+            let tx_thread = named_thread("saltyrtc-tx")
+                .spawn(move || Self::sending_thread(sender_rx, ws_sender))
+                .map_err(|e| SaltyError::Io(e.to_string()))?;
+
+            // Start signaling thread
+            let signaling_thread = named_thread("saltyrtc-signaling")
+                .spawn(move || Self::signaling_thread(receiver_rx))
+                .map_err(|e| SaltyError::Io(e.to_string()))?;
+
+            self.state = ConnectionState::Connected {
+                tx_channel: sender_tx,
+                tx_thread,
+                rx_thread,
+                signaling_thread,
+            };
+        }
 
         Ok(self)
     }
