@@ -58,23 +58,25 @@ pub trait Task : Debug {
     fn close(&mut self, reason: u8);
 }
 
+pub type BoxedTask = Box<Task + Send>;
+
 /// A set of task boxes.
 ///
 /// This data structure wraps the vector and ensures
 /// that an empty tasks list cannot be created.
 #[derive(Debug)]
-pub(crate) struct Tasks(pub(crate) Vec<Box<Task>>);
+pub(crate) struct Tasks(pub(crate) Vec<BoxedTask>);
 
 impl Tasks {
     #[allow(dead_code)]
-    pub(crate) fn new(task: Box<Task>) -> Self {
+    pub(crate) fn new(task: BoxedTask) -> Self {
         Tasks(vec![task])
     }
 
     /// Create a `Tasks` instance from a vector.
     ///
     /// This may fail if the tasks vector is empty.
-    pub(crate) fn from_vec(tasks: Vec<Box<Task>>) -> Result<Tasks, &'static str> {
+    pub(crate) fn from_vec(tasks: Vec<BoxedTask>) -> Result<Tasks, &'static str> {
         if tasks.is_empty() {
             return Err("Tasks vector may not be empty");
         }
@@ -85,7 +87,7 @@ impl Tasks {
     ///
     /// This may fail if a task with the same `.name()` already exists.
     #[allow(dead_code)]
-    pub(crate) fn add_task(&mut self, task: Box<Task>) -> Result<&mut Self, String> {
+    pub(crate) fn add_task(&mut self, task: BoxedTask) -> Result<&mut Self, String> {
         if self.0.iter().any(|t| t.name() == task.name()) {
             return Err(format!("Task with name \"{}\" cannot be added twice", task.name()));
         }
@@ -101,7 +103,7 @@ impl Tasks {
 
     /// Choose the first task in our own list of supported tasks that is also contained in the list
     /// of supported tasks provided by the peer.
-    pub(crate) fn choose_shared_task<S: AsRef<str>>(self, tasks: &[S]) -> Option<Box<Task>> {
+    pub(crate) fn choose_shared_task<S: AsRef<str>>(self, tasks: &[S]) -> Option<BoxedTask> {
         for task in self.0 {
             if tasks.iter().find(|p| p.as_ref() == &*task.name()).is_some() {
                 return Some(task);
@@ -112,8 +114,8 @@ impl Tasks {
 }
 
 impl IntoIterator for Tasks {
-    type Item = Box<Task>;
-    type IntoIter = ::std::vec::IntoIter<Box<Task>>;
+    type Item = BoxedTask;
+    type IntoIter = ::std::vec::IntoIter<BoxedTask>;
 
     /// Return an iterator over the tasks.
     fn into_iter(self) -> Self::IntoIter {

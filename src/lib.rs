@@ -55,7 +55,7 @@ use ws::util::TcpStream;
 
 // Re-exports
 pub use protocol::Role;
-pub use task::Task;
+pub use task::{Task, BoxedTask};
 
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
@@ -68,7 +68,7 @@ use boxes::ByteBox;
 use crypto_types::{KeyPair, PublicKey, AuthToken};
 use errors::{SaltyResult, SaltyError, SignalingResult, BuilderError};
 use helpers::libsodium_init;
-use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
+use protocol::{HandleAction, Signaling, BoxedSignaling, InitiatorSignaling, ResponderSignaling};
 use task::Tasks;
 
 
@@ -76,10 +76,6 @@ use task::Tasks;
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
 #[cfg(feature = "msgpack-debugging")]
 const DEFAULT_MSGPACK_DEBUG_URL: &'static str = "https://msgpack.dbrgn.ch/#base64=";
-
-
-// Type aliases
-//type WsClient = Client<TlsStream<TcpStream>>;
 
 
 /// Helper function to create named thread
@@ -91,7 +87,7 @@ fn named_thread(name: &str) -> thread::Builder {
 /// The builder used to create a [`SaltyClient`](struct.SaltyClient.html) instance.
 pub struct SaltyClientBuilder {
     permanent_key: KeyPair,
-    tasks: Vec<Box<Task>>,
+    tasks: Vec<BoxedTask>,
     ping_interval: Option<Duration>,
 }
 
@@ -109,7 +105,7 @@ impl SaltyClientBuilder {
     ///
     /// When calling this method multiple times, tasks added first
     /// have the highest priority during task negotation.
-    pub fn add_task(mut self, task: Box<Task>) -> Self {
+    pub fn add_task(mut self, task: BoxedTask) -> Self {
         self.tasks.push(task);
         self
     }
@@ -179,7 +175,7 @@ pub struct SaltyClient {
     /// [`InitiatorSignaling`](protocol/struct.InitiatorSignaling.html) or a
     /// [`ResponderSignaling`](protocol/struct.ResponderSignaling.html)
     /// instance.
-    signaling: Arc<Mutex<Box<Signaling>>>,
+    signaling: Arc<Mutex<BoxedSignaling>>,
 
     /// The connection state.
     state: ConnectionState,
@@ -200,7 +196,7 @@ impl SaltyClient {
     }
 
     /// Return a reference to the selected task.
-    pub fn task(&self) -> Option<&Box<Task>> {
+    pub fn task(&self) -> Option<&BoxedTask> {
         unimplemented!("TODO")
     }
 
@@ -292,8 +288,9 @@ impl SaltyClient {
                 .map_err(|e| SaltyError::Io(e.to_string()))?;
 
             // Start signaling thread
+            let sig2 = self.signaling.clone();
             let signaling_thread = named_thread("saltyrtc-signaling")
-                .spawn(move || Self::signaling_thread(receiver_rx))
+                .spawn(move || Self::signaling_thread(receiver_rx, sig2))
                 .map_err(|e| SaltyError::Io(e.to_string()))?;
 
             self.state = ConnectionState::Connected {
@@ -316,10 +313,28 @@ impl SaltyClient {
         info!("Stopped sending thread");
     }
 
-    fn signaling_thread(channel: mpsc::Receiver<Vec<u8>>) {
+    fn signaling_thread(channel: mpsc::Receiver<Vec<u8>>, signaling: Arc<Mutex<BoxedSignaling>>) {
         info!("Started signaling thread");
         for bytes in channel {
-            info!("Message received");
+            // Parse into ByteBox
+            let bbox = ByteBox::from_slice(&bytes)
+                .map_err(|e| SaltyError::Protocol(e.to_string()))
+                .unwrap();
+            trace!("ByteBox: {:?}", bbox);
+
+            // Hand message over to signaling instance
+            let handle_actions = match signaling.lock().expect("Could not unlock signaling instance")
+                           .handle_message(bbox) {
+                Ok(actions) => actions,
+                Err(e) => {
+                    error!("Could not handle incoming message: {}", e);
+                    // TODO
+                    continue;
+                },
+            };
+
+            // Execute actions
+            println!("Handle actions: {:?}", handle_actions);
         }
         info!("Stopped signaling thread");
     }
