@@ -9,6 +9,7 @@ use failure::{Error};
 use rmpv::{Value};
 use ws;
 
+use errors::{SaltyResult};
 use task::{Task};
 use protocol::{Role};
 
@@ -38,7 +39,7 @@ impl Task for DummyTask {
         Ok(())
     }
 
-    fn on_peer_handshake_done(&mut self, role: Role, sender: ws::Sender) {
+    fn on_peer_handshake_done(&mut self, role: Role, sender: ws::Sender, encrypt_for_peer: Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>) {
         unimplemented!()
     }
 

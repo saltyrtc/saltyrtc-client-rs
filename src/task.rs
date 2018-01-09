@@ -16,6 +16,7 @@ use rmpv::Value;
 use ws;
 
 use ::protocol::Role;
+use ::errors::SaltyResult;
 
 
 /// An interface that needs to be implemented by every signaling task.
@@ -36,7 +37,8 @@ pub trait Task : Debug + Any {
     /// This is the point where the task can take over.
     fn on_peer_handshake_done(&mut self,
                               role: Role,
-                              sender: ws::Sender);
+                              sender: ws::Sender,
+                              encrypt_for_peer: Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>);
 
     /// Return a list of message types supported by this task.
     ///

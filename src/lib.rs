@@ -379,11 +379,21 @@ impl SaltyClient {
                         // If the handshake is done, let the task know.
                         if peer_handshake_done {
                             let role = sig.role();
+                            let signaling2 = signaling.clone();
                             match sig.common_mut().task {
                                 Some(ref mut task) => {
                                     task
                                         .lock().expect("Could not lock task mutex")
-                                        .on_peer_handshake_done(role, sender.clone());
+                                        .on_peer_handshake_done(
+                                            role,
+                                            sender.clone(),
+                                            Box::new(move |val: rmpv::Value| {
+                                                let bbox = signaling2
+                                                    .lock().expect("Could not lock signaling mutex")
+                                                    .encode_task_message(val)?;
+                                                Ok(bbox.into_bytes())
+                                            })
+                                        );
                                 }
                                 None => panic!("No task selected"), // TODO error handling
                             }
