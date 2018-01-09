@@ -339,6 +339,42 @@ pub(crate) trait Signaling {
     }
 
 
+    // Message encoding
+
+    /// Encode a `Value` for the chosen peer. This is used by the task.
+    fn encode_task_message(&self, value: Value) -> SignalingResult<ByteBox> {
+        // Check state
+        let signaling_state = self.common().signaling_state();
+        if signaling_state != SignalingState::Task {
+            return Err(SignalingError::Crash(
+                format!("Called encode_task_message in state {:?}", signaling_state)
+            ));
+        }
+
+        // Get peer
+        let peer = self.get_peer()
+            .ok_or(SignalingError::Crash("Peer not set".into()))?;
+
+        // Create and encrypt message
+        let nonce = Nonce::new(
+            // Cookie
+            peer.cookie_pair().ours.clone(),
+            // Src
+            self.common().identity.into(),
+            // Dst
+            peer.identity().into(),
+            // Csn
+            peer.csn_pair().borrow_mut().ours.increment()?,
+        );
+        let obox = OpenBox::<Value>::new(value, nonce);
+        let bbox = obox.encrypt(
+            peer.keypair().ok_or(SignalingError::Crash("Session keypair not available".into()))?,
+            peer.session_key().ok_or(SignalingError::Crash("Peer session key not set".into()))?,
+        );
+
+        Ok(bbox)
+    }
+
     // Message handling: Dispatching
 
     /// Determine the next server handshake state based on the incoming

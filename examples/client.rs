@@ -28,6 +28,7 @@ use failure::{Error};
 
 use saltyrtc_client::{SaltyClientBuilder, Role, Task};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
+use saltyrtc_client::errors::{SaltyResult};
 use saltyrtc_client::events::{Event};
 use saltyrtc_client::rmpv::{Value};
 use saltyrtc_client::ws;
@@ -230,11 +231,19 @@ fn main() {
     }
 }
 
-#[derive(PartialEq, Clone)]
 struct ChatTask {
     our_name: String,
     peer_name: Option<String>,
     sender: Option<ws::Sender>,
+    encrypt_for_peer: Option<Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>>,
+}
+
+impl PartialEq for ChatTask {
+    fn eq(&self, other: &ChatTask) -> bool {
+        self.our_name == other.our_name &&
+            self.peer_name == other.peer_name &&
+            self.sender == other.sender
+    }
 }
 
 impl ChatTask {
@@ -243,15 +252,28 @@ impl ChatTask {
             our_name: our_name.into(),
             peer_name: None,
             sender: None,
+            encrypt_for_peer: None,
         }
     }
 
-    pub fn send_message<S: ToString>(&self, msg: S) -> Result<(), String> {
+    pub fn send_message(&self, msg: &str) -> Result<(), String> {
+        // Get access to WebSocket sender
         let sender = match self.sender {
             Some(ref sender) => sender,
             None => return Err("WebSocket sender not initialized".into()),
         };
-        let ws_msg = ws::Message::Text(msg.to_string()); // TODO: Encrypt
+
+        // Convert text to message
+        let value = Value::from(msg);
+
+        // Encrypt message
+        let encrypted = match self.encrypt_for_peer {
+            Some(ref func) => func(value).map_err(|e| format!("Cannot encrypt message: {}", e))?,
+            None => return Err("encrypt_for_peer function not set".to_string()),
+        };
+
+        // Send message
+        let ws_msg = ws::Message::Binary(encrypted);
         sender.send(ws_msg).map_err(|e| format!("Could not send message: {}", e))
     }
 }
@@ -283,9 +305,15 @@ impl Task for ChatTask {
     /// Used by the signaling class to notify task that the peer handshake is over.
     ///
     /// This is the point where the task can take over.
-    fn on_peer_handshake_done(&mut self, _role: Role, sender: ws::Sender) {
+    fn on_peer_handshake_done(
+        &mut self,
+        _role: Role,
+        sender: ws::Sender,
+        encrypt_for_peer: Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>,
+    ) {
         info!("ChatTask taking over!");
         self.sender = Some(sender);
+        self.encrypt_for_peer = Some(encrypt_for_peer);
     }
 
     /// Return a list of message types supported by this task.
