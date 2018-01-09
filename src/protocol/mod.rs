@@ -28,7 +28,8 @@ pub(crate) mod types;
 
 #[cfg(test)] mod tests;
 
-use super::task::{Task, Tasks, BoxedTask};
+use ::events::{Event};
+use ::task::{Task, Tasks, BoxedTask};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
@@ -487,11 +488,14 @@ pub(crate) trait Signaling {
         // TODO (#12): Implement
 
         // Moreover, the client MUST do some checks depending on its role
-        let actions = self.handle_server_auth_impl(&msg)?;
+        let mut actions = self.handle_server_auth_impl(&msg)?;
 
         info!("Server handshake completed");
+        actions.push(HandleAction::Event(Event::ServerHandshakeDone));
+
         self.server_mut().set_handshake_state(ServerHandshakeState::Done);
         self.common_mut().set_signaling_state(SignalingState::PeerHandshake)?;
+
         Ok(actions)
     }
 
@@ -1065,7 +1069,7 @@ impl InitiatorSignaling {
         responder.set_handshake_state(ResponderHandshakeState::AuthSent);
         self.common.set_signaling_state(SignalingState::Task)?;
         info!("Peer handshake completed");
-        actions.push(HandleAction::HandshakeDone);
+        actions.push(HandleAction::Event(Event::PeerHandshakeDone));
 
         self.responder = Some(responder);
         Ok(actions)
@@ -1428,7 +1432,7 @@ impl ResponderSignaling {
         self.common.set_signaling_state(SignalingState::Task)?;
         info!("Peer handshake completed");
 
-        Ok(vec![HandleAction::HandshakeDone])
+        Ok(vec![HandleAction::Event(Event::PeerHandshakeDone)])
     }
 }
 
