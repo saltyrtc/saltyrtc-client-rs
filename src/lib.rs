@@ -360,11 +360,9 @@ impl SaltyClient {
                         sender.send(ws::Message::Binary(bbox.into_bytes()))
                             .expect("Could not send message");
                     },
-                    HandleAction::HandshakeDone => {
-                        events
-                            .lock().expect("Could not unlock event bus")
-                            .broadcast(Event::HandshakeDone);
-                    },
+                    HandleAction::Event(e) => events
+                        .lock().expect("Could not unlock event bus")
+                        .broadcast(e),
                 }
             }
         }

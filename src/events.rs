@@ -9,8 +9,11 @@ pub(crate) const BUS_SIZE: usize = 32;
 /// matching on this enum should not be exhaustive!
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    /// The server and peer handshakes have been done.
-    HandshakeDone,
+    /// The server handshake is done.
+    ServerHandshakeDone,
+
+    /// Both the server and peer handshakes have been done.
+    PeerHandshakeDone,
 
     #[doc(hidden)]
     ___ForExtensibility,
