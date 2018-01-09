@@ -153,10 +153,10 @@ fn main() {
 
     println!("\n\x1B[32m******************************");
     println!("Connecting as {}", role);
-    println!("");
+    println!();
     println!("Signaling path: {}", path);
     println!("Auth token: {}", auth_token_hex);
-    println!("");
+    println!();
     println!("To connect with a peer:");
     match role {
         Role::Initiator => println!("cargo run --features 'msgpack-debugging' --example client -- responder \\\n    -p {} \\\n    -a {}", path, auth_token_hex),
@@ -221,7 +221,7 @@ impl Task for ChatTask {
     ///
     /// This is the point where the task can take over.
     fn on_peer_handshake_done(&mut self) {
-        info!("Peer handshake done");
+        info!("ChatTask taking over!");
         // TODO
     }
 
