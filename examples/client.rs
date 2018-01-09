@@ -12,8 +12,9 @@ extern crate saltyrtc_client;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::env;
+use std::fmt;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{Read, Write, stdin, stdout};
 use std::path::Path;
 use std::process;
 use std::thread;
@@ -27,8 +28,9 @@ use failure::{Error};
 
 use saltyrtc_client::{SaltyClientBuilder, Role, Task};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
+use saltyrtc_client::events::{Event};
 use saltyrtc_client::rmpv::{Value};
-
+use saltyrtc_client::ws;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -171,23 +173,68 @@ fn main() {
     });
 
     let mut events = salty.events();
+
+    // Wait for handshake
     loop {
         match events.recv() {
             Ok(event) => {
                 println!("An event happened: {:?}", event);
+                if event == Event::PeerHandshakeDone {
+                    break;
+                }
             },
             Err(_) => {
                 println!("Event stream ended");
-                break;
+                process::exit(0);
             }
         }
     }
+
+    // Start chat loop
+    thread::sleep(Duration::from_millis(1000));
+    println!(r" ___       _ _         ___ _         _");
+    println!(r"/ __| __ _| | |_ _  _ / __| |_  __ _| |_");
+    println!(r"\__ \/ _` | |  _| || | (__| ' \/ _` |  _|");
+    println!(r"|___/\__,_|_|\__|\_, |\___|_||_\__,_|\__|");
+    println!(r"                 |__/");
+    println!();
+
+    // Get an atomic reference to the task.
+    let task = salty.task().expect("Task not set").clone();
+
+    loop {
+        print!("chat> ");
+        stdout().flush().expect("Could not flush stdout");
+
+        let mut input = String::new();
+        stdin().read_line(&mut input)
+            .expect("Failed to read line");
+
+        match &*input.trim() {
+            "q" | "quit" => {
+                println!("Goodbye.");
+                break;
+            },
+            "h" | "help" | "?" | "" => {
+                println!("Enter a message. To quit, enter \"q\" or \"quit\".");
+                continue;
+            },
+            _ => {},
+        }
+
+        let t = task.lock().expect("Could not lock task mutex");
+        let chat_task: &ChatTask = (&**t as &Task)
+            .downcast_ref::<ChatTask>()
+            .expect("Chosen task is not a ChatTask");
+        chat_task.send_message(&input);
+    }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(PartialEq, Clone)]
 struct ChatTask {
     our_name: String,
     peer_name: Option<String>,
+    sender: Option<ws::Sender>,
 }
 
 impl ChatTask {
@@ -195,7 +242,23 @@ impl ChatTask {
         ChatTask {
             our_name: our_name.into(),
             peer_name: None,
+            sender: None,
         }
+    }
+
+    pub fn send_message<S: ToString>(&self, msg: S) -> Result<(), String> {
+        let sender = match self.sender {
+            Some(ref sender) => sender,
+            None => return Err("WebSocket sender not initialized".into()),
+        };
+        let ws_msg = ws::Message::Text(msg.to_string()); // TODO: Encrypt
+        sender.send(ws_msg).map_err(|e| format!("Could not send message: {}", e))
+    }
+}
+
+impl fmt::Debug for ChatTask {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ChatTask(nick={})", &self.our_name)
     }
 }
 
@@ -220,20 +283,17 @@ impl Task for ChatTask {
     /// Used by the signaling class to notify task that the peer handshake is over.
     ///
     /// This is the point where the task can take over.
-    fn on_peer_handshake_done(&mut self) {
+    fn on_peer_handshake_done(&mut self, _role: Role, sender: ws::Sender) {
         info!("ChatTask taking over!");
-        // TODO
+        self.sender = Some(sender);
     }
 
-    /// Return whether the specified message type is supported by this task.
+    /// Return a list of message types supported by this task.
     ///
     /// Incoming messages with accepted types will be passed to the task.
     /// Otherwise, the message is dropped.
-    fn type_supported(&self, type_: &str) -> bool {
-        match type_ {
-            "msg" | "nick_change" => true,
-            _ => false,
-        }
+    fn supported_types(&self) -> &[&'static str] {
+        &["msg", "nick_change"]
     }
 
     /// This method is called by SaltyRTC when a task related message

@@ -7,34 +7,42 @@
 
 use std::borrow::{Cow};
 use std::collections::{HashMap};
-use std::fmt::Debug;
-use std::iter::IntoIterator;
+use std::fmt::{Debug};
+use std::iter::{IntoIterator};
 
 use failure::Error;
+use mopa::Any;
 use rmpv::Value;
+use ws;
+
+use ::protocol::Role;
 
 
 /// An interface that needs to be implemented by every signaling task.
 ///
 /// A task defines how data is exchanged after the server- and peer-handshake
 /// have been completed.
-pub trait Task : Debug {
+pub trait Task : Debug + Any {
 
     /// Initialize the task with the task data from the peer, sent in the `Auth` message.
     ///
     /// The task should keep track internally whether it has been initialized or not.
     fn init(&mut self, data: &Option<HashMap<String, Value>>) -> Result<(), Error>;
 
-    /// Used by the signaling class to notify task that the peer handshake is over.
+    /// Used by the signaling thread to notify task that the peer handshake is over.
+    ///
+    /// A reference to the signaling instance is also passed in.
     ///
     /// This is the point where the task can take over.
-    fn on_peer_handshake_done(&mut self);
+    fn on_peer_handshake_done(&mut self,
+                              role: Role,
+                              sender: ws::Sender);
 
-    /// Return whether the specified message type is supported by this task.
+    /// Return a list of message types supported by this task.
     ///
     /// Incoming messages with accepted types will be passed to the task.
     /// Otherwise, the message is dropped.
-    fn type_supported(&self, type_: &str) -> bool;
+    fn supported_types(&self) -> &[&'static str];
 
     /// This method is called by SaltyRTC when a task related message
     /// arrives through the WebSocket.
@@ -57,6 +65,8 @@ pub trait Task : Debug {
     /// This method is called by the signaling class when sending and receiving 'close' messages.
     fn close(&mut self, reason: u8);
 }
+
+mopafy!(Task);
 
 pub type BoxedTask = Box<Task + Send>;
 

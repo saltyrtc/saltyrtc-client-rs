@@ -970,7 +970,7 @@ mod auth {
 
         // Task was set!
         assert!(ctx.signaling.common().task.is_some());
-        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().name(), DummyTask::name_for(42));
+        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().lock().unwrap().name(), DummyTask::name_for(42));
 
         // Tasks list was removed
         assert!(ctx.signaling.common().tasks.is_none());
@@ -1018,7 +1018,7 @@ mod auth {
 
         // Task was set!
         assert!(ctx.signaling.common().task.is_some());
-        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().name(), DummyTask::name_for(42));
+        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().lock().unwrap().name(), DummyTask::name_for(42));
 
         // Tasks list was removed
         assert!(ctx.signaling.common().tasks.is_none());
