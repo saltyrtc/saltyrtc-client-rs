@@ -11,6 +11,8 @@ extern crate data_encoding;
 extern crate failure;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate mopa;
 extern crate openssl;
 extern crate rmp_serde;
 extern crate rust_sodium;
@@ -19,11 +21,11 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate url;
-extern crate ws;
 
 // Re-exports
 pub extern crate bus;
 pub extern crate rmpv;
+pub extern crate ws;
 
 // Modules
 mod boxes;
@@ -190,20 +192,24 @@ pub struct SaltyClient {
 impl SaltyClient {
     /// Return the assigned role.
     pub fn role(&self) -> Role {
-        self.signaling.lock().expect("Could not lock mutex").role()
+        self.signaling.lock().expect("Could not lock signaling mutex").role()
     }
 
     /// Return a reference to the auth token.
     pub fn auth_token_bytes(&self) -> Option<Vec<u8>> {
         self.signaling
-            .lock().expect("Could not lock mutex")
+            .lock().expect("Could not lock signaling mutex")
             .auth_token()
             .map(|t| t.secret_key_bytes().to_owned())
     }
 
     /// Return a reference to the selected task.
-    pub fn task(&self) -> Option<&BoxedTask> {
-        unimplemented!("TODO")
+    pub fn task(&self) -> Option<Arc<Mutex<BoxedTask>>> {
+        self.signaling
+            .lock().expect("Could not lock signaling mutex")
+            .common()
+            .task
+            .clone()
     }
 
     /// Return the receiver for SaltyRTC events.
@@ -372,8 +378,13 @@ impl SaltyClient {
 
                         // If the handshake is done, let the task know.
                         if peer_handshake_done {
+                            let role = sig.role();
                             match sig.common_mut().task {
-                                Some(ref mut task) => task.on_peer_handshake_done(),
+                                Some(ref mut task) => {
+                                    task
+                                        .lock().expect("Could not lock task mutex")
+                                        .on_peer_handshake_done(role, sender.clone());
+                                }
                                 None => panic!("No task selected"), // TODO error handling
                             }
                         }

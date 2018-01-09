@@ -10,6 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use boxes::{ByteBox, OpenBox};
@@ -541,7 +542,7 @@ pub(crate) struct Common {
     pub(crate) tasks: Option<Tasks>,
 
     /// The chosen task.
-    pub(crate) task: Option<BoxedTask>,
+    pub(crate) task: Option<Arc<Mutex<BoxedTask>>>,
 
     /// The interval at which the server should send WebSocket ping messages.
     pub(crate) ping_interval: Option<Duration>,
@@ -1063,7 +1064,7 @@ impl InitiatorSignaling {
         actions.push(HandleAction::Reply(bbox));
 
         // Store chosen task
-        self.common_mut().task = Some(chosen_task);
+        self.common_mut().task = Some(Arc::new(Mutex::new(chosen_task)));
 
         // State transitions
         responder.set_handshake_state(ResponderHandshakeState::AuthSent);
@@ -1425,7 +1426,7 @@ impl ResponderSignaling {
         info!("Initiator authenticated");
 
         // Store chosen task
-        self.common_mut().task = Some(chosen_task);
+        self.common_mut().task = Some(Arc::new(Mutex::new(chosen_task)));
 
         // State transitions
         self.initiator.set_handshake_state(InitiatorHandshakeState::AuthReceived);

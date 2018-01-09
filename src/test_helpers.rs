@@ -7,8 +7,10 @@ use std::collections::{HashMap};
 
 use failure::{Error};
 use rmpv::{Value};
+use ws;
 
 use task::{Task};
+use protocol::{Role};
 
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -36,12 +38,12 @@ impl Task for DummyTask {
         Ok(())
     }
 
-    fn on_peer_handshake_done(&mut self) {
+    fn on_peer_handshake_done(&mut self, role: Role, sender: ws::Sender) {
         unimplemented!()
     }
 
-    fn type_supported(&self, type_: &str) -> bool {
-        true
+    fn supported_types(&self) -> &[&'static str] {
+        &["foo", "bar"]
     }
 
     fn on_task_message(&mut self, message: Value) {
