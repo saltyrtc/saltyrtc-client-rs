@@ -342,8 +342,10 @@ impl SaltyClient {
                 .unwrap();
             trace!("ByteBox: {:?}", bbox);
 
-            // Hand message over to signaling instance
+            // Lock signaling instance mutex
             let mut sig = signaling.lock().expect("Could not unlock signaling instance");
+
+            // Hand message over to signaling instance
             let handle_actions = match sig.handle_message(bbox) {
                 Ok(actions) => actions,
                 Err(e) => {
@@ -360,9 +362,23 @@ impl SaltyClient {
                         sender.send(ws::Message::Binary(bbox.into_bytes()))
                             .expect("Could not send message");
                     },
-                    HandleAction::Event(e) => events
-                        .lock().expect("Could not unlock event bus")
-                        .broadcast(e),
+                    HandleAction::Event(e) => {
+                        let peer_handshake_done = e == Event::PeerHandshakeDone;
+
+                        // Propagate events through event bus.
+                        events
+                            .lock().expect("Could not unlock event bus")
+                            .broadcast(e);
+
+                        // If the handshake is done, let the task know.
+                        if peer_handshake_done {
+                            match sig.common_mut().task {
+                                Some(ref mut task) => task.on_peer_handshake_done(),
+                                None => panic!("No task selected"), // TODO error handling
+                            }
+                        }
+
+                    },
                 }
             }
         }
