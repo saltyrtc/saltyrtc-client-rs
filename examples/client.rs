@@ -10,14 +10,12 @@ extern crate env_logger;
 extern crate saltyrtc_client;
 
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process;
-use std::rc::Rc;
 use std::time::Duration;
 
 use chrono::Local;

@@ -35,13 +35,9 @@ mod task;
 mod test_helpers;
 
 // Rust imports
-use std::cell::RefCell;
 use std::borrow::Cow;
 use std::fmt;
-use std::io::ErrorKind;
 use std::mem;
-use std::ops::Deref;
-use std::rc::Rc;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -49,7 +45,6 @@ use std::time::Duration;
 // Third party imports
 use data_encoding::HEXLOWER;
 use openssl::ssl::{SslMethod, SslStream, SslConnectorBuilder, SslVerifyMode};
-use rmpv::Value;
 use url::Url;
 use ws::util::TcpStream;
 
@@ -66,7 +61,7 @@ pub mod crypto {
 // Internal imports
 use boxes::ByteBox;
 use crypto_types::{KeyPair, PublicKey, AuthToken};
-use errors::{SaltyResult, SaltyError, SignalingResult, BuilderError};
+use errors::{SaltyResult, SaltyError, BuilderError};
 use helpers::libsodium_init;
 use protocol::{HandleAction, Signaling, BoxedSignaling, InitiatorSignaling, ResponderSignaling};
 use task::Tasks;
@@ -258,7 +253,7 @@ impl SaltyClient {
 
                 // Create a new [`Connection`](struct.Connection.html) instance
                 Connection {
-                    ws: sender,
+                    _ws: sender,
                     channel: receiver_tx,
                 }
             }).map_err(|e| SaltyError::Network(format!("Could not create WebSocket: {}", e)))?;
@@ -283,15 +278,18 @@ impl SaltyClient {
 
             // Start sending thread
             let (sender_tx, sender_rx) = mpsc::channel::<Vec<u8>>();
-            let tx_thread = named_thread("saltyrtc-tx")
-                .spawn(move || Self::sending_thread(sender_rx, ws_sender))
-                .map_err(|e| SaltyError::Io(e.to_string()))?;
+            let tx_thread = {
+                let ws_sender = ws_sender.clone();
+                named_thread("saltyrtc-tx")
+                    .spawn(move || Self::sending_thread(sender_rx, ws_sender))
+                    .map_err(|e| SaltyError::Io(e.to_string()))?
+            };
 
             // Start signaling thread
             let sig2 = self.signaling.clone();
             let signaling_thread = named_thread("saltyrtc-signaling")
-                .spawn(move || Self::signaling_thread(receiver_rx, sig2))
-                .map_err(|e| SaltyError::Io(e.to_string()))?;
+                    .spawn(move || Self::signaling_thread(receiver_rx, ws_sender, sig2))
+                    .map_err(|e| SaltyError::Io(e.to_string()))?;
 
             self.state = ConnectionState::Connected {
                 tx_channel: sender_tx,
@@ -313,7 +311,9 @@ impl SaltyClient {
         info!("Stopped sending thread");
     }
 
-    fn signaling_thread(channel: mpsc::Receiver<Vec<u8>>, signaling: Arc<Mutex<BoxedSignaling>>) {
+    fn signaling_thread(channel: mpsc::Receiver<Vec<u8>>,
+                        sender: ws::Sender,
+                        signaling: Arc<Mutex<BoxedSignaling>>) {
         info!("Started signaling thread");
         for bytes in channel {
             // Parse into ByteBox
@@ -334,14 +334,26 @@ impl SaltyClient {
             };
 
             // Execute actions
-            println!("Handle actions: {:?}", handle_actions);
+            for action in handle_actions {
+                match action {
+                    HandleAction::Reply(bbox) => {
+                        sender.send(ws::Message::Binary(bbox.into_bytes()))
+                            .expect("Could not send message");
+                    },
+                    HandleAction::HandshakeDone => { /* TODO */ },
+                }
+            }
         }
         info!("Stopped signaling thread");
     }
 
     pub fn wait(self) {
         match self.state {
-            ConnectionState::Connected { tx_thread, rx_thread, .. } => rx_thread.join().unwrap(),
+            ConnectionState::Connected { tx_thread, rx_thread, signaling_thread, .. } => {
+                rx_thread.join().unwrap();
+                tx_thread.join().unwrap();
+                signaling_thread.join().unwrap();
+            },
             ConnectionState::Disconnected => panic!("Cannot wait on disconnected client"),
         };
     }
@@ -349,7 +361,7 @@ impl SaltyClient {
 
 struct Connection {
     /// The WebSocket sender object.
-    ws: ws::Sender,
+    _ws: ws::Sender,
 
     /// The channel used to send incoming messages to listeners.
     channel: mpsc::Sender<Vec<u8>>,
@@ -393,11 +405,11 @@ impl ws::Handler for Connection {
         // Log and unwrap bytes
         let bytes = match msg {
             ws::Message::Text(_) => {
-                debug!("Incoming text message, ignoring");
+                warn!("--> Incoming text message, ignoring");
                 return Ok(());
             },
             ws::Message::Binary(bytes) => {
-                debug!("Incoming message ({} bytes)", bytes.len());
+                trace!("--> Incoming message ({} bytes)", bytes.len());
                 bytes
             },
         };
@@ -411,8 +423,8 @@ impl ws::Handler for Connection {
 
     fn on_send_message(&mut self, msg: ws::Message) -> ws::Result<Option<ws::Message>> {
         match msg {
-            ws::Message::Text(_) => debug!("Outgoing text message"),
-            ws::Message::Binary(ref bytes) => debug!("Outgoing message ({} bytes)", bytes.len()),
+            ws::Message::Text(_) => trace!("<-- Outgoing text message"),
+            ws::Message::Binary(ref bytes) => trace!("<-- Outgoing message ({} bytes)", bytes.len()),
         }
         Ok(Some(msg))
     }
