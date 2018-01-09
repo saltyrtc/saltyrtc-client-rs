@@ -168,7 +168,18 @@ fn main() {
         process::exit(1);
     });
 
-    salty.wait();
+    let mut events = salty.events();
+    loop {
+        match events.recv() {
+            Ok(event) => {
+                println!("An event happened: {:?}", event);
+            },
+            Err(_) => {
+                println!("Event stream ended");
+                break;
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

@@ -22,12 +22,14 @@ extern crate url;
 extern crate ws;
 
 // Re-exports
+pub extern crate bus;
 pub extern crate rmpv;
 
 // Modules
 mod boxes;
 mod crypto_types;
 pub mod errors;
+pub mod events;
 mod helpers;
 mod protocol;
 mod task;
@@ -43,6 +45,7 @@ use std::thread;
 use std::time::Duration;
 
 // Third party imports
+use bus::{Bus, BusReader};
 use data_encoding::HEXLOWER;
 use openssl::ssl::{SslMethod, SslStream, SslConnectorBuilder, SslVerifyMode};
 use url::Url;
@@ -62,9 +65,10 @@ pub mod crypto {
 use boxes::ByteBox;
 use crypto_types::{KeyPair, PublicKey, AuthToken};
 use errors::{SaltyResult, SaltyError, BuilderError};
-use helpers::libsodium_init;
+use events::{Event};
+use helpers::{libsodium_init};
 use protocol::{HandleAction, Signaling, BoxedSignaling, InitiatorSignaling, ResponderSignaling};
-use task::Tasks;
+use task::{Tasks};
 
 
 // Constants
@@ -129,6 +133,7 @@ impl SaltyClientBuilder {
         Ok(SaltyClient {
             signaling: Arc::new(Mutex::new(Box::new(signaling))),
             state: ConnectionState::Disconnected,
+            events: Arc::new(Mutex::new(Bus::new(events::BUS_SIZE))),
         })
     }
 
@@ -145,6 +150,7 @@ impl SaltyClientBuilder {
         Ok(SaltyClient {
             signaling: Arc::new(Mutex::new(Box::new(signaling))),
             state: ConnectionState::Disconnected,
+            events: Arc::new(Mutex::new(Bus::new(events::BUS_SIZE))),
         })
     }
 }
@@ -158,6 +164,8 @@ enum ConnectionState {
         signaling_thread: thread::JoinHandle<()>,
     }
 }
+
+
 
 /// The SaltyRTC Client instance.
 ///
@@ -174,6 +182,9 @@ pub struct SaltyClient {
 
     /// The connection state.
     state: ConnectionState,
+
+    /// A bus where events are published.
+    events: Arc<Mutex<Bus<Event>>>,
 }
 
 impl SaltyClient {
@@ -193,6 +204,11 @@ impl SaltyClient {
     /// Return a reference to the selected task.
     pub fn task(&self) -> Option<&BoxedTask> {
         unimplemented!("TODO")
+    }
+
+    /// Return the receiver for SaltyRTC events.
+    pub fn events(&mut self) -> BusReader<Event> {
+        self.events.lock().unwrap().add_rx()
     }
 
     /// Connect to server.
@@ -286,10 +302,13 @@ impl SaltyClient {
             };
 
             // Start signaling thread
-            let sig2 = self.signaling.clone();
-            let signaling_thread = named_thread("saltyrtc-signaling")
-                    .spawn(move || Self::signaling_thread(receiver_rx, ws_sender, sig2))
-                    .map_err(|e| SaltyError::Io(e.to_string()))?;
+            let signaling_thread = {
+                let signaling = self.signaling.clone();
+                let events = self.events.clone();
+                named_thread("saltyrtc-signaling")
+                    .spawn(move || Self::signaling_thread(receiver_rx, ws_sender, events, signaling))
+                    .map_err(|e| SaltyError::Io(e.to_string()))?
+            };
 
             self.state = ConnectionState::Connected {
                 tx_channel: sender_tx,
@@ -311,11 +330,12 @@ impl SaltyClient {
         info!("Stopped sending thread");
     }
 
-    fn signaling_thread(channel: mpsc::Receiver<Vec<u8>>,
+    fn signaling_thread(incoming_messages: mpsc::Receiver<Vec<u8>>,
                         sender: ws::Sender,
+                        events: Arc<Mutex<Bus<Event>>>,
                         signaling: Arc<Mutex<BoxedSignaling>>) {
         info!("Started signaling thread");
-        for bytes in channel {
+        for bytes in incoming_messages {
             // Parse into ByteBox
             let bbox = ByteBox::from_slice(&bytes)
                 .map_err(|e| SaltyError::Protocol(e.to_string()))
@@ -323,8 +343,8 @@ impl SaltyClient {
             trace!("ByteBox: {:?}", bbox);
 
             // Hand message over to signaling instance
-            let handle_actions = match signaling.lock().expect("Could not unlock signaling instance")
-                           .handle_message(bbox) {
+            let mut sig = signaling.lock().expect("Could not unlock signaling instance");
+            let handle_actions = match sig.handle_message(bbox) {
                 Ok(actions) => actions,
                 Err(e) => {
                     error!("Could not handle incoming message: {}", e);
@@ -340,7 +360,11 @@ impl SaltyClient {
                         sender.send(ws::Message::Binary(bbox.into_bytes()))
                             .expect("Could not send message");
                     },
-                    HandleAction::HandshakeDone => { /* TODO */ },
+                    HandleAction::HandshakeDone => {
+                        events
+                            .lock().expect("Could not unlock event bus")
+                            .broadcast(Event::HandshakeDone);
+                    },
                 }
             }
         }
