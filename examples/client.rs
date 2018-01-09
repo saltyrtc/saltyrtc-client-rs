@@ -16,6 +16,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process;
+use std::thread;
 use std::time::Duration;
 
 use chrono::Local;
@@ -35,12 +36,13 @@ fn main() {
     dotenv::dotenv().ok();
     Builder::new()
         .format(|buf, record| {
-            writeln!(buf, "{} [{:<5}] {} ({}:{})",
+            writeln!(buf, "{} [{:<5}] {} ({}:{}, {})",
                      Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
                      record.level(),
                      record.args(),
                      record.file().unwrap_or("?"),
-                     record.line().map(|num| num.to_string()).unwrap_or("?".to_string()))
+                     record.line().map(|num| num.to_string()).unwrap_or("?".to_string()),
+                     thread::current().name().unwrap_or("?"))
         })
         .parse(&env::var("RUST_LOG").unwrap_or_default())
         .init();
