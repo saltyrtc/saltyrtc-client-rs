@@ -10,7 +10,7 @@ use saltyrtc_client::rmpv::{Value};
 use saltyrtc_client::ws;
 
 
-pub(crate)  struct ChatTask {
+pub(crate) struct ChatTask {
     pub(crate) our_name: String,
     pub(crate) peer_name: Option<String>,
     pub(crate) role: Option<Role>,
@@ -22,7 +22,8 @@ impl PartialEq for ChatTask {
     fn eq(&self, other: &ChatTask) -> bool {
         self.our_name == other.our_name &&
             self.peer_name == other.peer_name &&
-            self.sender == other.sender
+            self.sender == other.sender &&
+            self.role == other.role
     }
 }
 
