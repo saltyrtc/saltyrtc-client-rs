@@ -17,6 +17,7 @@ use std::fs::File;
 use std::io::{Read, Write, stdin, stdout};
 use std::path::Path;
 use std::process;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -203,37 +204,57 @@ fn main() {
     // Get an atomic reference to the task.
     let task = salty.task().expect("Task not set").clone();
 
-    loop {
-        print!("chat> ");
-        stdout().flush().expect("Could not flush stdout");
+    fn on_task<F: Fn(&mut ChatTask)>(task: &Arc<Mutex<Box<Task + Send>>>, closure: F) {
+        let mut t = task.lock().expect("Could not lock task mutex");
+        let mut chat_task: &mut ChatTask = (&mut **t as &mut Task)
+            .downcast_mut::<ChatTask>()
+            .expect("Chosen task is not a ChatTask");
+        closure(&mut chat_task);
+    }
 
+    // Print intro
+    on_task(&task, |t| {
+        let peer_name: String = t.peer_name.clone().unwrap_or("?".into());
+        print!("Hi \"{}\"! We're the {} chatting with \"{}\".\n\n{}> ",
+               &t.our_name, t.role.unwrap(), &peer_name, &t.our_name);
+        stdout().flush().unwrap();
+    });
+
+    // Main loop
+    loop {
+        //print!("{}> ", )
         let mut input = String::new();
         stdin().read_line(&mut input)
             .expect("Failed to read line");
 
         match &*input.trim() {
-            "q" | "quit" => {
+            "/q" | "/quit" => {
                 println!("Goodbye.");
                 break;
             },
-            "h" | "help" | "?" | "" => {
-                println!("Enter a message. To quit, enter \"q\" or \"quit\".");
+            "/h" | "/help" | "/?" | "" => {
+                println!("Enter a message. To quit, enter \"/q\" or \"/quit\".");
+                on_task(&task, |t| {
+                    print!("{}> ", &t.our_name);
+                    stdout().flush().unwrap();
+                });
                 continue;
             },
             _ => {},
         }
 
-        let t = task.lock().expect("Could not lock task mutex");
-        let chat_task: &ChatTask = (&**t as &Task)
-            .downcast_ref::<ChatTask>()
-            .expect("Chosen task is not a ChatTask");
-        chat_task.send_message(&input);
+        on_task(&task, |t| {
+            t.send_message(&input).expect("Could not send message");
+            print!("{}> ", &t.our_name);
+            stdout().flush().unwrap();
+        });
     }
 }
 
 struct ChatTask {
     our_name: String,
     peer_name: Option<String>,
+    role: Option<Role>,
     sender: Option<ws::Sender>,
     encrypt_for_peer: Option<Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>>,
 }
@@ -251,6 +272,7 @@ impl ChatTask {
         ChatTask {
             our_name: our_name.into(),
             peer_name: None,
+            role: None,
             sender: None,
             encrypt_for_peer: None,
         }
@@ -292,7 +314,7 @@ impl Task for ChatTask {
     fn init(&mut self, data: &Option<HashMap<String, Value>>) -> Result<(), Error> {
         let peer_name: String = match *data {
             Some(ref map) => match map.get("nickname") {
-                Some(&Value::String(ref nickname)) => nickname.to_string(),
+                Some(&Value::String(ref nickname)) => nickname.as_str().unwrap_or("?").to_string(),
                 Some(ref val) => bail!("The \"nickname\" field has the wrong type: {:?}", val),
                 None => bail!("No \"nickname\" field in data passed to task initialization"),
             },
@@ -307,11 +329,12 @@ impl Task for ChatTask {
     /// This is the point where the task can take over.
     fn on_peer_handshake_done(
         &mut self,
-        _role: Role,
+        role: Role,
         sender: ws::Sender,
         encrypt_for_peer: Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>,
     ) {
         info!("ChatTask taking over!");
+        self.role = Some(role);
         self.sender = Some(sender);
         self.encrypt_for_peer = Some(encrypt_for_peer);
     }
@@ -327,7 +350,14 @@ impl Task for ChatTask {
     /// This method is called by SaltyRTC when a task related message
     /// arrives through the WebSocket.
     fn on_task_message(&mut self, message: Value) {
-        info!("New message arrived: {:?}", message);
+        match message {
+            Value::String(utf8str) => {
+                let peer_name: String = self.peer_name.clone().unwrap_or("?".into());
+                print!("\n{}> {}\n{}> ", &peer_name, utf8str.as_str().unwrap().trim(), &self.our_name);
+                stdout().flush().unwrap();
+            },
+            other => error!("Received invalid message type: {:?}", other),
+        }
     }
 
     /// Send bytes through the task signaling channel.
