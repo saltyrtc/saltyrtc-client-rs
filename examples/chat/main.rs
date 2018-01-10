@@ -63,15 +63,15 @@ fn main() {
         .required(false)
         .default_value("30")
         .help("The WebSocket ping interval (set to 0 to disable pings)");
-    let app = App::new("SaltyRTC Test Client")
+    let app = App::new("SaltyRTC Chat Demo")
         .version(VERSION)
         .author("Danilo Bargen <mail@dbrgn.ch>")
-        .about("Test client for SaltyRTC.")
+        .about("Chat demo for SaltyRTC.")
         .subcommand(SubCommand::with_name("initiator")
-            .about("Start client as initiator")
+            .about("Start chat as initiator")
             .arg(arg_ping_interval.clone()))
         .subcommand(SubCommand::with_name("responder")
-            .about("Start client as responder")
+            .about("Start chat as responder")
             .arg(Arg::with_name(ARG_PATH)
                 .short("p")
                 .takes_value(true)
@@ -163,8 +163,8 @@ fn main() {
     println!();
     println!("To connect with a peer:");
     match role {
-        Role::Initiator => println!("cargo run --features 'msgpack-debugging' --example client -- responder \\\n    -p {} \\\n    -a {}", path, auth_token_hex),
-        Role::Responder => println!("cargo run --features 'msgpack-debugging' --example client -- initiator"),
+        Role::Initiator => println!("cargo run --example chat -- responder \\\n    -p {} \\\n    -a {}", path, auth_token_hex),
+        Role::Responder => println!("cargo run --example chat -- initiator"),
     }
     println!("******************************\x1B[0m\n");
 
@@ -222,7 +222,6 @@ fn main() {
 
     // Main loop
     loop {
-        //print!("{}> ", )
         let mut input = String::new();
         stdin().read_line(&mut input)
             .expect("Failed to read line");
