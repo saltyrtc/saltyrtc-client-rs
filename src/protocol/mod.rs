@@ -298,10 +298,19 @@ pub(crate) trait Signaling {
     /// Handle an incoming task message.
     fn handle_task_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
         // Decode message
-        let _obox: OpenBox<Value> = self.decode_task_message(bbox)?;
+        let obox: OpenBox<Value> = self.decode_task_message(bbox)?;
 
         // Pass message to task
-        unimplemented!("TODO: Finish implementing handle_task_message");
+        match self.common_mut().task {
+            Some(ref mut task) => {
+                task
+                    .lock()
+                    .map_err(|e| SignalingError::Crash(format!("Could not lock task mutex: {}", e)))?
+                    .on_task_message(obox.message);
+                Ok(vec![])
+            },
+            None => Err(SignalingError::Crash("Task not set".into())),
+        }
     }
 
 
