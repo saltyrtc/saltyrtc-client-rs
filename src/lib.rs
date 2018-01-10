@@ -6,6 +6,7 @@
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 
 extern crate byteorder;
+extern crate crossbeam_channel;
 extern crate data_encoding;
 #[macro_use]
 extern crate failure;
@@ -42,12 +43,13 @@ mod test_helpers;
 use std::borrow::Cow;
 use std::fmt;
 use std::mem;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 // Third party imports
 use bus::{Bus, BusReader};
+use crossbeam_channel as cc;
 use data_encoding::HEXLOWER;
 use openssl::ssl::{SslMethod, SslStream, SslConnectorBuilder, SslVerifyMode};
 use url::Url;
@@ -160,7 +162,7 @@ impl SaltyClientBuilder {
 enum ConnectionState {
     Disconnected,
     Connected {
-        tx_channel: mpsc::Sender<Vec<u8>>,
+        tx_channel: cc::Sender<Vec<u8>>,
         tx_thread: thread::JoinHandle<()>,
         rx_thread: thread::JoinHandle<()>,
         signaling_thread: thread::JoinHandle<()>,
@@ -257,10 +259,10 @@ impl SaltyClient {
             // TODO: Get rid of the following unwraps inside the threads
 
             // Set up a one-time channel used to transfer the WebSocket sender outside the handler.
-            let (ws_sender_transfer_tx, ws_sender_transfer_rx) = mpsc::channel::<ws::Sender>();
+            let (ws_sender_transfer_tx, ws_sender_transfer_rx) = cc::bounded(1);
 
             // Set up a one-time channel used to transfer the message receiver outside the handler.
-            let (mpsc_receiver_transfer_tx, mpsc_receiver_transfer_rx) = mpsc::channel::<mpsc::Receiver<Vec<u8>>>();
+            let (message_receiver_transfer_tx, message_receiver_transfer_rx) = cc::bounded(1);
 
             // Create new WebSocket
             let mut socket = ws::WebSocket::new(move |sender: ws::Sender| {
@@ -268,10 +270,10 @@ impl SaltyClient {
                 ws_sender_transfer_tx.send(sender.clone()).expect("Could not send ws::Sender through channel");
 
                 // Create a channel
-                let (receiver_tx, receiver_rx) = mpsc::channel::<Vec<u8>>();
+                let (receiver_tx, receiver_rx) = cc::unbounded();
 
                 // Send receiver through channel
-                mpsc_receiver_transfer_tx.send(receiver_rx).expect("Could not send mpsc::Receiver through channel");
+                message_receiver_transfer_tx.send(receiver_rx).expect("Could not send message receiver through channel");
 
                 // Create a new [`Connection`](struct.Connection.html) instance
                 Connection {
@@ -295,11 +297,11 @@ impl SaltyClient {
 
             // Get access to a WebSocket `Sender` instance
             let ws_sender = ws_sender_transfer_rx.recv().unwrap();
-            let receiver_rx = mpsc_receiver_transfer_rx.recv().unwrap();
+            let receiver_rx = message_receiver_transfer_rx.recv().unwrap();
             mem::drop(ws_sender_transfer_rx);
 
             // Start sending thread
-            let (sender_tx, sender_rx) = mpsc::channel::<Vec<u8>>();
+            let (sender_tx, sender_rx) = cc::unbounded();
             let tx_thread = {
                 let ws_sender = ws_sender.clone();
                 named_thread("saltyrtc-tx")
@@ -327,7 +329,7 @@ impl SaltyClient {
         Ok(self)
     }
 
-    fn sending_thread(channel: mpsc::Receiver<Vec<u8>>, sender: ws::Sender) {
+    fn sending_thread(channel: cc::Receiver<Vec<u8>>, sender: ws::Sender) {
         info!("Started sending thread");
         for bytes in channel {
             let msg = ws::Message::Binary(bytes);
@@ -336,7 +338,7 @@ impl SaltyClient {
         info!("Stopped sending thread");
     }
 
-    fn signaling_thread(incoming_messages: mpsc::Receiver<Vec<u8>>,
+    fn signaling_thread(incoming_messages: cc::Receiver<Vec<u8>>,
                         sender: ws::Sender,
                         events: Arc<Mutex<Bus<Event>>>,
                         signaling: Arc<Mutex<BoxedSignaling>>) {
@@ -423,7 +425,7 @@ struct Connection {
     _ws: ws::Sender,
 
     /// The channel used to send incoming messages to listeners.
-    channel: mpsc::Sender<Vec<u8>>,
+    channel: cc::Sender<Vec<u8>>,
 }
 
 impl ws::Handler for Connection {
