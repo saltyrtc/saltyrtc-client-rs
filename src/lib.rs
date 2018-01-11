@@ -509,6 +509,15 @@ impl ws::Handler for Connection {
         error!("WebSocket error: {:?}", err);
     }
 
+    fn on_timeout(&mut self, event: ws::util::Token) -> ws::Result<()> {
+        info!("WebSocket timeout");
+        Ok(())
+    }
+
+    fn on_shutdown(&mut self) {
+        info!("WebSocket shutdown");
+    }
+
     /// Upgrade the TcpStream to an SslStream.
     fn upgrade_ssl_client(&mut self, stream: TcpStream, url: &Url) -> ws::Result<SslStream<TcpStream>> {
         let domain = url.domain()
