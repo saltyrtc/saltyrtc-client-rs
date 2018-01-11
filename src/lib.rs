@@ -266,9 +266,9 @@ impl SaltyClient {
             let (message_receiver_transfer_tx, message_receiver_transfer_rx) = cc::bounded(1);
 
             // Create new WebSocket
-            let mut socket = ws::WebSocket::new(move |sender: ws::Sender| {
+            let mut socket = ws::WebSocket::new(move |ws_sender: ws::Sender| {
                 // Send cloned sender through channel
-                ws_sender_transfer_tx.send(sender.clone()).expect("Could not send ws::Sender through channel");
+                ws_sender_transfer_tx.send(ws_sender.clone()).expect("Could not send ws::Sender through channel");
 
                 // Create a channel
                 let (receiver_tx, receiver_rx) = cc::unbounded();
@@ -278,7 +278,7 @@ impl SaltyClient {
 
                 // Create a new [`Connection`](struct.Connection.html) instance
                 Connection {
-                    _ws: sender,
+                    _ws: ws_sender,
                     channel: receiver_tx,
                 }
             }).map_err(|e| SaltyError::Network(format!("Could not create WebSocket: {}", e)))?;
@@ -382,7 +382,6 @@ impl SaltyClient {
                         // If the handshake is done, let the task know.
                         if peer_handshake_done {
                             let role = sig.role();
-                            let signaling2 = signaling.clone();
                             let common: &mut Common = sig.common_mut();
                             match common.task {
                                 Some(ref mut task) => {
@@ -394,11 +393,14 @@ impl SaltyClient {
                                             role,
                                             ws_sender,
                                             msg_receiver,
-                                            Box::new(move |val: rmpv::Value| {
-                                                let bbox = signaling2
-                                                    .lock().expect("Could not lock signaling mutex")
-                                                    .encode_task_message(val)?;
-                                                Ok(bbox.into_bytes())
+                                            Box::new({
+                                                let signaling = signaling.clone();
+                                                move |val: rmpv::Value| {
+                                                    let bbox = signaling
+                                                        .lock().expect("Could not lock signaling mutex")
+                                                        .encode_task_message(val)?;
+                                                    Ok(bbox.into_bytes())
+                                                }
                                             })
                                         );
                                 }
