@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::io::{Write, stdout};
+use std::io::{Read, Write, stdin, stdout};
 use std::fmt;
+use std::thread;
 
+use cc;
 use failure::{Error};
 use saltyrtc_client::{Role, Task};
 use saltyrtc_client::errors::{SaltyResult};
@@ -14,7 +16,8 @@ pub(crate) struct ChatTask {
     pub(crate) our_name: String,
     pub(crate) peer_name: Option<String>,
     pub(crate) role: Option<Role>,
-    pub(crate) sender: Option<ws::Sender>,
+    pub(crate) ws_sender: Option<ws::Sender>,
+    pub(crate) msg_receiver: Option<cc::Receiver<Value>>,
     pub(crate) encrypt_for_peer: Option<Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>>,
 }
 
@@ -22,7 +25,7 @@ impl PartialEq for ChatTask {
     fn eq(&self, other: &ChatTask) -> bool {
         self.our_name == other.our_name &&
             self.peer_name == other.peer_name &&
-            self.sender == other.sender &&
+            self.ws_sender == other.ws_sender &&
             self.role == other.role
     }
 }
@@ -33,14 +36,15 @@ impl ChatTask {
             our_name: our_name.into(),
             peer_name: None,
             role: None,
-            sender: None,
+            ws_sender: None,
+            msg_receiver: None,
             encrypt_for_peer: None,
         }
     }
 
     pub fn send_message(&self, msg: &str) -> Result<(), String> {
         // Get access to WebSocket sender
-        let sender = match self.sender {
+        let sender = match self.ws_sender {
             Some(ref sender) => sender,
             None => return Err("WebSocket sender not initialized".into()),
         };
@@ -56,7 +60,79 @@ impl ChatTask {
 
         // Send message
         let ws_msg = ws::Message::Binary(encrypted);
-        sender.send(ws_msg).map_err(|e| format!("Could not send message: {}", e))
+        let res = sender.send(ws_msg).map_err(|e| format!("Could not send message: {}", e));
+        res
+    }
+
+    fn receive_message(&mut self, message: Value) {
+        debug!("Received task message");
+        match message {
+            Value::String(utf8str) => {
+                let peer_name: String = self.peer_name.clone().unwrap_or("?".into());
+                print!("\n{}> {}\n{}> ", &peer_name, utf8str.as_str().unwrap().trim(), &self.our_name);
+                stdout().flush().unwrap();
+            },
+            other => error!("Received invalid message type: {:?}", other),
+        }
+    }
+
+    pub fn main_loop(&mut self) -> Result<(), String> {
+        // Print intro
+        println!(r" ___       _ _         ___ _         _");
+        println!(r"/ __| __ _| | |_ _  _ / __| |_  __ _| |_");
+        println!(r"\__ \/ _` | |  _| || | (__| ' \/ _` |  _|");
+        println!(r"|___/\__,_|_|\__|\_, |\___|_||_\__,_|\__|");
+        println!(r"                 |__/");
+        println!();
+        let peer_name: String = self.peer_name.clone().unwrap_or("?".into());
+        print!("Hi \"{}\"! We're the {} chatting with \"{}\".\n\n{}> ",
+               &self.our_name, self.role.unwrap(), &peer_name, &self.our_name);
+        stdout().flush().unwrap();
+
+        // Stdin thread
+        let (stdin_tx, stdin_rx) = cc::unbounded();
+        let stdin_thread = thread::spawn(move || {
+            let mut input = String::new();
+            loop {
+                stdin().read_line(&mut input)
+                    .expect("Failed to read line");
+                stdin_tx.send(input.clone());
+                input.clear();
+            }
+        });
+
+        // Get reference to msg receiver channel
+        let msg_receiver = self.msg_receiver.clone().ok_or("Message receiver not set".to_string())?;
+
+        // Event loop
+        'main_loop: loop {
+            select_loop! {
+                recv(stdin_rx, input) => {
+                    match &*input.trim() {
+                        "/q" | "/quit" => {
+                            println!("Goodbye.");
+                            break 'main_loop;
+                        },
+                        "/h" | "/help" | "/?" | "" => {
+                            println!("Enter a message. To quit, enter \"/q\" or \"/quit\".");
+                            print!("{}> ", &self.our_name);
+                            stdout().flush().unwrap();
+                            continue 'main_loop;
+                        },
+                        other => {
+                            info!("Input is {}", other);
+                        },
+                    }
+
+                    self.send_message(&input).expect("Could not send message");
+                    print!("{}> ", &self.our_name);
+                    stdout().flush().unwrap();
+                },
+                recv(msg_receiver, msg) => self.receive_message(msg),
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -90,12 +166,14 @@ impl Task for ChatTask {
     fn on_peer_handshake_done(
         &mut self,
         role: Role,
-        sender: ws::Sender,
+        ws_sender: ws::Sender,
+        msg_receiver: cc::Receiver<Value>,
         encrypt_for_peer: Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>,
     ) {
         info!("ChatTask taking over!");
         self.role = Some(role);
-        self.sender = Some(sender);
+        self.ws_sender = Some(ws_sender);
+        self.msg_receiver = Some(msg_receiver);
         self.encrypt_for_peer = Some(encrypt_for_peer);
     }
 
@@ -105,19 +183,6 @@ impl Task for ChatTask {
     /// Otherwise, the message is dropped.
     fn supported_types(&self) -> &[&'static str] {
         &["msg", "nick_change"]
-    }
-
-    /// This method is called by SaltyRTC when a task related message
-    /// arrives through the WebSocket.
-    fn on_task_message(&mut self, message: Value) {
-        match message {
-            Value::String(utf8str) => {
-                let peer_name: String = self.peer_name.clone().unwrap_or("?".into());
-                print!("\n{}> {}\n{}> ", &peer_name, utf8str.as_str().unwrap().trim(), &self.our_name);
-                stdout().flush().unwrap();
-            },
-            other => error!("Received invalid message type: {:?}", other),
-        }
     }
 
     /// Send bytes through the task signaling channel.

@@ -2,6 +2,7 @@
 
 extern crate chrono;
 extern crate clap;
+#[macro_use] extern crate crossbeam_channel as cc;
 extern crate data_encoding;
 extern crate dotenv;
 extern crate env_logger;
@@ -189,60 +190,15 @@ fn main() {
         }
     }
 
-    // Start chat loop
     thread::sleep(Duration::from_millis(1000));
-    println!(r" ___       _ _         ___ _         _");
-    println!(r"/ __| __ _| | |_ _  _ / __| |_  __ _| |_");
-    println!(r"\__ \/ _` | |  _| || | (__| ' \/ _` |  _|");
-    println!(r"|___/\__,_|_|\__|\_, |\___|_||_\__,_|\__|");
-    println!(r"                 |__/");
-    println!();
 
     // Get an atomic reference to the task.
-    let task = salty.task().expect("Task not set").clone();
+    let task_mutex = salty.task().expect("Task not set").clone();
+    let mut task = task_mutex.lock().expect("Could not lock task mutex");
+    let chat_task: &mut ChatTask = (&mut **task as &mut Task)
+        .downcast_mut::<ChatTask>()
+        .expect("Chosen task is not a ChatTask");
 
-    fn on_task<F: Fn(&mut ChatTask)>(task: &Arc<Mutex<Box<Task + Send>>>, closure: F) {
-        let mut t = task.lock().expect("Could not lock task mutex");
-        let mut chat_task: &mut ChatTask = (&mut **t as &mut Task)
-            .downcast_mut::<ChatTask>()
-            .expect("Chosen task is not a ChatTask");
-        closure(&mut chat_task);
-    }
-
-    // Print intro
-    on_task(&task, |t| {
-        let peer_name: String = t.peer_name.clone().unwrap_or("?".into());
-        print!("Hi \"{}\"! We're the {} chatting with \"{}\".\n\n{}> ",
-               &t.our_name, t.role.unwrap(), &peer_name, &t.our_name);
-        stdout().flush().unwrap();
-    });
-
-    // Main loop
-    loop {
-        let mut input = String::new();
-        stdin().read_line(&mut input)
-            .expect("Failed to read line");
-
-        match &*input.trim() {
-            "/q" | "/quit" => {
-                println!("Goodbye.");
-                break;
-            },
-            "/h" | "/help" | "/?" | "" => {
-                println!("Enter a message. To quit, enter \"/q\" or \"/quit\".");
-                on_task(&task, |t| {
-                    print!("{}> ", &t.our_name);
-                    stdout().flush().unwrap();
-                });
-                continue;
-            },
-            _ => {},
-        }
-
-        on_task(&task, |t| {
-            t.send_message(&input).expect("Could not send message");
-            print!("{}> ", &t.our_name);
-            stdout().flush().unwrap();
-        });
-    }
+    // Start chat loop
+    chat_task.main_loop().unwrap();
 }

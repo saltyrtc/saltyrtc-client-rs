@@ -10,6 +10,7 @@ use std::collections::{HashMap};
 use std::fmt::{Debug};
 use std::iter::{IntoIterator};
 
+use crossbeam_channel as cc;
 use failure::Error;
 use mopa::Any;
 use rmpv::Value;
@@ -32,12 +33,20 @@ pub trait Task : Debug + Any {
 
     /// Used by the signaling thread to notify task that the peer handshake is over.
     ///
-    /// A reference to the signaling instance is also passed in.
-    ///
     /// This is the point where the task can take over.
+    ///
+    /// Parameters:
+    ///
+    /// * `role`: The role of the signaling instance.
+    /// * `ws_sender`: The sender to send WebSocket messages.
+    /// * `msg_receiver`: The receiving end of a channel that will be filled with
+    ///                   arriving task messages by the signaling instance.
+    /// * `encrypt_for_peer`: A closure that allows the task to encrypt messages for the peer.
+    ///
     fn on_peer_handshake_done(&mut self,
                               role: Role,
-                              sender: ws::Sender,
+                              ws_sender: ws::Sender,
+                              msg_receiver: cc::Receiver<Value>,
                               encrypt_for_peer: Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>);
 
     /// Return a list of message types supported by this task.
@@ -45,10 +54,6 @@ pub trait Task : Debug + Any {
     /// Incoming messages with accepted types will be passed to the task.
     /// Otherwise, the message is dropped.
     fn supported_types(&self) -> &[&'static str];
-
-    /// This method is called by SaltyRTC when a task related message
-    /// arrives through the WebSocket.
-    fn on_task_message(&mut self, message: Value);
 
     /// Send bytes through the task signaling channel.
     ///

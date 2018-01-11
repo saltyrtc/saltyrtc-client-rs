@@ -5,6 +5,7 @@
 use std::borrow::{Cow};
 use std::collections::{HashMap};
 
+use crossbeam_channel as cc;
 use failure::{Error};
 use rmpv::{Value};
 use ws;
@@ -39,16 +40,18 @@ impl Task for DummyTask {
         Ok(())
     }
 
-    fn on_peer_handshake_done(&mut self, role: Role, sender: ws::Sender, encrypt_for_peer: Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>) {
+    fn on_peer_handshake_done(
+        &mut self,
+        role: Role,
+        sender: ws::Sender,
+        receiver: cc::Receiver<Value>,
+        encrypt_for_peer: Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>,
+    ) {
         unimplemented!()
     }
 
     fn supported_types(&self) -> &[&'static str] {
         &["foo", "bar"]
-    }
-
-    fn on_task_message(&mut self, message: Value) {
-        unimplemented!()
     }
 
     fn send_signaling_message(&self, payload: &[u8]) {

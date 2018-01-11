@@ -13,10 +13,12 @@ use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crossbeam_channel as cc;
+use rmpv::{Value};
+
 use boxes::{ByteBox, OpenBox};
 use crypto::{KeyPair, AuthToken, PublicKey};
 use errors::{SignalingError, SignalingResult};
-use rmpv::{Value};
 
 pub(crate) mod context;
 pub(crate) mod cookie;
@@ -301,12 +303,12 @@ pub(crate) trait Signaling {
         let obox: OpenBox<Value> = self.decode_task_message(bbox)?;
 
         // Pass message to task
-        match self.common_mut().task {
+        let common = self.common_mut();
+        match common.task {
             Some(ref mut task) => {
-                task
-                    .lock()
-                    .map_err(|e| SignalingError::Crash(format!("Could not lock task mutex: {}", e)))?
-                    .on_task_message(obox.message);
+                common.task_msg_chan.0
+                    .send(obox.message)
+                    .map_err(|e| SignalingError::Crash(format!("Could not send task message into channel: {}", e)))?;
                 Ok(vec![])
             },
             None => Err(SignalingError::Crash("Task not set".into())),
@@ -589,6 +591,9 @@ pub(crate) struct Common {
     /// The chosen task.
     pub(crate) task: Option<Arc<Mutex<BoxedTask>>>,
 
+    /// An unbounded channel that can be used by tasks to receive task messages.
+    pub(crate) task_msg_chan: (cc::Sender<Value>, cc::Receiver<Value>),
+
     /// The interval at which the server should send WebSocket ping messages.
     pub(crate) ping_interval: Option<Duration>,
 }
@@ -614,6 +619,9 @@ impl Common {
         self.signaling_state = state;
         Ok(())
     }
+
+    // Return a clone of the task message receiver.
+    //pub fn
 }
 
 
@@ -908,6 +916,7 @@ impl InitiatorSignaling {
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
+                task_msg_chan: cc::unbounded(),
                 ping_interval: ping_interval,
             },
             responders: HashMap::new(),
@@ -1331,6 +1340,7 @@ impl ResponderSignaling {
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
+                task_msg_chan: cc::unbounded(),
                 ping_interval: ping_interval,
             },
             initiator: InitiatorContext::new(initiator_pubkey),

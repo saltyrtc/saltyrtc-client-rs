@@ -6,7 +6,6 @@
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 
 extern crate byteorder;
-extern crate crossbeam_channel;
 extern crate data_encoding;
 #[macro_use]
 extern crate failure;
@@ -25,6 +24,7 @@ extern crate url;
 
 // Re-exports
 pub extern crate bus;
+pub extern crate crossbeam_channel;
 pub extern crate rmpv;
 pub extern crate ws;
 
@@ -71,7 +71,8 @@ use crypto_types::{KeyPair, PublicKey, AuthToken};
 use errors::{SaltyResult, SaltyError, BuilderError};
 use events::{Event};
 use helpers::{libsodium_init};
-use protocol::{HandleAction, Signaling, BoxedSignaling, InitiatorSignaling, ResponderSignaling};
+use protocol::{Signaling, BoxedSignaling, InitiatorSignaling, ResponderSignaling};
+use protocol::{HandleAction, Common};
 use task::{Tasks};
 
 
@@ -382,13 +383,17 @@ impl SaltyClient {
                         if peer_handshake_done {
                             let role = sig.role();
                             let signaling2 = signaling.clone();
-                            match sig.common_mut().task {
+                            let common: &mut Common = sig.common_mut();
+                            match common.task {
                                 Some(ref mut task) => {
+                                    let ws_sender = sender.clone();
+                                    let msg_receiver = common.task_msg_chan.1.clone();
                                     task
                                         .lock().expect("Could not lock task mutex")
                                         .on_peer_handshake_done(
                                             role,
-                                            sender.clone(),
+                                            ws_sender,
+                                            msg_receiver,
                                             Box::new(move |val: rmpv::Value| {
                                                 let bbox = signaling2
                                                     .lock().expect("Could not lock signaling mutex")
