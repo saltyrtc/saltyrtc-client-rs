@@ -104,13 +104,6 @@ fn main() {
         },
     };
 
-    // Read server certificate bytes
-    let mut server_cert_bytes: Vec<u8> = vec![];
-    File::open(&Path::new("saltyrtc.der"))
-        .expect("Could not open saltyrtc.der")
-        .read_to_end(&mut server_cert_bytes)
-        .expect("Could not read saltyrtc.der");
-
     // Create new public permanent keypair
     let keypair = KeyPair::new();
 
