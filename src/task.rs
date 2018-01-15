@@ -7,53 +7,38 @@
 
 use std::borrow::{Cow};
 use std::collections::{HashMap};
-use std::fmt::{Debug};
-use std::iter::{IntoIterator};
+use std::fmt::Debug;
+use std::iter::IntoIterator;
 
-use crossbeam_channel as cc;
 use failure::Error;
-use mopa::Any;
 use rmpv::Value;
-use ws;
-
-use ::protocol::Role;
-use ::errors::SaltyResult;
 
 
 /// An interface that needs to be implemented by every signaling task.
 ///
 /// A task defines how data is exchanged after the server- and peer-handshake
 /// have been completed.
-pub trait Task : Debug + Any {
+pub trait Task : Debug {
 
     /// Initialize the task with the task data from the peer, sent in the `Auth` message.
     ///
     /// The task should keep track internally whether it has been initialized or not.
     fn init(&mut self, data: &Option<HashMap<String, Value>>) -> Result<(), Error>;
 
-    /// Used by the signaling thread to notify task that the peer handshake is over.
+    /// Used by the signaling class to notify task that the peer handshake is over.
     ///
     /// This is the point where the task can take over.
-    ///
-    /// Parameters:
-    ///
-    /// * `role`: The role of the signaling instance.
-    /// * `ws_sender`: The sender to send WebSocket messages.
-    /// * `msg_receiver`: The receiving end of a channel that will be filled with
-    ///                   arriving task messages by the signaling instance.
-    /// * `encrypt_for_peer`: A closure that allows the task to encrypt messages for the peer.
-    ///
-    fn on_peer_handshake_done(&mut self,
-                              role: Role,
-                              ws_sender: ws::Sender,
-                              msg_receiver: cc::Receiver<Value>,
-                              encrypt_for_peer: Box<Fn(Value) -> SaltyResult<Vec<u8>> + Send>);
+    fn on_peer_handshake_done(&mut self);
 
-    /// Return a list of message types supported by this task.
+    /// Return whether the specified message type is supported by this task.
     ///
     /// Incoming messages with accepted types will be passed to the task.
     /// Otherwise, the message is dropped.
-    fn supported_types(&self) -> &[&'static str];
+    fn type_supported(&self, type_: &str) -> bool;
+
+    /// This method is called by SaltyRTC when a task related message
+    /// arrives through the WebSocket.
+    fn on_task_message(&mut self, message: Value);
 
     /// Send bytes through the task signaling channel.
     ///
@@ -73,27 +58,23 @@ pub trait Task : Debug + Any {
     fn close(&mut self, reason: u8);
 }
 
-mopafy!(Task);
-
-pub type BoxedTask = Box<Task + Send>;
-
 /// A set of task boxes.
 ///
 /// This data structure wraps the vector and ensures
 /// that an empty tasks list cannot be created.
 #[derive(Debug)]
-pub(crate) struct Tasks(pub(crate) Vec<BoxedTask>);
+pub(crate) struct Tasks(pub(crate) Vec<Box<Task>>);
 
 impl Tasks {
     #[allow(dead_code)]
-    pub(crate) fn new(task: BoxedTask) -> Self {
+    pub(crate) fn new(task: Box<Task>) -> Self {
         Tasks(vec![task])
     }
 
     /// Create a `Tasks` instance from a vector.
     ///
     /// This may fail if the tasks vector is empty.
-    pub(crate) fn from_vec(tasks: Vec<BoxedTask>) -> Result<Tasks, &'static str> {
+    pub(crate) fn from_vec(tasks: Vec<Box<Task>>) -> Result<Tasks, &'static str> {
         if tasks.is_empty() {
             return Err("Tasks vector may not be empty");
         }
@@ -104,7 +85,7 @@ impl Tasks {
     ///
     /// This may fail if a task with the same `.name()` already exists.
     #[allow(dead_code)]
-    pub(crate) fn add_task(&mut self, task: BoxedTask) -> Result<&mut Self, String> {
+    pub(crate) fn add_task(&mut self, task: Box<Task>) -> Result<&mut Self, String> {
         if self.0.iter().any(|t| t.name() == task.name()) {
             return Err(format!("Task with name \"{}\" cannot be added twice", task.name()));
         }
@@ -120,7 +101,7 @@ impl Tasks {
 
     /// Choose the first task in our own list of supported tasks that is also contained in the list
     /// of supported tasks provided by the peer.
-    pub(crate) fn choose_shared_task<S: AsRef<str>>(self, tasks: &[S]) -> Option<BoxedTask> {
+    pub(crate) fn choose_shared_task<S: AsRef<str>>(self, tasks: &[S]) -> Option<Box<Task>> {
         for task in self.0 {
             if tasks.iter().find(|p| p.as_ref() == &*task.name()).is_some() {
                 return Some(task);
@@ -131,8 +112,8 @@ impl Tasks {
 }
 
 impl IntoIterator for Tasks {
-    type Item = BoxedTask;
-    type IntoIter = ::std::vec::IntoIter<BoxedTask>;
+    type Item = Box<Task>;
+    type IntoIter = ::std::vec::IntoIter<Box<Task>>;
 
     /// Return an iterator over the tasks.
     fn into_iter(self) -> Self::IntoIter {

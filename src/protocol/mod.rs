@@ -10,15 +10,12 @@
 
 use std::collections::{HashMap, HashSet};
 use std::mem;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
-
-use crossbeam_channel as cc;
-use rmpv::{Value};
 
 use boxes::{ByteBox, OpenBox};
 use crypto::{KeyPair, AuthToken, PublicKey};
 use errors::{SignalingError, SignalingResult};
+use rmpv::{Value};
 
 pub(crate) mod context;
 pub(crate) mod cookie;
@@ -31,8 +28,7 @@ pub(crate) mod types;
 
 #[cfg(test)] mod tests;
 
-use ::events::{Event};
-use ::task::{Task, Tasks, BoxedTask};
+use super::task::{Task, Tasks};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
@@ -300,19 +296,10 @@ pub(crate) trait Signaling {
     /// Handle an incoming task message.
     fn handle_task_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
         // Decode message
-        let obox: OpenBox<Value> = self.decode_task_message(bbox)?;
+        let _obox: OpenBox<Value> = self.decode_task_message(bbox)?;
 
         // Pass message to task
-        let common = self.common_mut();
-        match common.task {
-            Some(ref mut task) => {
-                common.task_msg_chan.0
-                    .send(obox.message)
-                    .map_err(|e| SignalingError::Crash(format!("Could not send task message into channel: {}", e)))?;
-                Ok(vec![])
-            },
-            None => Err(SignalingError::Crash("Task not set".into())),
-        }
+        unimplemented!("TODO: Finish implementing handle_task_message");
     }
 
 
@@ -349,42 +336,6 @@ pub(crate) trait Signaling {
         )
     }
 
-
-    // Message encoding
-
-    /// Encode a `Value` for the chosen peer. This is used by the task.
-    fn encode_task_message(&self, value: Value) -> SignalingResult<ByteBox> {
-        // Check state
-        let signaling_state = self.common().signaling_state();
-        if signaling_state != SignalingState::Task {
-            return Err(SignalingError::Crash(
-                format!("Called encode_task_message in state {:?}", signaling_state)
-            ));
-        }
-
-        // Get peer
-        let peer = self.get_peer()
-            .ok_or(SignalingError::Crash("Peer not set".into()))?;
-
-        // Create and encrypt message
-        let nonce = Nonce::new(
-            // Cookie
-            peer.cookie_pair().ours.clone(),
-            // Src
-            self.common().identity.into(),
-            // Dst
-            peer.identity().into(),
-            // Csn
-            peer.csn_pair().borrow_mut().ours.increment()?,
-        );
-        let obox = OpenBox::<Value>::new(value, nonce);
-        let bbox = obox.encrypt(
-            peer.keypair().ok_or(SignalingError::Crash("Session keypair not available".into()))?,
-            peer.session_key().ok_or(SignalingError::Crash("Peer session key not set".into()))?,
-        );
-
-        Ok(bbox)
-    }
 
     // Message handling: Dispatching
 
@@ -536,14 +487,11 @@ pub(crate) trait Signaling {
         // TODO (#12): Implement
 
         // Moreover, the client MUST do some checks depending on its role
-        let mut actions = self.handle_server_auth_impl(&msg)?;
+        let actions = self.handle_server_auth_impl(&msg)?;
 
         info!("Server handshake completed");
-        actions.push(HandleAction::Event(Event::ServerHandshakeDone));
-
         self.server_mut().set_handshake_state(ServerHandshakeState::Done);
         self.common_mut().set_signaling_state(SignalingState::PeerHandshake)?;
-
         Ok(actions)
     }
 
@@ -560,9 +508,6 @@ pub(crate) trait Signaling {
         return Err(SignalingError::SendError);
     }
 }
-
-
-pub(crate) type BoxedSignaling = Box<Signaling + Send>;
 
 
 /// Common functionality and state for all signaling types.
@@ -589,10 +534,7 @@ pub(crate) struct Common {
     pub(crate) tasks: Option<Tasks>,
 
     /// The chosen task.
-    pub(crate) task: Option<Arc<Mutex<BoxedTask>>>,
-
-    /// An unbounded channel that can be used by tasks to receive task messages.
-    pub(crate) task_msg_chan: (cc::Sender<Value>, cc::Receiver<Value>),
+    pub(crate) task: Option<Box<Task>>,
 
     /// The interval at which the server should send WebSocket ping messages.
     pub(crate) ping_interval: Option<Duration>,
@@ -619,9 +561,6 @@ impl Common {
         self.signaling_state = state;
         Ok(())
     }
-
-    // Return a clone of the task message receiver.
-    //pub fn
 }
 
 
@@ -653,29 +592,11 @@ impl Signaling for InitiatorSignaling {
     }
 
     fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut PeerContext> {
-        if self.common().signaling_state() == SignalingState::Task {
-            // If we've already selected a peer, return it if it matches the address.
-            let peer = self.responder.as_mut().map(|p| p as &mut PeerContext);
-            let valid = match peer {
-                Some(ref p) => {
-                    let peer_addr: Address = p.identity().into();
-                    peer_addr == addr
-                },
-                None => false,
-            };
-            if valid {
-                peer
-            } else {
-                None
-            }
-        } else {
-            // Otherwise look in the list of known responders.
-            let identity: Identity = addr.into();
-            match identity {
-                Identity::Server => Some(&mut self.common.server as &mut PeerContext),
-                Identity::Initiator => None,
-                Identity::Responder(_) => self.responders.get_mut(&addr).map(|r| r as &mut PeerContext),
-            }
+        let identity: Identity = addr.into();
+        match identity {
+            Identity::Server => Some(&mut self.common.server as &mut PeerContext),
+            Identity::Initiator => None,
+            Identity::Responder(_) => self.responders.get_mut(&addr).map(|r| r as &mut PeerContext),
         }
     }
 
@@ -916,7 +837,6 @@ impl InitiatorSignaling {
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
-                task_msg_chan: cc::unbounded(),
                 ping_interval: ping_interval,
             },
             responders: HashMap::new(),
@@ -1059,7 +979,7 @@ impl InitiatorSignaling {
             .ok_or(SignalingError::Crash("No tasks defined".into()))?;
         trace!("Our tasks: {:?}", &our_tasks);
         trace!("Proposed tasks: {:?}", &proposed_tasks);
-        let mut chosen_task: BoxedTask = our_tasks
+        let mut chosen_task: Box<Task> = our_tasks
             .choose_shared_task(&proposed_tasks)
             .ok_or_else(|| {
                 // TODO (#17)
@@ -1136,13 +1056,13 @@ impl InitiatorSignaling {
         actions.push(HandleAction::Reply(bbox));
 
         // Store chosen task
-        self.common_mut().task = Some(Arc::new(Mutex::new(chosen_task)));
+        self.common_mut().task = Some(chosen_task);
 
         // State transitions
         responder.set_handshake_state(ResponderHandshakeState::AuthSent);
         self.common.set_signaling_state(SignalingState::Task)?;
         info!("Peer handshake completed");
-        actions.push(HandleAction::Event(Event::PeerHandshakeDone));
+        actions.push(HandleAction::HandshakeDone);
 
         self.responder = Some(responder);
         Ok(actions)
@@ -1340,7 +1260,6 @@ impl ResponderSignaling {
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
-                task_msg_chan: cc::unbounded(),
                 ping_interval: ping_interval,
             },
             initiator: InitiatorContext::new(initiator_pubkey),
@@ -1462,13 +1381,13 @@ impl ResponderSignaling {
         if msg.tasks.is_some() {
             return Err(SignalingError::InvalidMessage("We're a responder, but the `tasks` field in the auth message is set".into()));
         }
-        let mut chosen_task: BoxedTask = match msg.task {
+        let mut chosen_task: Box<Task> = match msg.task {
             Some(task) => {
                 let our_tasks = mem::replace(&mut self.common_mut().tasks, None)
                     .ok_or(SignalingError::Crash("No tasks defined".into()))?;
                 our_tasks
                     .into_iter()
-                    .filter(|t: &BoxedTask| t.name() == task)
+                    .filter(|t: &Box<Task>| t.name() == task)
                     .next()
                     .ok_or(SignalingError::Protocol("The `task` field in the auth message contains an unknown task".into()))?
             },
@@ -1499,14 +1418,14 @@ impl ResponderSignaling {
         info!("Initiator authenticated");
 
         // Store chosen task
-        self.common_mut().task = Some(Arc::new(Mutex::new(chosen_task)));
+        self.common_mut().task = Some(chosen_task);
 
         // State transitions
         self.initiator.set_handshake_state(InitiatorHandshakeState::AuthReceived);
         self.common.set_signaling_state(SignalingState::Task)?;
         info!("Peer handshake completed");
 
-        Ok(vec![HandleAction::Event(Event::PeerHandshakeDone)])
+        Ok(vec![HandleAction::HandshakeDone])
     }
 }
 

@@ -5,7 +5,6 @@ use std::result::Result as StdResult;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use ::events::Event;
 use boxes::{ByteBox};
 
 
@@ -216,9 +215,8 @@ impl<'de> Deserialize<'de> for Address {
 pub(crate) enum HandleAction {
     /// Send the specified message through the websocket.
     Reply(ByteBox),
-
-    /// Propagate an event
-    Event(Event),
+    /// The server and peer handshake are done.
+    HandshakeDone,
 }
 
 
