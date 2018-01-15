@@ -161,7 +161,7 @@ mod server_auth {
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
         let actions = s.handle_message(bbox).unwrap();
         assert_eq!(s.identity(), ClientIdentity::Responder(13));
-        assert_eq!(actions, vec![HandleAction::Event(Event::ServerHandshakeDone)]);
+        assert_eq!(actions, vec![]);
     }
 
     // The peer MUST check that the cookie provided in the your_cookie
@@ -283,7 +283,7 @@ mod server_auth {
         let actions = s.handle_message(bbox).unwrap();
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
         assert_eq!(s.responders.len(), 2);
-            assert_eq!(actions, vec![HandleAction::Event(Event::ServerHandshakeDone)]);
+        assert_eq!(actions, vec![]);
     }
 
     /// The client SHALL check that the initiator_connected field contains
@@ -348,7 +348,7 @@ mod server_auth {
             None, Some(AuthToken::new()),
         );
         let actions = _server_auth_respond(ctx);
-        assert_eq!(actions.len(), 3); // Token + Key + ServerHandshakeDone
+        assert_eq!(actions.len(), 2);
     }
 
     #[test]
@@ -359,7 +359,7 @@ mod server_auth {
             None, None,
         );
         let actions = _server_auth_respond(ctx);
-        assert_eq!(actions.len(), 2); // Key + ServerHandshakeDone
+        assert_eq!(actions.len(), 1);
     }
 
     /// If processing the server auth message succeeds, the signaling state
@@ -419,7 +419,7 @@ mod client_auth {
         let action = actions.remove(0);
         let bytes: ByteBox = match action {
             HandleAction::Reply(bbox) => bbox,
-            HandleAction::Event(_) => panic!("Unexpected Event"),
+            HandleAction::HandshakeDone => panic!("Unexpected HandshakeDone"),
         };
 
         let decrypted = OpenBox::<Message>::decrypt(
@@ -970,7 +970,7 @@ mod auth {
 
         // Task was set!
         assert!(ctx.signaling.common().task.is_some());
-        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().lock().unwrap().name(), DummyTask::name_for(42));
+        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().name(), DummyTask::name_for(42));
 
         // Tasks list was removed
         assert!(ctx.signaling.common().tasks.is_none());
@@ -1018,7 +1018,7 @@ mod auth {
 
         // Task was set!
         assert!(ctx.signaling.common().task.is_some());
-        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().lock().unwrap().name(), DummyTask::name_for(42));
+        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().name(), DummyTask::name_for(42));
 
         // Tasks list was removed
         assert!(ctx.signaling.common().tasks.is_none());
@@ -1028,7 +1028,7 @@ mod auth {
         assert_eq!(ctx.signaling.get_peer().as_ref().unwrap().identity(), ctx.signaling.initiator.identity());
 
         // Number of actionsmessages
-        assert_eq!(actions, vec![HandleAction::Event(Event::PeerHandshakeDone)]);
+        assert_eq!(actions, vec![HandleAction::HandshakeDone]);
 
         // State transitions
         assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::Task);

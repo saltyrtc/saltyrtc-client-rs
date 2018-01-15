@@ -1,78 +1,84 @@
 //! SaltyRTC client implementation in Rust.
 //!
+//! The implementation is asynchronous using Tokio / Futures.
+//!
 //! Early prototype. More docs will follow (#26).
 #![recursion_limit = "1024"]
-#![cfg_attr(feature = "clippy", feature(plugin))]
-#![cfg_attr(feature = "clippy", plugin(clippy))]
+#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature="clippy", plugin(clippy))]
 
 extern crate byteorder;
 extern crate data_encoding;
 #[macro_use]
 extern crate failure;
 #[macro_use]
-extern crate log;
+extern crate futures;
 #[macro_use]
-extern crate mopa;
-extern crate openssl;
+extern crate log;
+extern crate native_tls;
 extern crate rmp_serde;
 extern crate rust_sodium;
 extern crate rust_sodium_sys;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate url;
+extern crate tokio_core;
+extern crate websocket;
 
 // Re-exports
-pub extern crate bus;
-pub extern crate crossbeam_channel;
 pub extern crate rmpv;
-pub extern crate ws;
 
 // Modules
 mod boxes;
 mod crypto_types;
 pub mod errors;
-pub mod events;
 mod helpers;
 mod protocol;
+mod send_all;
 mod task;
 #[cfg(test)]
 mod test_helpers;
 
 // Rust imports
-use std::borrow::Cow;
+use std::cell::RefCell;
 use std::fmt;
-use std::mem;
-use std::sync::{Arc, Mutex};
-use std::thread;
+use std::ops::Deref;
+use std::rc::Rc;
 use std::time::Duration;
 
 // Third party imports
-use bus::{Bus, BusReader};
-use crossbeam_channel as cc;
-use data_encoding::HEXLOWER;
-use openssl::ssl::{SslMethod, SslStream, SslConnectorBuilder, SslVerifyMode};
-use url::Url;
-use ws::util::TcpStream;
+use futures::{stream, Future, Stream, Sink};
+use futures::future::{self, Loop};
+use futures::sync::mpsc::{channel, Sender, Receiver};
+use native_tls::{TlsConnector};
+use rmpv::Value;
+use tokio_core::reactor::{Handle};
+use tokio_core::net::TcpStream;
+use websocket::{WebSocketError};
+use websocket::client::{ClientBuilder};
+use websocket::async::futures::stream::{SplitStream, SplitSink};
+use websocket::client::async::{Client, TlsStream};
+use websocket::client::builder::{Url};
+use websocket::ws::dataframe::{DataFrame};
+use websocket::header::{WebSocketProtocol};
+use websocket::message::{OwnedMessage};
 
 // Re-exports
-pub use protocol::Role;
-pub use task::{Task, BoxedTask};
+pub use protocol::{Role};
+pub use task::{Task};
 
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
     pub use crypto_types::{KeyPair, PublicKey, PrivateKey, AuthToken};
-    pub use crypto_types::public_key_from_hex_str;
+    pub use crypto_types::{public_key_from_hex_str};
 }
 
 // Internal imports
-use boxes::ByteBox;
+use boxes::{ByteBox};
 use crypto_types::{KeyPair, PublicKey, AuthToken};
-use errors::{SaltyResult, SaltyError, BuilderError};
-use events::{Event};
-use helpers::{libsodium_init};
-use protocol::{Signaling, BoxedSignaling, InitiatorSignaling, ResponderSignaling};
-use protocol::{HandleAction, Common};
+use errors::{SaltyResult, SaltyError, SignalingResult, BuilderError};
+use helpers::libsodium_init;
+use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
 use task::{Tasks};
 
 
@@ -80,18 +86,29 @@ use task::{Tasks};
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
 #[cfg(feature = "msgpack-debugging")]
 const DEFAULT_MSGPACK_DEBUG_URL: &'static str = "https://msgpack.dbrgn.ch/#base64=";
+const RECEIVE_CHANNEL_BUFFER: usize = 32;
+const SEND_CHANNEL_BUFFER: usize = 32;
 
 
-/// Helper function to create named thread
-fn named_thread(name: &str) -> thread::Builder {
-    thread::Builder::new().name(name.into())
+/// A type alias for a boxed future.
+pub type BoxedFuture<T, E> = Box<Future<Item = T, Error = E>>;
+
+/// A type alias for the async websocket client type.
+pub type WsClient = Client<TlsStream<TcpStream>>;
+
+
+/// Wrap future in a box with type erasure.
+macro_rules! boxed {
+    ($future:expr) => {{
+        Box::new($future) as BoxedFuture<_, _>
+    }}
 }
 
 
 /// The builder used to create a [`SaltyClient`](struct.SaltyClient.html) instance.
 pub struct SaltyClientBuilder {
     permanent_key: KeyPair,
-    tasks: Vec<BoxedTask>,
+    tasks: Vec<Box<Task>>,
     ping_interval: Option<Duration>,
 }
 
@@ -109,7 +126,7 @@ impl SaltyClientBuilder {
     ///
     /// When calling this method multiple times, tasks added first
     /// have the highest priority during task negotation.
-    pub fn add_task(mut self, task: BoxedTask) -> Self {
+    pub fn add_task(mut self, task: Box<Task>) -> Self {
         self.tasks.push(task);
         self
     }
@@ -136,9 +153,7 @@ impl SaltyClientBuilder {
             self.ping_interval,
         );
         Ok(SaltyClient {
-            signaling: Arc::new(Mutex::new(Box::new(signaling))),
-            state: ConnectionState::Disconnected,
-            events: Arc::new(Mutex::new(Bus::new(events::BUS_SIZE))),
+            signaling: Box::new(signaling),
         })
     }
 
@@ -153,24 +168,10 @@ impl SaltyClientBuilder {
             self.ping_interval,
         );
         Ok(SaltyClient {
-            signaling: Arc::new(Mutex::new(Box::new(signaling))),
-            state: ConnectionState::Disconnected,
-            events: Arc::new(Mutex::new(Bus::new(events::BUS_SIZE))),
+            signaling: Box::new(signaling),
         })
     }
 }
-
-enum ConnectionState {
-    Disconnected,
-    Connected {
-        tx_channel: cc::Sender<Vec<u8>>,
-        tx_thread: thread::JoinHandle<()>,
-        rx_thread: thread::JoinHandle<()>,
-        signaling_thread: thread::JoinHandle<()>,
-    }
-}
-
-
 
 /// The SaltyRTC Client instance.
 ///
@@ -183,363 +184,31 @@ pub struct SaltyClient {
     /// [`InitiatorSignaling`](protocol/struct.InitiatorSignaling.html) or a
     /// [`ResponderSignaling`](protocol/struct.ResponderSignaling.html)
     /// instance.
-    signaling: Arc<Mutex<BoxedSignaling>>,
-
-    /// The connection state.
-    state: ConnectionState,
-
-    /// A bus where events are published.
-    events: Arc<Mutex<Bus<Event>>>,
+    signaling: Box<Signaling>,
 }
 
 impl SaltyClient {
+
     /// Return the assigned role.
     pub fn role(&self) -> Role {
-        self.signaling.lock().expect("Could not lock signaling mutex").role()
+        self.signaling.role()
     }
 
     /// Return a reference to the auth token.
-    pub fn auth_token_bytes(&self) -> Option<Vec<u8>> {
-        self.signaling
-            .lock().expect("Could not lock signaling mutex")
-            .auth_token()
-            .map(|t| t.secret_key_bytes().to_owned())
+    pub fn auth_token(&self) -> Option<&AuthToken> {
+        self.signaling.auth_token()
     }
 
     /// Return a reference to the selected task.
-    pub fn task(&self) -> Option<Arc<Mutex<BoxedTask>>> {
-        self.signaling
-            .lock().expect("Could not lock signaling mutex")
-            .common()
-            .task
-            .clone()
+    pub fn task(&self) -> Option<&Box<Task>> {
+        self.signaling.common().task.as_ref()
     }
 
-    /// Return the receiver for SaltyRTC events.
-    pub fn events(&mut self) -> BusReader<Event> {
-        self.events.lock().unwrap().add_rx()
-    }
-
-    /// Connect to server.
-    ///
-    /// This will start threw new named background threads:
-    ///
-    /// * `saltyrtc-tx`: Thread that waits for messages to be sent
-    /// * `saltyrtc-rx`: Thread that waits for incoming WS messages
-    /// * `saltyrtc-signaling`: Thread that processes incoming messages and creates outgoing messages
-    ///
-    /// TODO: Combine with handshake?
-    pub fn connect(&mut self, hostname: &str, port: u16) -> SaltyResult<&mut Self> {
-        // Initialize libsodium
-        libsodium_init()?;
-
-        { // Scope for signaling MutexGuard
-
-            // Acquire signaling lock
-            let signaling = self.signaling.lock().expect("Could not acquire signaling lock");
-
-            // Determine URL
-            let path = {
-                match signaling.role() {
-                    Role::Initiator => signaling.common().permanent_keypair.public_key_hex(),
-                    Role::Responder => HEXLOWER.encode(
-                        signaling
-                            .get_peer().expect("Initiator context not set")
-                            .permanent_key().expect("Initiator permanent key not set")
-                            .as_ref()
-                    ),
-                }
-            };
-            let url_string = format!("wss://{}:{}/{}", hostname, port, path);
-            info!("Connecting to {}", url_string);
-
-            // Parse URL
-            let url = Url::parse(&url_string)
-                .map_err(|e| SaltyError::Decode(format!("Invalid URL: {}", e)))?;
-
-            // TODO: Get rid of the following unwraps inside the threads
-
-            // Set up a one-time channel used to transfer the WebSocket sender outside the handler.
-            let (ws_sender_transfer_tx, ws_sender_transfer_rx) = cc::bounded(1);
-
-            // Set up a one-time channel used to transfer the message receiver outside the handler.
-            let (message_receiver_transfer_tx, message_receiver_transfer_rx) = cc::bounded(1);
-
-            // Create new WebSocket
-            let mut socket = ws::WebSocket::new(move |ws_sender: ws::Sender| {
-                // Send cloned sender through channel
-                ws_sender_transfer_tx.send(ws_sender.clone()).expect("Could not send ws::Sender through channel");
-
-                // Create a channel
-                let (receiver_tx, receiver_rx) = cc::unbounded();
-
-                // Send receiver through channel
-                message_receiver_transfer_tx.send(receiver_rx).expect("Could not send message receiver through channel");
-
-                // Create a new [`Connection`](struct.Connection.html) instance
-                Connection {
-                    _ws: ws_sender,
-                    channel: receiver_tx,
-                }
-            }).map_err(|e| SaltyError::Network(format!("Could not create WebSocket: {}", e)))?;
-
-            // Prepare server connection
-            socket.connect(url)
-                .map_err(|e| SaltyError::Network(format!("Could not connect to WebSocket server: {}", e)))?;
-
-            // Start receiving thread
-            let rx_thread = named_thread("saltyrtc-rx")
-                .spawn(move || {
-                    info!("Started receiving thread");
-                    socket.run().expect("WebSocket error");
-                    info!("Stopped receiving thread");
-                })
-                .map_err(|e| SaltyError::Io(e.to_string()))?;
-
-            // Get access to a WebSocket `Sender` instance
-            let ws_sender = ws_sender_transfer_rx.recv().unwrap();
-            let receiver_rx = message_receiver_transfer_rx.recv().unwrap();
-            mem::drop(ws_sender_transfer_rx);
-
-            // Start sending thread
-            let (sender_tx, sender_rx) = cc::unbounded();
-            let tx_thread = {
-                let ws_sender = ws_sender.clone();
-                named_thread("saltyrtc-tx")
-                    .spawn(move || Self::sending_thread(sender_rx, ws_sender))
-                    .map_err(|e| SaltyError::Io(e.to_string()))?
-            };
-
-            // Start signaling thread
-            let signaling_thread = {
-                let signaling = self.signaling.clone();
-                let events = self.events.clone();
-                named_thread("saltyrtc-signaling")
-                    .spawn(move || Self::signaling_thread(receiver_rx, ws_sender, events, signaling))
-                    .map_err(|e| SaltyError::Io(e.to_string()))?
-            };
-
-            self.state = ConnectionState::Connected {
-                tx_channel: sender_tx,
-                tx_thread,
-                rx_thread,
-                signaling_thread,
-            };
-        }
-
-        Ok(self)
-    }
-
-    fn sending_thread(channel: cc::Receiver<Vec<u8>>, sender: ws::Sender) {
-        info!("Started sending thread");
-        for bytes in channel {
-            let msg = ws::Message::Binary(bytes);
-            sender.send(msg).expect("Error when sending message");
-        }
-        info!("Stopped sending thread");
-    }
-
-    fn signaling_thread(incoming_messages: cc::Receiver<Vec<u8>>,
-                        sender: ws::Sender,
-                        events: Arc<Mutex<Bus<Event>>>,
-                        signaling: Arc<Mutex<BoxedSignaling>>) {
-        info!("Started signaling thread");
-        for bytes in incoming_messages {
-            // Parse into ByteBox
-            let bbox = ByteBox::from_slice(&bytes)
-                .map_err(|e| SaltyError::Protocol(e.to_string()))
-                .unwrap();
-            trace!("ByteBox: {:?}", bbox);
-
-            // Lock signaling instance mutex
-            let mut sig = signaling.lock().expect("Could not unlock signaling instance");
-
-            // Hand message over to signaling instance
-            let handle_actions = match sig.handle_message(bbox) {
-                Ok(actions) => actions,
-                Err(e) => {
-                    error!("Could not handle incoming message: {}", e);
-                    // TODO
-                    continue;
-                },
-            };
-
-            // Execute actions
-            for action in handle_actions {
-                match action {
-                    HandleAction::Reply(bbox) => {
-                        sender.send(ws::Message::Binary(bbox.into_bytes()))
-                            .expect("Could not send message");
-                    },
-                    HandleAction::Event(e) => {
-                        let peer_handshake_done = e == Event::PeerHandshakeDone;
-
-                        // Propagate events through event bus.
-                        events
-                            .lock().expect("Could not unlock event bus")
-                            .broadcast(e);
-
-                        // If the handshake is done, let the task know.
-                        if peer_handshake_done {
-                            let role = sig.role();
-                            let common: &mut Common = sig.common_mut();
-                            match common.task {
-                                Some(ref mut task) => {
-                                    let ws_sender = sender.clone();
-                                    let msg_receiver = common.task_msg_chan.1.clone();
-                                    task
-                                        .lock().expect("Could not lock task mutex")
-                                        .on_peer_handshake_done(
-                                            role,
-                                            ws_sender,
-                                            msg_receiver,
-                                            Box::new({
-                                                let signaling = signaling.clone();
-                                                move |val: rmpv::Value| {
-                                                    let bbox = signaling
-                                                        .lock().expect("Could not lock signaling mutex")
-                                                        .encode_task_message(val)?;
-                                                    Ok(bbox.into_bytes())
-                                                }
-                                            })
-                                        );
-                                }
-                                None => panic!("No task selected"), // TODO error handling
-                            }
-                        }
-
-                    },
-                }
-            }
-        }
-        info!("Stopped signaling thread");
-    }
-
-    pub fn wait(self) {
-        match self.state {
-            ConnectionState::Connected { tx_thread, rx_thread, signaling_thread, .. } => {
-                rx_thread.join().unwrap();
-                tx_thread.join().unwrap();
-                signaling_thread.join().unwrap();
-            },
-            ConnectionState::Disconnected => panic!("Cannot wait on disconnected client"),
-        };
+    /// Handle an incoming message.
+    fn handle_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+        self.signaling.handle_message(bbox)
     }
 }
-
-struct Connection {
-    /// The WebSocket sender object.
-    _ws: ws::Sender,
-
-    /// The channel used to send incoming messages to listeners.
-    channel: cc::Sender<Vec<u8>>,
-}
-
-impl ws::Handler for Connection {
-
-    /// A method for creating the initial handshake request for WebSocket clients.
-    ///
-    /// This is where we add our custom subprotocol header.
-    fn build_request(&mut self, url: &Url) -> ws::Result<ws::Request> {
-        debug!("Building initial WebSocket request");
-        let mut req = ws::Request::from_url(url)?;
-        req.add_protocol(SUBPROTOCOL);
-        Ok(req)
-    }
-
-    /// The WebSocket is now open!
-    fn on_open(&mut self, shake: ws::Handshake) -> ws::Result<()> {
-        info!("WebSocket is open!");
-
-        let protocols = shake.request.protocols()?;
-
-        fn make_error<I>(msg: I) -> ws::Result<()> where I: Into<Cow<'static, str>> {
-            Err(ws::Error::new(ws::ErrorKind::Protocol, msg))
-        }
-
-        // Verify that the correct subprotocol was chosen
-        match protocols.len() {
-            0 => make_error("Websocket subprotocol not accepted by server"),
-            1 if protocols[0] == SUBPROTOCOL => {
-                trace!("Subprotocol chosen by server was verified");
-                Ok(())
-            },
-            1 => make_error(format!("Wrong subprotocol chosen by server: {}", protocols[0])),
-            _ => make_error("More than one websocket subprotocol chosen by server"),
-        }
-    }
-
-    fn on_message(&mut self, msg: ws::Message) -> ws::Result<()> {
-        // Log and unwrap bytes
-        let bytes = match msg {
-            ws::Message::Text(_) => {
-                warn!("--> Incoming text message, ignoring");
-                return Ok(());
-            },
-            ws::Message::Binary(bytes) => {
-                trace!("--> Incoming message ({} bytes)", bytes.len());
-                bytes
-            },
-        };
-
-        // Send bytes through channel to any listeners
-        self.channel.send(bytes)
-            .unwrap_or_else(|e| error!("Could not send bytes through channel: {}", e));
-
-        Ok(())
-    }
-
-    fn on_send_message(&mut self, msg: ws::Message) -> ws::Result<Option<ws::Message>> {
-        match msg {
-            ws::Message::Text(_) => trace!("<-- Outgoing text message"),
-            ws::Message::Binary(ref bytes) => trace!("<-- Outgoing message ({} bytes)", bytes.len()),
-        }
-        Ok(Some(msg))
-    }
-
-    fn on_close(&mut self, code: ws::CloseCode, reason: &str) {
-        if reason.is_empty() {
-            info!("WebSocket connection closed, code: {:?}", code);
-        } else {
-            info!("WebSocket connection closed, code: {:?}, reason: {}", code, reason);
-        }
-    }
-
-    fn on_error(&mut self, err: ws::Error) {
-        error!("WebSocket error: {:?}", err);
-    }
-
-    fn on_timeout(&mut self, event: ws::util::Token) -> ws::Result<()> {
-        info!("WebSocket timeout");
-        Ok(())
-    }
-
-    fn on_shutdown(&mut self) {
-        info!("WebSocket shutdown");
-    }
-
-    /// Upgrade the TcpStream to an SslStream.
-    fn upgrade_ssl_client(&mut self, stream: TcpStream, url: &Url) -> ws::Result<SslStream<TcpStream>> {
-        let domain = url.domain()
-            .ok_or(ws::Error::new(
-                ws::ErrorKind::Protocol,
-                format!("Unable to parse domain from {}. Needed for TLS.", url),
-            ))?;
-
-        let mut builder = SslConnectorBuilder::new(SslMethod::tls())
-            .map_err(|e| ws::Error::new(ws::ErrorKind::Internal, format!("Failed to upgrade client to SSL: {}", e)))?;
-
-        // TODO: This must not be in the final version!
-        builder.builder_mut().set_verify(SslVerifyMode::empty());
-        let connector = builder.build();
-        connector
-            .danger_connect_without_providing_domain_for_certificate_verification_and_server_name_indication(stream)
-            .map_err(ws::Error::from)
-
-        //connector.connect(domain, stream).map_err(ws::Error::from)
-    }
-}
-
 
 
 /// Close codes used by SaltyRTC.
@@ -596,4 +265,407 @@ impl fmt::Display for CloseCode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?} ({})", self, self.as_number())
     }
+}
+
+
+/// Wrapper type for decoded form of WebSocket message types that we want to handle.
+#[derive(Debug)]
+enum WsMessageDecoded {
+    /// We got bytes that we decoded into a ByteBox.
+    ByteBox(ByteBox),
+    /// We got a ping message.
+    Ping(Vec<u8>),
+    /// We got a message type that we want to ignore.
+    Ignore,
+}
+
+
+/// Connect to the specified SaltyRTC server.
+///
+/// This function returns a boxed future. The future must be run in a Tokio
+/// reactor core for something to actually happen.
+///
+/// The future completes once the server connection is established.
+/// It returns the async websocket client instance.
+pub fn connect(
+    url: &str, // TODO: Derive from SaltyClient instance
+    tls_config: Option<TlsConnector>,
+    handle: &Handle,
+    salty: Rc<RefCell<SaltyClient>>,
+) -> SaltyResult<(BoxedFuture<AsyncClient, SaltyError>, Receiver<Value>, Sender<Value>)> {
+    // Initialize libsodium
+    libsodium_init()?;
+
+    // Parse URL
+    let ws_url = match Url::parse(url) {
+        Ok(b) => b,
+        Err(e) => return Err(SaltyError::Decode(format!("Could not parse URL: {}", e))),
+    };
+
+    // Create communication channels.
+    // These channels are streams/sinks, so they can be turned into futures.
+    let (incoming_tx, incoming_rx) = channel::<Value>(RECEIVE_CHANNEL_BUFFER);
+    let (outgoing_tx, outgoing_rx) = channel::<Value>(SEND_CHANNEL_BUFFER);
+
+    // Initialize WebSocket client
+    let future = ClientBuilder::from_url(&ws_url)
+        .add_protocol(SUBPROTOCOL)
+        .async_connect_secure(tls_config, handle)
+        .map_err(|e: WebSocketError| SaltyError::Network(format!("Could not connect to server: {}", e)))
+        .and_then(|(framed, headers)| {
+            // Verify that the correct subprotocol was chosen
+            trace!("Websocket server headers: {:?}", headers);
+            match headers.get::<WebSocketProtocol>() {
+                Some(proto) if proto.len() == 1 && proto[0] == SUBPROTOCOL => {
+                    Ok(framed)
+                },
+                Some(proto) => {
+                    error!("More than one chosen protocol: {:?}", proto);
+                    Err(SaltyError::Protocol("More than one websocket subprotocol chosen by server".into()))
+                },
+                None => {
+                    error!("No protocol chosen by server");
+                    Err(SaltyError::Protocol("Websocket subprotocol not accepted by server".into()))
+                },
+            }
+        })
+        .map({
+            let outgoing_tx = outgoing_tx.clone();
+            move |framed| {
+                let role = salty
+                    .deref()
+                    .try_borrow()
+                    .map(|s| s.role().to_string())
+                    .unwrap_or_else(|_| "Unknown".to_string());
+                info!("Connected to server as {}", role);
+                AsyncClient {
+                    framed,
+                    outgoing_rx,
+                    outgoing_tx,
+                    incoming_tx,
+                }
+            }
+        });
+
+    Ok((boxed!(future), incoming_rx, outgoing_tx))
+}
+
+/// Decode a websocket `OwnedMessage` and wrap it into a `WsMessageDecoded`.
+fn decode_ws_message(msg: OwnedMessage) -> SaltyResult<WsMessageDecoded> {
+    let decoded = match msg {
+        OwnedMessage::Binary(bytes) => {
+            debug!("Incoming binary message ({} bytes)", bytes.len());
+
+            // Parse into ByteBox
+            let bbox = ByteBox::from_slice(&bytes)
+                .map_err(|e| SaltyError::Protocol(e.to_string()))?;
+            trace!("ByteBox: {:?}", bbox);
+
+            WsMessageDecoded::ByteBox(bbox)
+        },
+        OwnedMessage::Ping(payload) => {
+            debug!("Incoming ping message");
+            WsMessageDecoded::Ping(payload)
+        },
+        OwnedMessage::Close(close_data) => {
+            match close_data {
+                Some(data) => {
+                    let close_code = CloseCode::from_number(data.status_code);
+                    match close_code {
+                        Some(code) if data.reason.is_empty() =>
+                            info!("Server closed connection with close code {}", code),
+                        Some(code) =>
+                            info!("Server closed connection with close code {} ({})", code, data.reason),
+                        None if data.reason.is_empty() =>
+                            info!("Server closed connection with unknown close code {}", data.status_code),
+                        None =>
+                            info!("Server closed connection with unknown close code {} ({})", data.status_code, data.reason),
+                    }
+                },
+                None => info!("Server closed connection without close code"),
+            };
+            return Err(SaltyError::Network("Server message stream ended".into()));
+        },
+        other => {
+            warn!("Skipping non-binary message: {:?}", other);
+            WsMessageDecoded::Ignore
+        },
+    };
+    Ok(decoded)
+}
+
+/// An action in our pipeline.
+///
+/// This is used to enable early-return inside the pipeline. If a step returns a `Future`,
+/// it should be passed directly to the `loop_fn`.
+enum PipelineAction {
+    /// We got a ByteBox to handle.
+    ByteBox((AsyncClient, ByteBox)),
+    /// Immediately pass on this future in the next step.
+    Future(BoxedFuture<Loop<AsyncClient, AsyncClient>, SaltyError>),
+}
+
+/// Preprocess a `WsMessageDecoded`.
+///
+/// Here pings and ignored messages are handled.
+fn preprocess_ws_message((decoded, client): (WsMessageDecoded, AsyncClient)) -> SaltyResult<PipelineAction> {
+    // Unwrap byte box, handle ping messages
+    let bbox = match decoded {
+        WsMessageDecoded::ByteBox(bbox) => bbox,
+        WsMessageDecoded::Ping(payload) => {
+            let pong = OwnedMessage::Pong(payload);
+            let outbox = stream::iter_ok::<_, WebSocketError>(vec![pong]);
+            let AsyncClient { framed, outgoing_rx, outgoing_tx, incoming_tx } = client;
+            let future = send_all::new(framed, outbox)
+                .map_err(move |e| SaltyError::Network(format!("Could not send pong message: {}", e)))
+                .map(|(framed, _)| {
+                    debug!("Sent pong message");
+                    Loop::Continue(AsyncClient {
+                        framed,
+                        outgoing_rx,
+                        outgoing_tx,
+                        incoming_tx,
+                    })
+                });
+            let action = PipelineAction::Future(boxed!(future));
+            return Ok(action);
+        },
+        WsMessageDecoded::Ignore => {
+            debug!("Ignoring message");
+            let action = PipelineAction::Future(boxed!(future::ok(Loop::Continue(client))));
+            return Ok(action);
+        },
+    };
+    Ok((PipelineAction::ByteBox((client, bbox))))
+}
+
+/// Do the server and peer handshake.
+///
+/// This function returns a boxed future. The future must be run in a Tokio
+/// reactor core for something to actually happen.
+///
+/// The future completes once the peer handshake is done, or if an error occurs.
+/// It returns the async websocket client instance.
+pub fn do_handshake(
+    client: AsyncClient,
+    salty: Rc<RefCell<SaltyClient>>,
+) -> BoxedFuture<AsyncClient, SaltyError> {
+
+    let role = salty
+        .deref()
+        .try_borrow()
+        .map(|s| s.role().to_string())
+        .unwrap_or_else(|_| "Unknown".to_string());
+    info!("Connected to server as {}", role);
+
+    // Main loop
+    let main_loop = future::loop_fn(client, move |client| {
+
+        let salty = Rc::clone(&salty);
+
+        let AsyncClient { framed, outgoing_rx, outgoing_tx, incoming_tx } = client;
+
+        // Take the next incoming message
+        framed.into_future()
+
+            // Map errors to our custom error type
+            .map_err(|(e, _)| SaltyError::Network(format!("Could not receive message from server: {}", e)))
+
+            // Wrap framed instance into `AsyncClient`
+            .map(|(msg_option, framed)| (msg_option, AsyncClient {
+                framed,
+                outgoing_rx,
+                outgoing_tx,
+                incoming_tx,
+            }))
+
+            // Process incoming messages and convert them to a `WsMessageDecoded`.
+            .and_then(|(msg_option, client)| {
+                let decoded = match msg_option {
+                    Some(msg) => decode_ws_message(msg),
+                    None => return Err(SaltyError::Network("Server message stream ended without close message".into())),
+                };
+                decoded.map(|decoded| (decoded, client))
+            })
+
+            // Preprocess messages, handle things like ping/pong and ignored messages
+            .and_then(preprocess_ws_message)
+
+            // Process received signaling message
+            .and_then(move |pipeline_action| {
+                let (client, bbox) = match pipeline_action {
+                    PipelineAction::ByteBox(x) => x,
+                    PipelineAction::Future(f) => return f,
+                };
+
+                // Handle message bytes
+                let handle_actions = match salty.deref().try_borrow_mut() {
+                    Ok(mut s) => match s.handle_message(bbox) {
+                        Ok(actions) => actions,
+                        Err(e) => return boxed!(future::err(e.into())),
+                    },
+                    Err(e) => return boxed!(future::err(SaltyError::Crash(
+                        format!("Could not get mutable reference to SaltyClient: {}", e)
+                    ))),
+                };
+
+                // Extract messages that should be sent back to the server
+                let mut messages = vec![];
+                let mut handshake_done = false;
+                for action in handle_actions {
+                    match action {
+                        HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
+                        HandleAction::HandshakeDone => handshake_done = true,
+                    }
+                }
+
+                macro_rules! loop_action {
+                    ($client:expr) => {
+                        match handshake_done {
+                            false => Loop::Continue($client),
+                            true => Loop::Break($client),
+                        }
+                    }
+                };
+
+                // If there are enqueued messages, send them
+                if messages.is_empty() {
+                    boxed!(future::ok(loop_action!(client)))
+                } else {
+                    for message in &messages {
+                        debug!("Sending {} bytes", message.size());
+                    }
+                    let outbox = stream::iter_ok::<_, WebSocketError>(messages);
+                    let AsyncClient { framed, outgoing_rx, outgoing_tx, incoming_tx } = client;
+                    let future = send_all::new(framed, outbox)
+                        .map_err(move |e| SaltyError::Network(format!("Could not send message: {}", e)))
+                        .map(move |(framed, _)| {
+                            trace!("Sent all messages");
+                            loop_action!(AsyncClient {
+                                framed,
+                                outgoing_rx,
+                                outgoing_tx,
+                                incoming_tx,
+                            })
+                        });
+                    boxed!(future)
+                }
+            })
+    });
+
+    boxed!(main_loop)
+}
+
+/// This struct wraps the state for the asynchronous connection
+/// and associated communication channels.
+pub struct AsyncClient {
+    framed: WsClient,
+    outgoing_rx: Receiver<Value>,
+    outgoing_tx: Sender<Value>,
+    incoming_tx: Sender<Value>,
+}
+
+pub struct LoopState {
+    ws_rx: SplitStream<OwnedMessage>,
+    ws_tx: SplitSink<OwnedMessage>,
+    outgoing_rx: Receiver<Value>,
+    incoming_tx: Sender<Value>,
+}
+
+pub fn task_loop(
+    client: AsyncClient,
+    salty: Rc<RefCell<SaltyClient>>,
+) -> BoxedFuture<(((), ()), ()), SaltyError> {
+    let task_name = salty
+        .deref()
+        .try_borrow()
+        .ok()
+        .map(|salty| match salty.task() {
+            Some(task) => task.name(),
+            None => "None".into(),
+        })
+        .unwrap_or("Unknown".into());
+    info!("Starting task loop for task {}", task_name);
+
+    let salty = Rc::clone(&salty);
+
+    // Destructure AsyncClient
+    let AsyncClient { framed, outgoing_rx, outgoing_tx, incoming_tx } = client;
+
+    // Split websocket connection into sink/stream
+    let (ws_sink, ws_stream) = framed.split();
+
+    // Create a channel for raw websocket messages
+    let (raw_outgoing_tx, raw_outgoing_rx) = channel::<OwnedMessage>(SEND_CHANNEL_BUFFER);
+
+    // Stream future for processing incoming websocket messages
+    let raw_outgoing_tx_clone = raw_outgoing_tx.clone();
+    let reader = ws_stream
+
+        // Map errors to our custom error type
+        // TODO: Take a look at `sink_from_err`
+        .map_err(|e| SaltyError::Network(format!("Could not receive message from server: {}", e)))
+
+        // Decode messages
+        .and_then(decode_ws_message)
+
+        // Handle each incoming message
+        .for_each(move |msg: WsMessageDecoded| {
+            // Clone queue of outgoing messages
+            let raw_outgoing_tx = raw_outgoing_tx_clone.clone();
+
+            match msg {
+                WsMessageDecoded::ByteBox(bytes) => {
+                    info!("Got binary websocket msg: {:?}", bytes);
+                    boxed!(future::ok(()))
+                },
+                WsMessageDecoded::Ping(payload) => {
+                    let pong = OwnedMessage::Pong(payload);
+                    let future = raw_outgoing_tx
+                        .send(pong)
+                        .map(|_| debug!("Sent pong message"))
+                        .map_err(|e| SaltyError::Network(format!("Could not send pong message: {}", e)));
+                    boxed!(future)
+                },
+                WsMessageDecoded::Ignore => boxed!(future::ok(())),
+            }
+        });
+
+    // Transform future that sends values from the outgoing channel to the raw outgoing channel
+    let transformer = outgoing_rx
+
+        // Encode and encrypt values
+        .map(|val: Value| {
+            OwnedMessage::Text(format!("Val: {:?}", val))
+        })
+
+        // Forward to raw queue
+        .forward(raw_outgoing_tx.sink_map_err(|e| ()))
+
+        // Ignore stream/sink
+        .map(|(_, _)| ())
+
+        // Map error types
+        .map_err(|_| SaltyError::Crash("TODO: read error".into()));
+
+    // Sink future for sending messages from the raw outgoing channel through the WebSocket
+    let writer = ws_sink
+
+        // Map sink errors
+        .sink_map_err(|e| SaltyError::Crash(format!("TODO sink error: {:?}", e)))
+
+        // Forward all messages from the channel receiver to the sink
+        .send_all(
+            raw_outgoing_rx
+                .map_err(|e| SaltyError::Crash(format!("TODO receiver error")))
+        )
+
+        // Ignore sink
+        .map(|x| ());
+
+    // The task loop is finished when all futures are resolved.
+    let task_loop = reader.join(transformer).join(writer);
+
+    boxed!(task_loop)
+
 }

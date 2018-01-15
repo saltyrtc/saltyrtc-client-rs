@@ -32,10 +32,6 @@ pub enum SaltyError {
     #[fail(display = "Protocol error: {}", _0)]
     Protocol(String),
 
-    /// An IO error.
-    #[fail(display = "IO Error: {}", _0)]
-    Io(String),
-
     /// An unexpected error. This should never happen and indicates a bug in
     /// the implementation.
     #[fail(display = "An unexpected error occurred: {}. This indicates a bug and should be reported!", _0)]
