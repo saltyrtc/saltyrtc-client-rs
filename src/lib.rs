@@ -676,7 +676,7 @@ pub fn task_loop(
         })
 
         // Forward to raw queue
-        .forward(raw_outgoing_tx.sink_map_err(|e| ()))
+        .forward(raw_outgoing_tx.sink_map_err(|_| ()))
 
         // Ignore stream/sink
         .map(|(_, _)| ())
@@ -693,7 +693,7 @@ pub fn task_loop(
         // Forward all messages from the channel receiver to the sink
         .send_all(
             raw_outgoing_rx
-                .map_err(|e| SaltyError::Crash(format!("TODO receiver error")))
+                .map_err(|_| SaltyError::Crash(format!("TODO receiver error")))
         )
 
         // Ignore sink
