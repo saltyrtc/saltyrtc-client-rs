@@ -15,6 +15,8 @@ extern crate failure;
 extern crate futures;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate mopa;
 extern crate native_tls;
 extern crate rmp_serde;
 extern crate rust_sodium;

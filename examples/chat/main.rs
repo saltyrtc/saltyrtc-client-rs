@@ -29,7 +29,7 @@ use data_encoding::{HEXLOWER};
 use env_logger::{Builder};
 use futures::future::{Future};
 use native_tls::{TlsConnector, Certificate, Protocol};
-use saltyrtc_client::{SaltyClientBuilder, Role, AsyncClient};
+use saltyrtc_client::{SaltyClientBuilder, Role, AsyncClient, Task};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
 use tokio_core::reactor::{Core};
 
@@ -225,7 +225,12 @@ fn main() {
             process::exit(1);
         });
 
-    println!("Task is {:?}", task);
+    // Get reference to task and downcast to ChatTask.
+    // We can be sure that it's a ChatTask since that's the only one we proposed.
+    let mut t = task.lock().expect("Could not lock task mutex");
+    let chat_task: &mut ChatTask = (&mut **t as &mut Task)
+        .downcast_mut::<ChatTask>()
+        .expect("Chosen task is not a ChatTask");
 
     // Run future in reactor
     match core.run(task_loop_future) {

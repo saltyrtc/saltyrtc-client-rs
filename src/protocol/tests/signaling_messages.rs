@@ -67,7 +67,7 @@ impl TestContext<ResponderSignaling> {
             };
             let ks = KeyPair::from_private_key(our_ks.private_key().clone());
             let mut tasks = Tasks::new(Box::new(DummyTask::new(23)));
-            tasks.add_task(Box::new(DummyTask::new(42)));
+            tasks.add_task(Box::new(DummyTask::new(42))).unwrap();
             ResponderSignaling::new(ks, pk, auth_token, tasks, None)
         };
         signaling.common_mut().identity = identity;

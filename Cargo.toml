@@ -10,6 +10,7 @@ data-encoding = "2.0.0-rc.2"
 failure = "0.1.1"
 futures = "0.1.0"  # Make sure to use same version as websocket
 log = "0.4.0-rc.1"
+mopa = "0.2"
 native-tls = "0.1.4"
 rmp-serde = "0.13"
 rmpv = { version = "0.4", features = ["with-serde"] }

@@ -11,6 +11,7 @@ use std::fmt::Debug;
 use std::iter::IntoIterator;
 
 use failure::Error;
+use mopa::Any;
 use rmpv::Value;
 
 
@@ -22,7 +23,7 @@ pub type BoxedTask = Box<Task + Send>;
 ///
 /// A task defines how data is exchanged after the server- and peer-handshake
 /// have been completed.
-pub trait Task : Debug {
+pub trait Task : Debug + Any {
 
     /// Initialize the task with the task data from the peer, sent in the `Auth` message.
     ///
@@ -61,6 +62,8 @@ pub trait Task : Debug {
     /// This method is called by the signaling class when sending and receiving 'close' messages.
     fn close(&mut self, reason: u8);
 }
+
+mopafy!(Task);
 
 /// A set of task boxes.
 ///
