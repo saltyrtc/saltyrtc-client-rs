@@ -29,7 +29,7 @@ impl Task for ChatTask {
     fn init(&mut self, data: &Option<HashMap<String, Value>>) -> Result<(), Error> {
         let peer_name: String = match *data {
             Some(ref map) => match map.get("nickname") {
-                Some(&Value::String(ref nickname)) => nickname.to_string(),
+                Some(&Value::String(ref nickname)) => nickname.as_str().unwrap_or("?").to_string(),
                 Some(ref val) => bail!("The \"nickname\" field has the wrong type: {:?}", val),
                 None => bail!("No \"nickname\" field in data passed to task initialization"),
             },
