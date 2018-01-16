@@ -615,9 +615,44 @@ pub fn task_loop(
             let raw_outgoing_tx = raw_outgoing_tx_clone.clone();
 
             match msg {
-                WsMessageDecoded::ByteBox(bytes) => {
-                    info!("Got binary websocket msg: {:?}", bytes);
-                    boxed!(future::ok(()))
+                WsMessageDecoded::ByteBox(bbox) => {
+                    info!("Got binary websocket msg: {:?}", bbox);
+
+                    // Handle message bytes
+                    let handle_actions = match salty.deref().try_borrow_mut() {
+                        Ok(mut s) => match s.handle_message(bbox) {
+                            Ok(actions) => actions,
+                            Err(e) => return boxed!(future::err(e.into())),
+                        },
+                        Err(e) => return boxed!(future::err(
+                            SaltyError::Crash(format!("Could not get mutable reference to SaltyClient: {}", e))
+                        )),
+                    };
+
+                    // Extract messages that should be sent back to the server
+                    let mut messages = vec![];
+                    for action in handle_actions {
+                        match action {
+                            HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
+                            HandleAction::HandshakeDone => return boxed!(future::err(
+                                SaltyError::Crash("Got HandleAction::HandshakeDone in task loop".into())
+                            )),
+                        }
+                    }
+
+                    // Send messages to server
+                    if messages.is_empty() {
+                        boxed!(future::ok(()))
+                    } else {
+                        let msg_count = messages.len();
+                        let outbox = stream::iter_ok::<_, SaltyError>(messages);
+                        let future = raw_outgoing_tx
+                            .sink_map_err(|e| SaltyError::Network(format!("Sink error: {}", e)))
+                            .send_all(outbox)
+                            .map(move |_| debug!("Sent {} messages", msg_count))
+                            .map_err(|e| SaltyError::Network(format!("Could not send messages: {}", e)));
+                        boxed!(future)
+                    }
                 },
                 WsMessageDecoded::Ping(payload) => {
                     let pong = OwnedMessage::Pong(payload);
@@ -636,6 +671,7 @@ pub fn task_loop(
 
         // Encode and encrypt values
         .map(|val: Value| {
+            // TODO: Encrypt
             OwnedMessage::Text(format!("Val: {:?}", val))
         })
 

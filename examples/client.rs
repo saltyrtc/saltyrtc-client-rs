@@ -184,8 +184,8 @@ fn main() {
     println!("");
     println!("To connect with a peer:");
     match role {
-        Role::Initiator => println!("cargo run --features 'msgpack-debugging' --example client -- responder \\\n    -p {} \\\n    -a {}", path, auth_token_hex),
-        Role::Responder => println!("cargo run --features 'msgpack-debugging' --example client -- initiator"),
+        Role::Initiator => println!("cargo run --example client -- responder \\\n    -p {} \\\n    -a {}", path, auth_token_hex),
+        Role::Responder => println!("cargo run --example client -- initiator"),
     }
     println!("******************************\x1B[0m\n");
 

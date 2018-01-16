@@ -49,7 +49,7 @@ If you start the client as initiator, the signaling path and auth token will be
 randomly generated and printed:
 
     $ export RUST_LOG=saltyrtc_client=DEBUG
-    $ cargo run --features 'msgpack-debugging' --example client -- initiator
+    $ cargo run --example client -- initiator
     INFO:saltyrtc_client::crypto: Generating new key pair
     INFO:saltyrtc_client::crypto: Generating new auth token
 
@@ -60,7 +60,7 @@ randomly generated and printed:
     Auth token: 0e94b54a49e4ec7f4398ec9bec5d4359cca810f7eca31704e6c0afadd54a7818
 
     To connect with a peer:
-    cargo run --features 'msgpack-debugging' --example client -- responder \
+    cargo run --example client -- responder \
         -p f637d7fff53defe8db111b17b2c445f7888a83c13dc40d7ff8449f700910f01f \
         -a 0e94b54a49e4ec7f4398ec9bec5d4359cca810f7eca31704e6c0afadd54a7818
     ******************************
