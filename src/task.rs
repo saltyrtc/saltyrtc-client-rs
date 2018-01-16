@@ -35,11 +35,11 @@ pub trait Task : Debug + Any {
     /// This is the point where the task can take over.
     fn on_peer_handshake_done(&mut self);
 
-    /// Return whether the specified message type is supported by this task.
+    /// Return supported message types.
     ///
     /// Incoming messages with accepted types will be passed to the task.
     /// Otherwise, the message is dropped.
-    fn type_supported(&self, type_: &str) -> bool;
+    fn supported_types(&self) -> &[&'static str];
 
     /// This method is called by SaltyRTC when a task related message
     /// arrives through the WebSocket.

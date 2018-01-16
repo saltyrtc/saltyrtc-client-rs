@@ -40,8 +40,8 @@ impl Task for DummyTask {
         unimplemented!()
     }
 
-    fn type_supported(&self, type_: &str) -> bool {
-        true
+    fn supported_types(&self) -> &[&'static str] {
+        &["dummy"]
     }
 
     fn on_task_message(&mut self, message: Value) {
