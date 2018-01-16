@@ -29,7 +29,7 @@ use data_encoding::{HEXLOWER};
 use env_logger::{Builder};
 use futures::future::{Future};
 use native_tls::{TlsConnector, Certificate, Protocol};
-use saltyrtc_client::{SaltyClientBuilder, Role};
+use saltyrtc_client::{SaltyClientBuilder, Role, AsyncClient};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
 use tokio_core::reactor::{Core};
 
@@ -206,15 +206,30 @@ fn main() {
         .and_then(|client| saltyrtc_client::do_handshake(client, salty_rc.clone()))
         .map(|client| { println!("Handshake done"); client });
 
+    // Run future in reactor to process handshake
+    let client: AsyncClient = match core.run(handshake_future) {
+        Ok(client) => {
+            println!("Handshake success.");
+            client
+        },
+        Err(e) => {
+            println!("{}", e);
+            process::exit(1);
+        },
+    };
+
     // Start task loop
-    let task_future = handshake_future
-        .and_then(|client| saltyrtc_client::task_loop(client, salty_rc.clone()));
+    let (task, task_loop_future) = saltyrtc_client::task_loop(client, salty_rc.clone())
+        .unwrap_or_else(|e| {
+            println!("{}", e);
+            process::exit(1);
+        });
+
+    println!("Task is {:?}", task);
 
     // Run future in reactor
-    match core.run(task_future) {
-        Ok(_) => {
-            println!("Success.");
-        },
+    match core.run(task_loop_future) {
+        Ok(_) => println!("Success."),
         Err(e) => {
             println!("{}", e);
             process::exit(1);

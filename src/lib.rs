@@ -44,6 +44,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 // Third party imports
@@ -65,7 +66,7 @@ use websocket::message::{OwnedMessage};
 
 // Re-exports
 pub use protocol::{Role};
-pub use task::{Task};
+pub use task::{Task, BoxedTask};
 
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
@@ -108,7 +109,7 @@ macro_rules! boxed {
 /// The builder used to create a [`SaltyClient`](struct.SaltyClient.html) instance.
 pub struct SaltyClientBuilder {
     permanent_key: KeyPair,
-    tasks: Vec<Box<Task>>,
+    tasks: Vec<BoxedTask>,
     ping_interval: Option<Duration>,
 }
 
@@ -126,7 +127,7 @@ impl SaltyClientBuilder {
     ///
     /// When calling this method multiple times, tasks added first
     /// have the highest priority during task negotation.
-    pub fn add_task(mut self, task: Box<Task>) -> Self {
+    pub fn add_task(mut self, task: BoxedTask) -> Self {
         self.tasks.push(task);
         self
     }
@@ -200,8 +201,11 @@ impl SaltyClient {
     }
 
     /// Return a reference to the selected task.
-    pub fn task(&self) -> Option<&Box<Task>> {
-        self.signaling.common().task.as_ref()
+    pub fn task(&self) -> Option<Arc<Mutex<BoxedTask>>> {
+        self.signaling
+            .common()
+            .task
+            .clone()
     }
 
     /// Handle an incoming message.
@@ -575,14 +579,15 @@ pub struct LoopState {
 pub fn task_loop(
     client: AsyncClient,
     salty: Rc<RefCell<SaltyClient>>,
-) -> BoxedFuture<(((), ()), ()), SaltyError> {
+) -> Result<(Arc<Mutex<BoxedTask>>, BoxedFuture<(((), ()), ()), SaltyError>), SaltyError> {
     let task_name = salty
         .deref()
         .try_borrow()
         .ok()
-        .map(|salty| match salty.task() {
-            Some(task) => task.name(),
-            None => "None".into(),
+        .and_then(|salty| salty.task())
+        .and_then(|task| match task.lock() {
+            Ok(t) => Some(t.name()),
+            Err(_) => None,
         })
         .unwrap_or("Unknown".into());
     info!("Starting task loop for task {}", task_name);
@@ -610,59 +615,62 @@ pub fn task_loop(
         .and_then(decode_ws_message)
 
         // Handle each incoming message
-        .for_each(move |msg: WsMessageDecoded| {
-            // Clone queue of outgoing messages
-            let raw_outgoing_tx = raw_outgoing_tx_clone.clone();
+        .for_each({
+            let salty = Rc::clone(&salty);
+            move |msg: WsMessageDecoded| {
+                // Clone queue of outgoing messages
+                let raw_outgoing_tx = raw_outgoing_tx_clone.clone();
 
-            match msg {
-                WsMessageDecoded::ByteBox(bbox) => {
-                    info!("Got binary websocket msg: {:?}", bbox);
+                match msg {
+                    WsMessageDecoded::ByteBox(bbox) => {
+                        info!("Got binary websocket msg: {:?}", bbox);
 
-                    // Handle message bytes
-                    let handle_actions = match salty.deref().try_borrow_mut() {
-                        Ok(mut s) => match s.handle_message(bbox) {
-                            Ok(actions) => actions,
-                            Err(e) => return boxed!(future::err(e.into())),
-                        },
-                        Err(e) => return boxed!(future::err(
+                        // Handle message bytes
+                        let handle_actions = match salty.deref().try_borrow_mut() {
+                            Ok(mut s) => match s.handle_message(bbox) {
+                                Ok(actions) => actions,
+                                Err(e) => return boxed!(future::err(e.into())),
+                            },
+                            Err(e) => return boxed!(future::err(
                             SaltyError::Crash(format!("Could not get mutable reference to SaltyClient: {}", e))
                         )),
-                    };
+                        };
 
-                    // Extract messages that should be sent back to the server
-                    let mut messages = vec![];
-                    for action in handle_actions {
-                        match action {
-                            HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
-                            HandleAction::HandshakeDone => return boxed!(future::err(
+                        // Extract messages that should be sent back to the server
+                        let mut messages = vec![];
+                        for action in handle_actions {
+                            match action {
+                                HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
+                                HandleAction::HandshakeDone => return boxed!(future::err(
                                 SaltyError::Crash("Got HandleAction::HandshakeDone in task loop".into())
                             )),
+                            }
                         }
-                    }
 
-                    // Send messages to server
-                    if messages.is_empty() {
-                        boxed!(future::ok(()))
-                    } else {
-                        let msg_count = messages.len();
-                        let outbox = stream::iter_ok::<_, SaltyError>(messages);
+                        // Send messages to server
+                        if messages.is_empty() {
+                            boxed!(future::ok(()))
+                        } else {
+                            let msg_count = messages.len();
+                            let outbox = stream::iter_ok::<_, SaltyError>(messages);
+                            let future = raw_outgoing_tx
+                                .sink_map_err(|e| SaltyError::Network(format!("Sink error: {}", e)))
+                                .send_all(outbox)
+                                .map(move |_| debug!("Sent {} messages", msg_count))
+                                .map_err(|e| SaltyError::Network(format!("Could not send messages: {}", e)));
+                            boxed!(future)
+                        }
+                    },
+                    WsMessageDecoded::Ping(payload) => {
+                        let pong = OwnedMessage::Pong(payload);
                         let future = raw_outgoing_tx
-                            .sink_map_err(|e| SaltyError::Network(format!("Sink error: {}", e)))
-                            .send_all(outbox)
-                            .map(move |_| debug!("Sent {} messages", msg_count))
-                            .map_err(|e| SaltyError::Network(format!("Could not send messages: {}", e)));
+                            .send(pong)
+                            .map(|_| debug!("Sent pong message"))
+                            .map_err(|e| SaltyError::Network(format!("Could not send pong message: {}", e)));
                         boxed!(future)
-                    }
-                },
-                WsMessageDecoded::Ping(payload) => {
-                    let pong = OwnedMessage::Pong(payload);
-                    let future = raw_outgoing_tx
-                        .send(pong)
-                        .map(|_| debug!("Sent pong message"))
-                        .map_err(|e| SaltyError::Network(format!("Could not send pong message: {}", e)));
-                    boxed!(future)
-                },
-                WsMessageDecoded::Ignore => boxed!(future::ok(())),
+                    },
+                    WsMessageDecoded::Ignore => boxed!(future::ok(())),
+                }
             }
         });
 
@@ -697,11 +705,20 @@ pub fn task_loop(
         )
 
         // Ignore sink
-        .map(|x| ());
+        .map(|_| ());
 
     // The task loop is finished when all futures are resolved.
-    let task_loop = reader.join(transformer).join(writer);
+    let task_loop = boxed!(reader.join(transformer).join(writer));
 
-    boxed!(task_loop)
+    let task = match salty.try_borrow_mut() {
+        Ok(salty) => salty
+            .task()
+            .ok_or(SaltyError::Crash("Task not set".into()))?,
+        Err(e) => return Err(
+            SaltyError::Crash(format!("Could not mutably borrow SaltyRTC instance: {}", e))
+        ),
+    };
 
+    // Return reference to task and the task loop future
+    Ok((task, task_loop))
 }

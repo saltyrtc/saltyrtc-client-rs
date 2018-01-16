@@ -7,9 +7,9 @@ use saltyrtc_client::rmpv::{Value};
 
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ChatTask {
-    our_name: String,
-    peer_name: Option<String>,
+pub(crate) struct ChatTask {
+    pub(crate) our_name: String,
+    pub(crate) peer_name: Option<String>,
 }
 
 impl ChatTask {
