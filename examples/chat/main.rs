@@ -2,6 +2,7 @@
 
 extern crate chrono;
 extern crate clap;
+extern crate cursive;
 extern crate data_encoding;
 extern crate dotenv;
 extern crate env_logger;
@@ -21,22 +22,33 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::process;
 use std::rc::Rc;
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 use chrono::Local;
 use clap::{Arg, App, SubCommand};
+use cursive::{Cursive};
+use cursive::traits::{Identifiable};
+use cursive::views::{TextView, EditView, BoxView, LinearLayout};
 use data_encoding::{HEXLOWER};
 use env_logger::{Builder};
+use futures::{Sink, Stream, future};
 use futures::future::{Future};
+use futures::sync::mpsc::{channel};
 use native_tls::{TlsConnector, Certificate, Protocol};
 use saltyrtc_client::{SaltyClientBuilder, Role, AsyncClient, Task};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
+use saltyrtc_client::errors::{SaltyError};
 use tokio_core::reactor::{Core};
 
 use chat_task::{ChatTask};
 
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const VIEW_TEXT_ID: &'static str = "text";
+const VIEW_INPUT_ID: &'static str = "input";
+
 
 fn main() {
     dotenv::dotenv().ok();
@@ -218,8 +230,8 @@ fn main() {
         },
     };
 
-    // Start task loop
-    let (task, task_loop_future) = saltyrtc_client::task_loop(client, salty_rc.clone())
+    // Set up task loop
+    let (task, task_loop) = saltyrtc_client::task_loop(client, salty_rc.clone())
         .unwrap_or_else(|e| {
             println!("{}", e);
             process::exit(1);
@@ -232,8 +244,80 @@ fn main() {
         .downcast_mut::<ChatTask>()
         .expect("Chosen task is not a ChatTask");
 
+    // Launch TUI thread
+    let (cb_sink_tx, cb_sink_rx) = mpsc::sync_channel(1);
+    let (chat_msg_tx, chat_msg_rx) = channel::<String>(64);
+    let remote = core.remote();
+    thread::spawn(move || {
+        // Launch TUI
+        let mut tui = Cursive::new();
+        tui.set_fps(10);
+
+        // Create text view (for displaying messages)
+        let text_view = TextView::new("=== Welcome to SaltyChat! ===\nPress Ctrl+C to exit.\n\n")
+            .scrollable(true)
+            .with_id(VIEW_TEXT_ID);
+
+        // Create input view (for composing messages)
+        let input_view = EditView::new()
+            .on_submit(move |tui: &mut Cursive, msg: &str| {
+                // Send message through task
+                let send_future = chat_msg_tx
+                    .clone()
+                    .send(msg.to_string())
+                    .map(|_| ())
+                    .map_err(|_| ());
+                remote.spawn(move |_| send_future);
+
+                // Clear input field
+                tui.call_on_id(VIEW_INPUT_ID, |view: &mut EditView| {
+                    view.set_content("");
+                });
+            })
+            .with_id(VIEW_INPUT_ID);
+
+        // Create layout
+        let layout = BoxView::with_full_screen(
+            LinearLayout::vertical()
+                .child(BoxView::with_full_height(text_view))
+                .child(input_view)
+        );
+        tui.add_fullscreen_layer(layout);
+
+        // Send callback sender to other thread
+        cb_sink_tx.send(tui.cb_sink().clone()).unwrap();
+
+        // Launch TUI event loop
+        tui.run();
+    });
+    let tui_sender = cb_sink_rx.recv().expect("Could not get sender from TUI thread");
+
+    // Macro to write a text line to the TUI text view
+    macro_rules! log_line {
+        ($line:expr) => {{
+            let text = $line.to_string();
+            tui_sender.send(Box::new(move |tui: &mut Cursive| {
+                tui.call_on_id(VIEW_TEXT_ID, |view: &mut TextView| {
+                    view.append_content(&text);
+                    view.append_content("\n");
+                });
+            })).unwrap();
+        }};
+        ($line:expr, $($arg:tt)*) => {{
+            log_line!(format!($line, $($arg)*));
+        }};
+    }
+
+    // Text message send loop
+    let send_loop = chat_msg_rx
+        .for_each(|msg: String| {
+            log_line!("{}> {}", &chat_task.our_name, msg);
+            future::ok(())
+        })
+        .map_err(|_| SaltyError::Crash("Something went wrong when forwarding messages to task".into()));
+
     // Run future in reactor
-    match core.run(task_loop_future) {
+    match core.run(task_loop.join(send_loop)) {
         Ok(_) => println!("Success."),
         Err(e) => {
             println!("{}", e);
