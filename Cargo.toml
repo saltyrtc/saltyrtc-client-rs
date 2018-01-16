@@ -4,27 +4,27 @@ version = "0.1.0"
 authors = ["Danilo Bargen <danilo.bargen@threema.ch>"]
 
 [dependencies]
-log = "0.4.0-rc.1"
-websocket = "0.20.2"
-native-tls = "0.1.4"
-tokio-core = "0.1.9"
+byteorder = "1.1"
+clippy = {version = "0.0.165", optional = true}
+data-encoding = "2.0.0-rc.2"
 failure = "0.1.1"
 futures = "0.1.0"  # Make sure to use same version as websocket
+log = "0.4.0-rc.1"
+native-tls = "0.1.4"
 rmp-serde = "0.13"
 rmpv = { version = "0.4", features = ["with-serde"] }
+rust_sodium-sys = { version = "0.5.0" }
+rust_sodium = { version = "0.5.0", features = ["serde"] }
 serde = "1.0"
 serde_derive = "1.0"
-rust_sodium = { version = "0.5.0", features = ["serde"] }
-rust_sodium-sys = { version = "0.5.0" }
-byteorder = "1.1"
-data-encoding = "2.0.0-rc.2"
-clippy = {version = "0.0.165", optional = true}
+tokio-core = "0.1.9"
+websocket = "0.20.2"
 
 [dev-dependencies]
-env_logger = "0.5.0-rc.1"
-dotenv = "0.10"
-clap = "2.27"
 chrono = "0.4"
+clap = "2.27"
+dotenv = "0.10"
+env_logger = "0.5.0-rc.1"
 
 [features]
 default = []
