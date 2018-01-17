@@ -420,6 +420,7 @@ mod client_auth {
         let bytes: ByteBox = match action {
             HandleAction::Reply(bbox) => bbox,
             HandleAction::HandshakeDone => panic!("Unexpected HandshakeDone"),
+            HandleAction::TaskMessage(_) => panic!("Unexpected TaskMessage"),
         };
 
         let decrypted = OpenBox::<Message>::decrypt(

@@ -52,14 +52,13 @@ use std::time::Duration;
 // Third party imports
 use futures::{stream, Future, Stream, Sink};
 use futures::future::{self, Loop};
-use futures::sync::mpsc::{channel, Sender, Receiver};
+use futures::sync::mpsc::{channel};
 use native_tls::{TlsConnector};
 use rmpv::Value;
 use tokio_core::reactor::{Handle};
 use tokio_core::net::TcpStream;
 use websocket::{WebSocketError};
 use websocket::client::{ClientBuilder};
-use websocket::async::futures::stream::{SplitStream, SplitSink};
 use websocket::client::async::{Client, TlsStream};
 use websocket::client::builder::{Url};
 use websocket::ws::dataframe::{DataFrame};
@@ -79,7 +78,7 @@ pub mod crypto {
 // Internal imports
 use boxes::{ByteBox};
 use crypto_types::{KeyPair, PublicKey, AuthToken};
-use errors::{SaltyResult, SaltyError, SignalingResult, BuilderError};
+use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
 use helpers::libsodium_init;
 use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
 use task::{Tasks};
@@ -89,8 +88,8 @@ use task::{Tasks};
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
 #[cfg(feature = "msgpack-debugging")]
 const DEFAULT_MSGPACK_DEBUG_URL: &'static str = "https://msgpack.dbrgn.ch/#base64=";
-const RECEIVE_CHANNEL_BUFFER: usize = 32;
 const SEND_CHANNEL_BUFFER: usize = 32;
+const RECV_CHANNEL_BUFFER: usize = 32;
 
 
 /// A type alias for a boxed future.
@@ -214,6 +213,21 @@ impl SaltyClient {
     fn handle_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
         self.signaling.handle_message(bbox)
     }
+
+    /// Encrypt a task message.
+    pub fn encrypt_task_message(&mut self, val: Value) -> SaltyResult<Vec<u8>> {
+        self.signaling
+            .encode_task_message(val)
+            .map(|bbox: ByteBox| bbox.into_bytes())
+            .map_err(|e: SignalingError| match e {
+                SignalingError::Crypto(msg) => SaltyError::Crypto(msg),
+                SignalingError::Decode(msg) => SaltyError::Decode(msg),
+                SignalingError::SendError => SaltyError::Network("Message could not be relayed by server".into()),
+                SignalingError::Protocol(msg) => SaltyError::Protocol(msg),
+                SignalingError::Crash(msg) => SaltyError::Crash(msg),
+                other => SaltyError::Crash(format!("Unexpected signaling error: {}", other)),
+            })
+    }
 }
 
 
@@ -298,7 +312,7 @@ pub fn connect(
     tls_config: Option<TlsConnector>,
     handle: &Handle,
     salty: Rc<RefCell<SaltyClient>>,
-) -> SaltyResult<(BoxedFuture<AsyncClient, SaltyError>, Receiver<Value>, Sender<Value>)> {
+) -> SaltyResult<BoxedFuture<WsClient, SaltyError>> {
     // Initialize libsodium
     libsodium_init()?;
 
@@ -308,22 +322,17 @@ pub fn connect(
         Err(e) => return Err(SaltyError::Decode(format!("Could not parse URL: {}", e))),
     };
 
-    // Create communication channels.
-    // These channels are streams/sinks, so they can be turned into futures.
-    let (incoming_tx, incoming_rx) = channel::<Value>(RECEIVE_CHANNEL_BUFFER);
-    let (outgoing_tx, outgoing_rx) = channel::<Value>(SEND_CHANNEL_BUFFER);
-
     // Initialize WebSocket client
     let future = ClientBuilder::from_url(&ws_url)
         .add_protocol(SUBPROTOCOL)
         .async_connect_secure(tls_config, handle)
         .map_err(|e: WebSocketError| SaltyError::Network(format!("Could not connect to server: {}", e)))
-        .and_then(|(framed, headers)| {
+        .and_then(|(client, headers)| {
             // Verify that the correct subprotocol was chosen
             trace!("Websocket server headers: {:?}", headers);
             match headers.get::<WebSocketProtocol>() {
                 Some(proto) if proto.len() == 1 && proto[0] == SUBPROTOCOL => {
-                    Ok(framed)
+                    Ok(client)
                 },
                 Some(proto) => {
                     error!("More than one chosen protocol: {:?}", proto);
@@ -335,25 +344,17 @@ pub fn connect(
                 },
             }
         })
-        .map({
-            let outgoing_tx = outgoing_tx.clone();
-            move |framed| {
-                let role = salty
-                    .deref()
-                    .try_borrow()
-                    .map(|s| s.role().to_string())
-                    .unwrap_or_else(|_| "Unknown".to_string());
-                info!("Connected to server as {}", role);
-                AsyncClient {
-                    framed,
-                    outgoing_rx,
-                    outgoing_tx,
-                    incoming_tx,
-                }
-            }
+        .map(move |client| {
+            let role = salty
+                .deref()
+                .try_borrow()
+                .map(|s| s.role().to_string())
+                .unwrap_or_else(|_| "Unknown".to_string());
+            info!("Connected to server as {}", role);
+            client
         });
 
-    Ok((boxed!(future), incoming_rx, outgoing_tx))
+    Ok(boxed!(future))
 }
 
 /// Decode a websocket `OwnedMessage` and wrap it into a `WsMessageDecoded`.
@@ -406,32 +407,26 @@ fn decode_ws_message(msg: OwnedMessage) -> SaltyResult<WsMessageDecoded> {
 /// it should be passed directly to the `loop_fn`.
 enum PipelineAction {
     /// We got a ByteBox to handle.
-    ByteBox((AsyncClient, ByteBox)),
+    ByteBox((WsClient, ByteBox)),
     /// Immediately pass on this future in the next step.
-    Future(BoxedFuture<Loop<AsyncClient, AsyncClient>, SaltyError>),
+    Future(BoxedFuture<Loop<WsClient, WsClient>, SaltyError>),
 }
 
 /// Preprocess a `WsMessageDecoded`.
 ///
 /// Here pings and ignored messages are handled.
-fn preprocess_ws_message((decoded, client): (WsMessageDecoded, AsyncClient)) -> SaltyResult<PipelineAction> {
+fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> SaltyResult<PipelineAction> {
     // Unwrap byte box, handle ping messages
     let bbox = match decoded {
         WsMessageDecoded::ByteBox(bbox) => bbox,
         WsMessageDecoded::Ping(payload) => {
             let pong = OwnedMessage::Pong(payload);
             let outbox = stream::iter_ok::<_, WebSocketError>(vec![pong]);
-            let AsyncClient { framed, outgoing_rx, outgoing_tx, incoming_tx } = client;
-            let future = send_all::new(framed, outbox)
+            let future = send_all::new(client, outbox)
                 .map_err(move |e| SaltyError::Network(format!("Could not send pong message: {}", e)))
-                .map(|(framed, _)| {
+                .map(|(client, _)| {
                     debug!("Sent pong message");
-                    Loop::Continue(AsyncClient {
-                        framed,
-                        outgoing_rx,
-                        outgoing_tx,
-                        incoming_tx,
-                    })
+                    Loop::Continue(client)
                 });
             let action = PipelineAction::Future(boxed!(future));
             return Ok(action);
@@ -453,9 +448,9 @@ fn preprocess_ws_message((decoded, client): (WsMessageDecoded, AsyncClient)) -> 
 /// The future completes once the peer handshake is done, or if an error occurs.
 /// It returns the async websocket client instance.
 pub fn do_handshake(
-    client: AsyncClient,
+    client: WsClient,
     salty: Rc<RefCell<SaltyClient>>,
-) -> BoxedFuture<AsyncClient, SaltyError> {
+) -> BoxedFuture<WsClient, SaltyError> {
 
     let role = salty
         .deref()
@@ -469,21 +464,11 @@ pub fn do_handshake(
 
         let salty = Rc::clone(&salty);
 
-        let AsyncClient { framed, outgoing_rx, outgoing_tx, incoming_tx } = client;
-
         // Take the next incoming message
-        framed.into_future()
+        client.into_future()
 
             // Map errors to our custom error type
             .map_err(|(e, _)| SaltyError::Network(format!("Could not receive message from server: {}", e)))
-
-            // Wrap framed instance into `AsyncClient`
-            .map(|(msg_option, framed)| (msg_option, AsyncClient {
-                framed,
-                outgoing_rx,
-                outgoing_tx,
-                incoming_tx,
-            }))
 
             // Process incoming messages and convert them to a `WsMessageDecoded`.
             .and_then(|(msg_option, client)| {
@@ -522,6 +507,9 @@ pub fn do_handshake(
                     match action {
                         HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
                         HandleAction::HandshakeDone => handshake_done = true,
+                        HandleAction::TaskMessage(_) => return boxed!(future::err(
+                            SaltyError::Crash("Received task message during handshake".into())
+                        ))
                     }
                 }
 
@@ -542,17 +530,11 @@ pub fn do_handshake(
                         debug!("Sending {} bytes", message.size());
                     }
                     let outbox = stream::iter_ok::<_, WebSocketError>(messages);
-                    let AsyncClient { framed, outgoing_rx, outgoing_tx, incoming_tx } = client;
-                    let future = send_all::new(framed, outbox)
+                    let future = send_all::new(client, outbox)
                         .map_err(move |e| SaltyError::Network(format!("Could not send message: {}", e)))
-                        .map(move |(framed, _)| {
+                        .map(move |(client, _)| {
                             trace!("Sent all messages");
-                            loop_action!(AsyncClient {
-                                framed,
-                                outgoing_rx,
-                                outgoing_tx,
-                                incoming_tx,
-                            })
+                            loop_action!(client)
                         });
                     boxed!(future)
                 }
@@ -562,24 +544,8 @@ pub fn do_handshake(
     boxed!(main_loop)
 }
 
-/// This struct wraps the state for the asynchronous connection
-/// and associated communication channels.
-pub struct AsyncClient {
-    framed: WsClient,
-    outgoing_rx: Receiver<Value>,
-    outgoing_tx: Sender<Value>,
-    incoming_tx: Sender<Value>,
-}
-
-pub struct LoopState {
-    ws_rx: SplitStream<OwnedMessage>,
-    ws_tx: SplitSink<OwnedMessage>,
-    outgoing_rx: Receiver<Value>,
-    incoming_tx: Sender<Value>,
-}
-
 pub fn task_loop(
-    client: AsyncClient,
+    client: WsClient,
     salty: Rc<RefCell<SaltyClient>>,
 ) -> Result<(Arc<Mutex<BoxedTask>>, BoxedFuture<(((), ()), ()), SaltyError>), SaltyError> {
     let task_name = salty
@@ -596,14 +562,13 @@ pub fn task_loop(
 
     let salty = Rc::clone(&salty);
 
-    // Destructure AsyncClient
-    let AsyncClient { framed, outgoing_rx, outgoing_tx, incoming_tx } = client;
-
     // Split websocket connection into sink/stream
-    let (ws_sink, ws_stream) = framed.split();
+    let (ws_sink, ws_stream) = client.split();
 
-    // Create a channel for raw websocket messages
+    // Create communication channels
+    let (outgoing_tx, outgoing_rx) = channel::<Value>(SEND_CHANNEL_BUFFER);
     let (raw_outgoing_tx, raw_outgoing_rx) = channel::<OwnedMessage>(SEND_CHANNEL_BUFFER);
+    let (incoming_tx, incoming_rx) = channel::<Value>(RECV_CHANNEL_BUFFER);
 
     // Stream future for processing incoming websocket messages
     let raw_outgoing_tx_clone = raw_outgoing_tx.clone();
@@ -625,7 +590,7 @@ pub fn task_loop(
 
                 match msg {
                     WsMessageDecoded::ByteBox(bbox) => {
-                        info!("Got binary websocket msg: {:?}", bbox);
+                        trace!("Got binary websocket msg: {:?}", bbox);
 
                         // Handle message bytes
                         let handle_actions = match salty.deref().try_borrow_mut() {
@@ -634,34 +599,51 @@ pub fn task_loop(
                                 Err(e) => return boxed!(future::err(e.into())),
                             },
                             Err(e) => return boxed!(future::err(
-                            SaltyError::Crash(format!("Could not get mutable reference to SaltyClient: {}", e))
-                        )),
+                                SaltyError::Crash(format!("Could not get mutable reference to SaltyClient: {}", e))
+                            )),
                         };
 
                         // Extract messages that should be sent back to the server
-                        let mut messages = vec![];
+                        let mut out_messages = vec![];
+                        let mut in_messages = vec![];
                         for action in handle_actions {
                             match action {
-                                HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
+                                HandleAction::Reply(bbox) => out_messages.push(OwnedMessage::Binary(bbox.into_bytes())),
+                                HandleAction::TaskMessage(val) => in_messages.push(val),
                                 HandleAction::HandshakeDone => return boxed!(future::err(
-                                SaltyError::Crash("Got HandleAction::HandshakeDone in task loop".into())
-                            )),
+                                    SaltyError::Crash("Got HandleAction::HandshakeDone in task loop".into())
+                                )),
                             }
                         }
 
-                        // Send messages to server
-                        if messages.is_empty() {
+                        // Handle queued messages
+                        let out_future = if out_messages.is_empty() {
                             boxed!(future::ok(()))
                         } else {
-                            let msg_count = messages.len();
-                            let outbox = stream::iter_ok::<_, SaltyError>(messages);
+                            let msg_count = out_messages.len();
+                            let outbox = stream::iter_ok::<_, SaltyError>(out_messages);
                             let future = raw_outgoing_tx
                                 .sink_map_err(|e| SaltyError::Network(format!("Sink error: {}", e)))
                                 .send_all(outbox)
                                 .map(move |_| debug!("Sent {} messages", msg_count))
                                 .map_err(|e| SaltyError::Network(format!("Could not send messages: {}", e)));
                             boxed!(future)
-                        }
+                        };
+
+                        let in_future = if in_messages.is_empty() {
+                            boxed!(future::ok(()))
+                        } else {
+                            let msg_count = in_messages.len();
+                            let inbox = stream::iter_ok::<_, SaltyError>(in_messages);
+                            let future = incoming_tx
+                                .clone()
+                                .sink_map_err(|e| SaltyError::Crash(format!("Channel error: {}", e)))
+                                .send_all(inbox)
+                                .map(move |_| debug!("Received {} task messages", msg_count));
+                            boxed!(future)
+                        };
+
+                        boxed!(out_future.join(in_future).map(|_| ()))
                     },
                     WsMessageDecoded::Ping(payload) => {
                         let pong = OwnedMessage::Pong(payload);
@@ -680,9 +662,19 @@ pub fn task_loop(
     let transformer = outgoing_rx
 
         // Encode and encrypt values
-        .map(|val: Value| {
-            // TODO: Encrypt
-            OwnedMessage::Text(format!("Val: {:?}", val))
+        .and_then({
+            let salty = Rc::clone(&salty);
+            move |val: Value| {
+                // Encrypt message
+                // TODO: Can we do something about the errors here?
+                match salty.deref().try_borrow_mut() {
+                    Ok(mut s) => match s.encrypt_task_message(val) {
+                        Ok(bytes) => future::ok(OwnedMessage::Binary(bytes)),
+                        Err(_) => future::err(())
+                    },
+                    Err(_) => future::err(()),
+                }
+            }
         })
 
         // Forward to raw queue
@@ -712,6 +704,7 @@ pub fn task_loop(
     // The task loop is finished when all futures are resolved.
     let task_loop = boxed!(reader.join(transformer).join(writer));
 
+    // Get reference to task
     let task = match salty.try_borrow_mut() {
         Ok(salty) => salty
             .task()
@@ -720,6 +713,11 @@ pub fn task_loop(
             SaltyError::Crash(format!("Could not mutably borrow SaltyRTC instance: {}", e))
         ),
     };
+
+    // Notify task that it can now take over
+    task.lock()
+        .map_err(|e| SaltyError::Crash(format!("Could not lock task mutex: {}", e)))?
+        .start(outgoing_tx, incoming_rx);
 
     // Return reference to task and the task loop future
     Ok((task, task_loop))

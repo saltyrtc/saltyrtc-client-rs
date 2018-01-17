@@ -11,6 +11,7 @@ use std::fmt::Debug;
 use std::iter::IntoIterator;
 
 use failure::Error;
+use futures::sync::mpsc::{Sender, Receiver};
 use mopa::Any;
 use rmpv::Value;
 
@@ -30,20 +31,16 @@ pub trait Task : Debug + Any {
     /// The task should keep track internally whether it has been initialized or not.
     fn init(&mut self, data: &Option<HashMap<String, Value>>) -> Result<(), Error>;
 
-    /// Used by the signaling class to notify task that the peer handshake is over.
+    /// Used by the signaling class to notify task that the peer handshake is done.
     ///
     /// This is the point where the task can take over.
-    fn on_peer_handshake_done(&mut self);
+    fn start(&mut self, outgoing_tx: Sender<Value>, incoming_rx: Receiver<Value>);
 
     /// Return supported message types.
     ///
     /// Incoming messages with accepted types will be passed to the task.
     /// Otherwise, the message is dropped.
     fn supported_types(&self) -> &[&'static str];
-
-    /// This method is called by SaltyRTC when a task related message
-    /// arrives through the WebSocket.
-    fn on_task_message(&mut self, message: Value);
 
     /// Send bytes through the task signaling channel.
     ///

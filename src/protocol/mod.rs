@@ -297,10 +297,10 @@ pub(crate) trait Signaling {
     /// Handle an incoming task message.
     fn handle_task_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
         // Decode message
-        let _obox: OpenBox<Value> = self.decode_task_message(bbox)?;
+        let obox: OpenBox<Value> = self.decode_task_message(bbox)?;
 
-        // Pass message to task
-        unimplemented!("TODO: Finish implementing handle_task_message");
+        // Pass task message to task
+        Ok(vec![HandleAction::TaskMessage(obox.message)])
     }
 
 
@@ -335,6 +335,43 @@ pub(crate) trait Signaling {
             peer.keypair().ok_or(SignalingError::Crash("Peer session keypair not available".into()))?,
             session_key,
         )
+    }
+
+
+    // Message encoding
+
+    /// Encode and encrypt a `Value` for the chosen peer. This is used by the task.
+    fn encode_task_message(&self, value: Value) -> SignalingResult<ByteBox> {
+        // Check state
+        let signaling_state = self.common().signaling_state();
+        if signaling_state != SignalingState::Task {
+            return Err(SignalingError::Crash(
+                format!("Called encode_task_message in state {:?}", signaling_state)
+            ));
+        }
+
+        // Get peer
+        let peer = self.get_peer()
+            .ok_or(SignalingError::Crash("Peer not set".into()))?;
+
+        // Create and encrypt message
+        let nonce = Nonce::new(
+            // Cookie
+            peer.cookie_pair().ours.clone(),
+            // Src
+            self.common().identity.into(),
+            // Dst
+            peer.identity().into(),
+            // Csn
+            peer.csn_pair().borrow_mut().ours.increment()?,
+        );
+        let obox = OpenBox::<Value>::new(value, nonce);
+        let bbox = obox.encrypt(
+            peer.keypair().ok_or(SignalingError::Crash("Session keypair not available".into()))?,
+            peer.session_key().ok_or(SignalingError::Crash("Peer session key not set".into()))?,
+        );
+
+        Ok(bbox)
     }
 
 
@@ -508,6 +545,7 @@ pub(crate) trait Signaling {
         debug!("Message that could not be relayed: {:#?}", msg.id);
         return Err(SignalingError::SendError);
     }
+
 }
 
 

@@ -2,13 +2,14 @@
 //!
 //! Only compiled in test mode.
 
-use std::borrow::{Cow};
-use std::collections::{HashMap};
+use std::borrow::Cow;
+use std::collections::HashMap;
 
-use failure::{Error};
-use rmpv::{Value};
+use failure::Error;
+use futures::sync::mpsc::{Sender, Receiver};
+use rmpv::Value;
 
-use task::{Task};
+use task::Task;
 
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -36,16 +37,12 @@ impl Task for DummyTask {
         Ok(())
     }
 
-    fn on_peer_handshake_done(&mut self) {
+    fn start(&mut self, outgoing_tx: Sender<Value>, incoming_rx: Receiver<Value>) {
         unimplemented!()
     }
 
     fn supported_types(&self) -> &[&'static str] {
         &["dummy"]
-    }
-
-    fn on_task_message(&mut self, message: Value) {
-        unimplemented!()
     }
 
     fn send_signaling_message(&self, payload: &[u8]) {

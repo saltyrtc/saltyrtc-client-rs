@@ -37,17 +37,18 @@ use futures::{Sink, Stream, future};
 use futures::future::{Future};
 use futures::sync::mpsc::{channel};
 use native_tls::{TlsConnector, Certificate, Protocol};
-use saltyrtc_client::{SaltyClientBuilder, Role, AsyncClient, Task};
+use saltyrtc_client::{SaltyClientBuilder, Role, WsClient, Task};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
 use saltyrtc_client::errors::{SaltyError};
 use tokio_core::reactor::{Core};
 
-use chat_task::{ChatTask};
+use chat_task::{ChatTask, ChatMessage};
 
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const VIEW_TEXT_ID: &'static str = "text";
 const VIEW_INPUT_ID: &'static str = "input";
+const TUI_CHANNEL_BUFFER_SIZE: usize = 64;
 
 
 fn main() {
@@ -162,9 +163,10 @@ fn main() {
     };
 
     // Create new SaltyRTC client instance
+    let (incoming_tx, incoming_rx) = channel::<ChatMessage>(TUI_CHANNEL_BUFFER_SIZE);
     let (salty, auth_token_hex) = match role {
         Role::Initiator => {
-            let task = ChatTask::new("initiat0r");
+            let task = ChatTask::new("initiat0r", core.remote(), incoming_tx);
             let salty = SaltyClientBuilder::new(keypair)
                 .add_task(Box::new(task))
                 .with_ping_interval(Some(ping_interval))
@@ -174,7 +176,7 @@ fn main() {
             (salty, auth_token_hex)
         },
         Role::Responder => {
-            let task = ChatTask::new("r3spond3r");
+            let task = ChatTask::new("r3spond3r", core.remote(), incoming_tx);
             let auth_token_hex = args.value_of(ARG_AUTHTOKEN).expect("Auth token not supplied").to_string();
             let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
             let initiator_pubkey = public_key_from_hex_str(&path).unwrap();
@@ -204,7 +206,7 @@ fn main() {
     let salty_rc = Rc::new(RefCell::new(salty));
 
     // Connect to server
-    let (connect_future, _incoming_rx, _outgoing_tx) = saltyrtc_client::connect(
+    let connect_future = saltyrtc_client::connect(
             &format!("wss://localhost:8765/{}", path),
             Some(tls_connector),
             &core.handle(),
@@ -219,7 +221,7 @@ fn main() {
         .map(|client| { println!("Handshake done"); client });
 
     // Run future in reactor to process handshake
-    let client: AsyncClient = match core.run(handshake_future) {
+    let client: WsClient = match core.run(handshake_future) {
         Ok(client) => {
             println!("Handshake success.");
             client
@@ -246,7 +248,7 @@ fn main() {
 
     // Launch TUI thread
     let (cb_sink_tx, cb_sink_rx) = mpsc::sync_channel(1);
-    let (chat_msg_tx, chat_msg_rx) = channel::<String>(64);
+    let (chat_msg_tx, chat_msg_rx) = channel::<String>(TUI_CHANNEL_BUFFER_SIZE);
     let remote = core.remote();
     thread::spawn(move || {
         // Launch TUI
@@ -312,12 +314,29 @@ fn main() {
     let send_loop = chat_msg_rx
         .for_each(|msg: String| {
             log_line!("{}> {}", &chat_task.our_name, msg);
-            future::ok(())
+            chat_task.send_msg(&msg).map_err(|_| ())
         })
         .map_err(|_| SaltyError::Crash("Something went wrong when forwarding messages to task".into()));
 
+    // Chat message receive loop
+    // TODO: Sanitize incoming messages
+    let receive_loop = incoming_rx
+        .for_each(|msg: ChatMessage| {
+            match msg {
+                ChatMessage::Msg(text) => {
+                    let peer_name = &chat_task.peer_name.clone().unwrap_or("?".into());
+                    log_line!("{}> {}", peer_name, text)
+                },
+                ChatMessage::NickChange(new_nick) => {
+                    log_line!("*** Partner nick changed to {}", new_nick)
+                },
+            };
+            future::ok(())
+        })
+        .map_err(|_| SaltyError::Crash("Something went wrong in message receive loop".into()));
+
     // Run future in reactor
-    match core.run(task_loop.join(send_loop)) {
+    match core.run(task_loop.join(send_loop).join(receive_loop)) {
         Ok(_) => println!("Success."),
         Err(e) => {
             println!("{}", e);

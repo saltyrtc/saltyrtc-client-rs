@@ -2,10 +2,11 @@ use std::convert::From;
 use std::fmt;
 use std::result::Result as StdResult;
 
+use rmpv::Value;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use boxes::{ByteBox};
+use boxes::ByteBox;
 
 
 /// The role of a peer.
@@ -217,6 +218,8 @@ pub(crate) enum HandleAction {
     Reply(ByteBox),
     /// The server and peer handshake are done.
     HandshakeDone,
+    /// A task message was received and decoded.
+    TaskMessage(Value),
 }
 
 
