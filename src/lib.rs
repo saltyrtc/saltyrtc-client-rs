@@ -43,6 +43,7 @@ mod test_helpers;
 
 // Rust imports
 use std::cell::RefCell;
+use std::error::Error;
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -326,7 +327,10 @@ pub fn connect(
     let future = ClientBuilder::from_url(&ws_url)
         .add_protocol(SUBPROTOCOL)
         .async_connect_secure(tls_config, handle)
-        .map_err(|e: WebSocketError| SaltyError::Network(format!("Could not connect to server: {}", e)))
+        .map_err(|e: WebSocketError| SaltyError::Network(match e.cause() {
+            Some(cause) => format!("Could not connect to server: {}: {}", e, cause),
+            None => format!("Could not connect to server: {}", e),
+        }))
         .and_then(|(client, headers)| {
             // Verify that the correct subprotocol was chosen
             trace!("Websocket server headers: {:?}", headers);
