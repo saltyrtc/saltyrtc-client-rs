@@ -6,7 +6,7 @@
 //! use and implementation of the library. Some values may be optimized to take
 //! references in a future version.
 
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::convert::From;
 
 use rmp_serde as rmps;
@@ -15,9 +15,10 @@ use rmpv::Value;
 use crypto_types::{PublicKey, SignedKeys};
 use errors::{SignalingError, SignalingResult};
 
+use ::CloseCode;
 use ::protocol::{Address, Cookie};
-use ::protocol::send_error::{SendErrorId};
-use ::task::{Tasks};
+use ::protocol::send_error::SendErrorId;
+use ::task::Tasks;
 
 
 /// The `Message` enum contains all possible message types that may be used
@@ -54,6 +55,8 @@ pub(crate) enum Message {
     Key(Key),
     #[serde(rename = "auth")]
     Auth(Auth),
+    #[serde(rename = "close")]
+    Close(Close),
 }
 
 impl Message {
@@ -84,6 +87,7 @@ impl Message {
             Message::Token(_) => "token",
             Message::Key(_) => "key",
             Message::Auth(_) => "auth",
+            Message::Close(_) => "close",
         }
     }
 }
@@ -117,6 +121,7 @@ impl_message_wrapping!(SendError, Message::SendError);
 impl_message_wrapping!(Token, Message::Token);
 impl_message_wrapping!(Key, Message::Key);
 impl_message_wrapping!(Auth, Message::Auth);
+impl_message_wrapping!(Close, Message::Close);
 
 
 /// The client-hello message.
@@ -432,6 +437,22 @@ impl ResponderAuthBuilder {
 
 }
 
+/// The client-hello message.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) struct Close {
+    pub(crate) reason: u16,
+}
+
+impl Close {
+    pub(crate) fn new(reason: u16) -> Self {
+        Self { reason  }
+    }
+
+    pub(crate) fn from_close_code(close_code: CloseCode) -> Self {
+        Self { reason: close_code.as_number() }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -527,6 +548,7 @@ mod tests {
         roundtrip!(auth_initiator, ResponderAuthBuilder::new(Cookie::random())
                    .add_task("foo.bar.baz", None)
                    .build().unwrap());
+        roundtrip!(close, Close::new(3003));
     }
 
     mod auth {

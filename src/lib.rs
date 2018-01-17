@@ -53,7 +53,8 @@ use std::time::Duration;
 // Third party imports
 use futures::{stream, Future, Stream, Sink};
 use futures::future::{self, Loop};
-use futures::sync::mpsc::{channel};
+use futures::sync::mpsc;
+use futures::sync::oneshot;
 use native_tls::{TlsConnector};
 use rmpv::Value;
 use tokio_core::reactor::{Handle};
@@ -64,7 +65,7 @@ use websocket::client::async::{Client, TlsStream};
 use websocket::client::builder::{Url};
 use websocket::ws::dataframe::{DataFrame};
 use websocket::header::{WebSocketProtocol};
-use websocket::message::{OwnedMessage};
+use websocket::message::{OwnedMessage, CloseData};
 
 // Re-exports
 pub use protocol::{Role};
@@ -223,7 +224,20 @@ impl SaltyClient {
             .map_err(|e: SignalingError| match e {
                 SignalingError::Crypto(msg) => SaltyError::Crypto(msg),
                 SignalingError::Decode(msg) => SaltyError::Decode(msg),
-                SignalingError::SendError => SaltyError::Network("Message could not be relayed by server".into()),
+                SignalingError::Protocol(msg) => SaltyError::Protocol(msg),
+                SignalingError::Crash(msg) => SaltyError::Crash(msg),
+                other => SaltyError::Crash(format!("Unexpected signaling error: {}", other)),
+            })
+    }
+
+    /// Encrypt a close message for the peer.
+    pub fn encrypt_close_message(&mut self, reason: CloseCode) -> SaltyResult<Vec<u8>> {
+        self.signaling
+            .encode_close_message(reason)
+            .map(|bbox: ByteBox| bbox.into_bytes())
+            .map_err(|e: SignalingError| match e {
+                SignalingError::Crypto(msg) => SaltyError::Crypto(msg),
+                SignalingError::Decode(msg) => SaltyError::Decode(msg),
                 SignalingError::Protocol(msg) => SaltyError::Protocol(msg),
                 SignalingError::Crash(msg) => SaltyError::Crash(msg),
                 other => SaltyError::Crash(format!("Unexpected signaling error: {}", other)),
@@ -513,6 +527,9 @@ pub fn do_handshake(
                         HandleAction::HandshakeDone => handshake_done = true,
                         HandleAction::TaskMessage(_) => return boxed!(future::err(
                             SaltyError::Crash("Received task message during handshake".into())
+                        )),
+                        HandleAction::TaskClose(_) => return boxed!(future::err(
+                            SaltyError::Crash("Received close message during handshake".into())
                         ))
                     }
                 }
@@ -570,12 +587,13 @@ pub fn task_loop(
     let (ws_sink, ws_stream) = client.split();
 
     // Create communication channels
-    let (outgoing_tx, outgoing_rx) = channel::<Value>(SEND_CHANNEL_BUFFER);
-    let (raw_outgoing_tx, raw_outgoing_rx) = channel::<OwnedMessage>(SEND_CHANNEL_BUFFER);
-    let (incoming_tx, incoming_rx) = channel::<Value>(RECV_CHANNEL_BUFFER);
+    // TODO: Use unbounded channels and `unbounded_send`!
+    let (outgoing_tx, outgoing_rx) = mpsc::channel::<Value>(SEND_CHANNEL_BUFFER);
+    let (raw_outgoing_tx, raw_outgoing_rx) = mpsc::channel::<OwnedMessage>(SEND_CHANNEL_BUFFER);
+    let (incoming_tx, incoming_rx) = mpsc::channel::<Value>(RECV_CHANNEL_BUFFER);
+    let (disconnect_tx, disconnect_rx) = oneshot::channel::<Option<CloseCode>>();
 
     // Stream future for processing incoming websocket messages
-    let raw_outgoing_tx_clone = raw_outgoing_tx.clone();
     let reader = ws_stream
 
         // Map errors to our custom error type
@@ -585,13 +603,21 @@ pub fn task_loop(
         // Decode messages
         .and_then(decode_ws_message)
 
-        // Handle each incoming message
+        // Wrap errors in a result type
+        .map_err(|e| Err(e))
+
+        // Handle each incoming message.
+        //
+        // The closure passed to `for_each` must return:
+        //
+        // * `future::ok(())` to continue processing the stream
+        // * `future::err(Ok(()))` to stop the loop without an error
+        // * `future::err(Err(_))` to stop the loop with an error
         .for_each({
             let salty = Rc::clone(&salty);
+            let raw_outgoing_tx = raw_outgoing_tx.clone();
             move |msg: WsMessageDecoded| {
-                // Clone queue of outgoing messages
-                let raw_outgoing_tx = raw_outgoing_tx_clone.clone();
-
+                let raw_outgoing_tx = raw_outgoing_tx.clone();
                 match msg {
                     WsMessageDecoded::ByteBox(bbox) => {
                         trace!("Got binary websocket msg: {:?}", bbox);
@@ -600,11 +626,11 @@ pub fn task_loop(
                         let handle_actions = match salty.deref().try_borrow_mut() {
                             Ok(mut s) => match s.handle_message(bbox) {
                                 Ok(actions) => actions,
-                                Err(e) => return boxed!(future::err(e.into())),
+                                Err(e) => return boxed!(future::err(Err(e.into()))),
                             },
-                            Err(e) => return boxed!(future::err(
+                            Err(e) => return boxed!(future::err(Err(
                                 SaltyError::Crash(format!("Could not get mutable reference to SaltyClient: {}", e))
-                            )),
+                            ))),
                         };
 
                         // Extract messages that should be sent back to the server
@@ -614,9 +640,35 @@ pub fn task_loop(
                             match action {
                                 HandleAction::Reply(bbox) => out_messages.push(OwnedMessage::Binary(bbox.into_bytes())),
                                 HandleAction::TaskMessage(val) => in_messages.push(val),
-                                HandleAction::HandshakeDone => return boxed!(future::err(
+                                HandleAction::TaskClose(reason) => {
+                                    // Get access to SaltyClient
+                                    let salty = match salty.try_borrow_mut() {
+                                        Ok(salty) => salty,
+                                        Err(e) => return boxed!(future::err(Err(
+                                            SaltyError::Crash(format!("Could not mutably borrow SaltyRTC instance: {}", e))
+                                        ))),
+                                    };
+
+                                    // Get access to Task
+                                    let task = match salty.task() {
+                                        Some(task) => task,
+                                        None => return boxed!(future::err(Err(
+                                            SaltyError::Crash(format!("Task not set"))
+                                        )))
+                                    };
+
+                                    // Notify task about closing message
+                                    match task.lock() {
+                                        Ok(ref mut t) => t.close(reason),
+                                        Err(_) => {},
+                                    };
+
+                                    // Return a `future::err(Ok(_))` to stop processing the stream.
+                                    return boxed!(future::err(Ok(())))
+                                },
+                                HandleAction::HandshakeDone => return boxed!(future::err(Err(
                                     SaltyError::Crash("Got HandleAction::HandshakeDone in task loop".into())
-                                )),
+                                ))),
                             }
                         }
 
@@ -625,12 +677,11 @@ pub fn task_loop(
                             boxed!(future::ok(()))
                         } else {
                             let msg_count = out_messages.len();
-                            let outbox = stream::iter_ok::<_, SaltyError>(out_messages);
+                            let outbox = stream::iter_ok::<_, Result<(), SaltyError>>(out_messages);
                             let future = raw_outgoing_tx
-                                .sink_map_err(|e| SaltyError::Network(format!("Sink error: {}", e)))
+                                .sink_map_err(|e| Err(SaltyError::Network(format!("Sink error: {}", e))))
                                 .send_all(outbox)
-                                .map(move |_| debug!("Sent {} messages", msg_count))
-                                .map_err(|e| SaltyError::Network(format!("Could not send messages: {}", e)));
+                                .map(move |_| debug!("Sent {} messages", msg_count));
                             boxed!(future)
                         };
 
@@ -638,10 +689,10 @@ pub fn task_loop(
                             boxed!(future::ok(()))
                         } else {
                             let msg_count = in_messages.len();
-                            let inbox = stream::iter_ok::<_, SaltyError>(in_messages);
+                            let inbox = stream::iter_ok::<_, Result<(), SaltyError>>(in_messages);
                             let future = incoming_tx
                                 .clone()
-                                .sink_map_err(|e| SaltyError::Crash(format!("Channel error: {}", e)))
+                                .sink_map_err(|e| Err(SaltyError::Crash(format!("Channel error: {}", e))))
                                 .send_all(inbox)
                                 .map(move |_| debug!("Received {} task messages", msg_count));
                             boxed!(future)
@@ -653,14 +704,46 @@ pub fn task_loop(
                         let pong = OwnedMessage::Pong(payload);
                         let future = raw_outgoing_tx
                             .send(pong)
-                            .map(|_| debug!("Sent pong message"))
-                            .map_err(|e| SaltyError::Network(format!("Could not send pong message: {}", e)));
+                            .map(|_| debug!("Enqueued pong message"))
+                            .map_err(|e| Err(SaltyError::Network(format!("Could not enqueue pong message: {}", e))));
                         boxed!(future)
                     },
                     WsMessageDecoded::Ignore => boxed!(future::ok(())),
                 }
             }
-        });
+        })
+
+        .or_else(|res| match res {
+            Ok(_) => boxed!(future::ok(())),
+            Err(e) => boxed!(future::err(e))
+        })
+
+        .select(
+            disconnect_rx
+                .and_then({
+                    let raw_outgoing_tx = raw_outgoing_tx.clone();
+                    move |reason_opt: Option<CloseCode>| {
+                        let close = OwnedMessage::Close(Some(CloseData {
+                            status_code: reason_opt.map(|cc| cc.as_number()).unwrap_or(1001),
+                            reason: reason_opt.map(|cc| cc.to_string()).unwrap_or("".to_string()),
+                        }));
+                        raw_outgoing_tx
+                            .send(close)
+                            .map(|_| debug!("Sent close message"))
+                            .or_else(|e| {
+                                warn!("Could not enqueue close message: {}", e);
+                                future::ok(())
+                            })
+                    }
+                })
+                .or_else(|_| {
+                    warn!("Waiting for disconnect_rx failed");
+                    future::ok(())
+                })
+        )
+
+        .map(|_| ())
+        .map_err(|(e, _next)| e);
 
     // Transform future that sends values from the outgoing channel to the raw outgoing channel
     let transformer = outgoing_rx
@@ -721,7 +804,7 @@ pub fn task_loop(
     // Notify task that it can now take over
     task.lock()
         .map_err(|e| SaltyError::Crash(format!("Could not lock task mutex: {}", e)))?
-        .start(outgoing_tx, incoming_rx);
+        .start(outgoing_tx, incoming_rx, disconnect_tx);
 
     // Return reference to task and the task loop future
     Ok((task, task_loop))

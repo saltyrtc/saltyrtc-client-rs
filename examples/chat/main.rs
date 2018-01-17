@@ -12,7 +12,6 @@ extern crate futures;
 extern crate native_tls;
 extern crate saltyrtc_client;
 extern crate tokio_core;
-extern crate tokio_timer;
 
 mod chat_task;
 
@@ -42,7 +41,6 @@ use saltyrtc_client::{SaltyClientBuilder, Role, WsClient, Task, BoxedFuture};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
 use saltyrtc_client::errors::{SaltyError};
 use tokio_core::reactor::{Core};
-use tokio_timer::Timer;
 
 use chat_task::{ChatTask, ChatMessage};
 
@@ -217,6 +215,7 @@ fn main() {
 
     // Connect to server
     let connect_future = saltyrtc_client::connect(
+//            &format!("wss://saltyrtc-00.threema.ch:443/{}", path),
             &format!("wss://localhost:8765/{}", path),
             Some(tls_connector),
             &core.handle(),
@@ -324,7 +323,14 @@ fn main() {
     let peer_name = chat_task.peer_name.clone();
 
     // Text message send loop
+    //
+    // The closure passed to `for_each` must return:
+    //
+    // * `future::ok(())` to continue listening for chat messages
+    // * `future::err(Ok(()))` to stop the loop without an error
+    // * `future::err(Err(_))` to stop the loop with an error
     let send_loop = chat_msg_rx
+        .map_err(|_| Err(()))
         .for_each(|msg: String| {
             if msg.starts_with("/") {
                 let mut parts = msg.split_whitespace();
@@ -335,18 +341,21 @@ fn main() {
                     }
                     "/quit" => {
                         log_line!("*** Exiting");
-                        // Sleep a while to wait for TUI to catch up
-                        let sleep = Timer::default().sleep(Duration::from_millis(300));
-                        let future = sleep
-                            .map_err(|_| ())
-                            .and_then(|_| future::err(()));
-                        boxed!(future)
+
+                        // Stop TUI
+                        tui_sender.send(Box::new(move |tui: &mut Cursive| {
+                            tui.quit();
+                        })).unwrap();
+
+                        boxed!(future::err(Ok(())))
                     }
                     "/nick" => {
                         match parts.next() {
                             Some(nick) => {
                                 log_line!("*** Changing nickname to {}", nick);
-                                let future = chat_task.change_nick(&nick).map_err(|_| ());
+                                let future = chat_task
+                                    .change_nick(&nick)
+                                    .map_err(|_| Err(()));
                                 boxed!(future)
                             }
                             None => {
@@ -362,11 +371,16 @@ fn main() {
                 }
             } else {
                 log_line!("{}> {}", chat_task.our_name, msg);
-                let future = chat_task.send_msg(&msg).map_err(|_| ());
+                let future = chat_task
+                    .send_msg(&msg)
+                    .map_err(|_| Err(()));
                 boxed!(future)
             }
         })
-        .map_err(|_| SaltyError::Crash("Something went wrong when forwarding messages to task".into()));
+        .or_else(|res| match res {
+            Ok(_) => future::ok(()),
+            Err(_) => future::err(SaltyError::Crash("Something went wrong when forwarding messages to task".into()))
+        });
 
     // Chat message receive loop
     // TODO: Sanitize incoming messages
@@ -385,6 +399,9 @@ fn main() {
                     ChatMessage::NickChange(new_nick) => {
                         log_line!("*** Partner nick changed to {}", new_nick)
                     },
+                    ChatMessage::Disconnect(reason) => {
+                        log_line!("*** Connection closed, reason: {}", reason)
+                    }
                 };
                 future::ok(())
             }

@@ -12,8 +12,11 @@ use std::iter::IntoIterator;
 
 use failure::Error;
 use futures::sync::mpsc::{Sender, Receiver};
+use futures::sync::oneshot::Sender as OneshotSender;
 use mopa::Any;
 use rmpv::Value;
+
+use ::CloseCode;
 
 
 /// A type alias for a boxed task.
@@ -34,12 +37,17 @@ pub trait Task : Debug + Any {
     /// Used by the signaling class to notify task that the peer handshake is done.
     ///
     /// This is the point where the task can take over.
-    fn start(&mut self, outgoing_tx: Sender<Value>, incoming_rx: Receiver<Value>);
+    fn start(&mut self,
+             outgoing_tx: Sender<Value>,
+             incoming_rx: Receiver<Value>,
+             disconnect_tx: OneshotSender<Option<CloseCode>>);
 
     /// Return supported message types.
     ///
     /// Incoming messages with accepted types will be passed to the task.
     /// Otherwise, the message is dropped.
+    ///
+    /// TODO: Implement this
     fn supported_types(&self) -> &[&'static str];
 
     /// Send bytes through the task signaling channel.
@@ -57,7 +65,10 @@ pub trait Task : Debug + Any {
     fn data(&self) -> Option<HashMap<String, Value>>;
 
     /// This method is called by the signaling class when sending and receiving 'close' messages.
-    fn close(&mut self, reason: u8);
+    fn on_close(&mut self, reason: CloseCode);
+
+    /// This method can be called by the user to close the connection.
+    fn close(&mut self, reason: CloseCode);
 }
 
 mopafy!(Task);

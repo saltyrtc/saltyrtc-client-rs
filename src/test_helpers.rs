@@ -7,8 +7,10 @@ use std::collections::HashMap;
 
 use failure::Error;
 use futures::sync::mpsc::{Sender, Receiver};
+use futures::sync::oneshot::Sender as OneshotSender;
 use rmpv::Value;
 
+use ::CloseCode;
 use task::Task;
 
 
@@ -37,7 +39,7 @@ impl Task for DummyTask {
         Ok(())
     }
 
-    fn start(&mut self, outgoing_tx: Sender<Value>, incoming_rx: Receiver<Value>) {
+    fn start(&mut self, _: Sender<Value>, _: Receiver<Value>, _: OneshotSender<Option<CloseCode>>) {
         unimplemented!()
     }
 
@@ -57,7 +59,11 @@ impl Task for DummyTask {
         None
     }
 
-    fn close(&mut self, reason: u8) {
+    fn on_close(&mut self, reason: CloseCode) {
+        unimplemented!()
+    }
+
+    fn close(&mut self, reason: CloseCode) {
         unimplemented!()
     }
 }

@@ -29,13 +29,14 @@ pub(crate) mod types;
 
 #[cfg(test)] mod tests;
 
-use super::task::{Tasks, BoxedTask};
+use ::CloseCode;
+use ::task::{Tasks, BoxedTask};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
     Message, ServerHello, ServerAuth, ClientHello, ClientAuth,
     NewResponder, DropResponder, DropReason,
-    SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder,
+    SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder, Close,
 };
 pub(crate) use self::nonce::{Nonce};
 pub use self::types::{Role};
@@ -366,6 +367,41 @@ pub(crate) trait Signaling {
             peer.csn_pair().borrow_mut().ours.increment()?,
         );
         let obox = OpenBox::<Value>::new(value, nonce);
+        let bbox = obox.encrypt(
+            peer.keypair().ok_or(SignalingError::Crash("Session keypair not available".into()))?,
+            peer.session_key().ok_or(SignalingError::Crash("Peer session key not set".into()))?,
+        );
+
+        Ok(bbox)
+    }
+
+    /// Encode and encrypt a close message for the chosen peer.
+    fn encode_close_message(&self, reason: CloseCode) -> SignalingResult<ByteBox> {
+        // Check state
+        let signaling_state = self.common().signaling_state();
+        if signaling_state != SignalingState::Task {
+            return Err(SignalingError::Crash(
+                format!("Called encode_close_message in state {:?}", signaling_state)
+            ));
+        }
+
+        // Get peer
+        let peer = self.get_peer()
+            .ok_or(SignalingError::Crash("Peer not set".into()))?;
+
+        // Create and encrypt message
+        let nonce = Nonce::new(
+            // Cookie
+            peer.cookie_pair().ours.clone(),
+            // Src
+            self.common().identity.into(),
+            // Dst
+            peer.identity().into(),
+            // Csn
+            peer.csn_pair().borrow_mut().ours.increment()?,
+        );
+        let msg = Close::from_close_code(reason).into_message();
+        let obox = OpenBox::<Message>::new(msg, nonce);
         let bbox = obox.encrypt(
             peer.keypair().ok_or(SignalingError::Crash("Session keypair not available".into()))?,
             peer.session_key().ok_or(SignalingError::Crash("Peer session key not set".into()))?,

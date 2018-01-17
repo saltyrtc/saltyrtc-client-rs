@@ -6,7 +6,8 @@ use rmpv::Value;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use boxes::ByteBox;
+use ::CloseCode;
+use ::boxes::ByteBox;
 
 
 /// The role of a peer.
@@ -220,6 +221,8 @@ pub(crate) enum HandleAction {
     HandshakeDone,
     /// A task message was received and decoded.
     TaskMessage(Value),
+    /// A 'close' message was received and decoded.
+    TaskClose(CloseCode),
 }
 
 

@@ -1,11 +1,13 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::mem;
 use std::sync::{Arc, Mutex};
 
 use failure::Error;
 use futures::{Future, Stream, Sink, future};
 use futures::sync::mpsc::{Sender, Receiver};
-use saltyrtc_client::Task;
+use futures::sync::oneshot::Sender as OneshotSender;
+use saltyrtc_client::{Task, CloseCode};
 use saltyrtc_client::rmpv::Value;
 use tokio_core::reactor::Remote;
 
@@ -20,19 +22,23 @@ const KEY_NICK: &'static str = "nick";
 /// The chat task is used for a simple 1-to-1 chat.
 ///
 /// It supports sending text messages and changing the nickname.
-#[derive(Debug, Clone)]
+///
+/// TODO: Add a `state` enum that will contain all information from `start`.
+#[derive(Debug)]
 pub(crate) struct ChatTask {
     pub(crate) our_name: String,
     pub(crate) peer_name: Arc<Mutex<Option<String>>>,
     remote: Remote,
     outgoing_tx: Option<Sender<Value>>,
     incoming_tx: Sender<ChatMessage>,
+    disconnect_tx: Option<OneshotSender<Option<CloseCode>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatMessage {
     Msg(String),
     NickChange(String),
+    Disconnect(CloseCode)
 }
 
 impl ChatTask {
@@ -50,6 +56,7 @@ impl ChatTask {
             remote,
             outgoing_tx: None,
             incoming_tx,
+            disconnect_tx: None,
         }
     }
 
@@ -107,11 +114,19 @@ impl Task for ChatTask {
     /// Used by the signaling class to notify task that the peer handshake is done.
     ///
     /// This is the point where the task can take over.
-    fn start(&mut self, outgoing_tx: Sender<Value>, incoming_rx: Receiver<Value>) {
+    fn start(
+        &mut self,
+        outgoing_tx: Sender<Value>,
+        incoming_rx: Receiver<Value>,
+        disconnect_tx: OneshotSender<Option<CloseCode>>,
+    ) {
         info!("Peer handshake done");
 
         // Store reference to channel for sending outgoing messages
         self.outgoing_tx = Some(outgoing_tx);
+
+        // Store reference to disconnect oneshot channel
+        self.disconnect_tx = Some(disconnect_tx);
 
         // Handle incoming messages
         let incoming_tx = self.incoming_tx.clone();
@@ -218,7 +233,27 @@ impl Task for ChatTask {
     }
 
     /// This method is called by the signaling class when sending and receiving 'close' messages.
-    fn close(&mut self, _reason: u8) {
-        // TODO
+    fn on_close(&mut self, reason: CloseCode) {
+        let incoming_tx = self.incoming_tx.clone();
+        let disconnect_tx = mem::replace(&mut self.disconnect_tx, None);
+        self.remote.spawn(move |_|
+            incoming_tx
+                .send(ChatMessage::Disconnect(reason))
+                .then(|_| {
+                    if let Some(channel) = disconnect_tx {
+                        // Shut down task loop, if that hasn't been done yet.
+                        let _ = channel.send(None);
+                    }
+                    future::ok(())
+                })
+        );
+    }
+
+    /// This method can be called by the user to close the connection.
+    fn close(&mut self, reason: CloseCode) {
+        let disconnect_tx = mem::replace(&mut self.disconnect_tx, None);
+        if let Some(channel) = disconnect_tx {
+            let _ = channel.send(Some(reason));
+        }
     }
 }
