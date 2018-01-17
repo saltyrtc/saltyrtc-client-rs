@@ -12,6 +12,7 @@ extern crate futures;
 extern crate native_tls;
 extern crate saltyrtc_client;
 extern crate tokio_core;
+extern crate tokio_timer;
 
 mod chat_task;
 
@@ -37,10 +38,11 @@ use futures::{Sink, Stream, future};
 use futures::future::{Future};
 use futures::sync::mpsc::{channel};
 use native_tls::{TlsConnector, Certificate, Protocol};
-use saltyrtc_client::{SaltyClientBuilder, Role, WsClient, Task};
+use saltyrtc_client::{SaltyClientBuilder, Role, WsClient, Task, BoxedFuture};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
 use saltyrtc_client::errors::{SaltyError};
 use tokio_core::reactor::{Core};
+use tokio_timer::Timer;
 
 use chat_task::{ChatTask, ChatMessage};
 
@@ -49,6 +51,14 @@ pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const VIEW_TEXT_ID: &'static str = "text";
 const VIEW_INPUT_ID: &'static str = "input";
 const TUI_CHANNEL_BUFFER_SIZE: usize = 64;
+
+
+/// Wrap future in a box with type erasure.
+macro_rules! boxed {
+    ($future:expr) => {{
+        Box::new($future) as BoxedFuture<_, _>
+    }}
+}
 
 
 fn main() {
@@ -239,13 +249,6 @@ fn main() {
             process::exit(1);
         });
 
-    // Get reference to task and downcast to ChatTask.
-    // We can be sure that it's a ChatTask since that's the only one we proposed.
-    let mut t = task.lock().expect("Could not lock task mutex");
-    let chat_task: &mut ChatTask = (&mut **t as &mut Task)
-        .downcast_mut::<ChatTask>()
-        .expect("Chosen task is not a ChatTask");
-
     // Launch TUI thread
     let (cb_sink_tx, cb_sink_rx) = mpsc::sync_channel(1);
     let (chat_msg_tx, chat_msg_rx) = channel::<String>(TUI_CHANNEL_BUFFER_SIZE);
@@ -256,7 +259,7 @@ fn main() {
         tui.set_fps(10);
 
         // Create text view (for displaying messages)
-        let text_view = TextView::new("=== Welcome to SaltyChat! ===\nPress Ctrl+C to exit.\n\n")
+        let text_view = TextView::new("=== Welcome to SaltyChat! ===\nPress Ctrl+C to exit.\nType /help to list available commands.\n\n")
             .scrollable(true)
             .with_id(VIEW_TEXT_ID);
 
@@ -310,28 +313,81 @@ fn main() {
         }};
     }
 
+    // Get reference to task and downcast to ChatTask.
+    // We can be sure that it's a ChatTask since that's the only one we proposed.
+    let mut t = task.lock().expect("Could not lock task mutex");
+    let chat_task: &mut ChatTask = (&mut **t as &mut Task)
+        .downcast_mut::<ChatTask>()
+        .expect("Chosen task is not a ChatTask");
+
+    // Get reference to peer name Arc.
+    let peer_name = chat_task.peer_name.clone();
+
     // Text message send loop
     let send_loop = chat_msg_rx
         .for_each(|msg: String| {
-            log_line!("{}> {}", &chat_task.our_name, msg);
-            chat_task.send_msg(&msg).map_err(|_| ())
+            if msg.starts_with("/") {
+                let mut parts = msg.split_whitespace();
+                match parts.next().unwrap() {
+                    "/help" => {
+                        log_line!("*** Available commands: /help /nick /quit");
+                        boxed!(future::ok(()))
+                    }
+                    "/quit" => {
+                        log_line!("*** Exiting");
+                        // Sleep a while to wait for TUI to catch up
+                        let sleep = Timer::default().sleep(Duration::from_millis(300));
+                        let future = sleep
+                            .map_err(|_| ())
+                            .and_then(|_| future::err(()));
+                        boxed!(future)
+                    }
+                    "/nick" => {
+                        match parts.next() {
+                            Some(nick) => {
+                                log_line!("*** Changing nickname to {}", nick);
+                                let future = chat_task.change_nick(&nick).map_err(|_| ());
+                                boxed!(future)
+                            }
+                            None => {
+                                log_line!("*** Usage: /nick <new-nickname>");
+                                boxed!(future::ok(()))
+                            }
+                        }
+                    }
+                    other => {
+                        log_line!("*** Unknown command: {}", other);
+                        boxed!(future::ok(()))
+                    }
+                }
+            } else {
+                log_line!("{}> {}", chat_task.our_name, msg);
+                let future = chat_task.send_msg(&msg).map_err(|_| ());
+                boxed!(future)
+            }
         })
         .map_err(|_| SaltyError::Crash("Something went wrong when forwarding messages to task".into()));
 
     // Chat message receive loop
     // TODO: Sanitize incoming messages
     let receive_loop = incoming_rx
-        .for_each(|msg: ChatMessage| {
-            match msg {
-                ChatMessage::Msg(text) => {
-                    let peer_name = &chat_task.peer_name.clone().unwrap_or("?".into());
-                    log_line!("{}> {}", peer_name, text)
-                },
-                ChatMessage::NickChange(new_nick) => {
-                    log_line!("*** Partner nick changed to {}", new_nick)
-                },
-            };
-            future::ok(())
+        .for_each({
+            |msg: ChatMessage| {
+                match msg {
+                    ChatMessage::Msg(text) => {
+                        let pn = peer_name
+                            .lock()
+                            .ok()
+                            .and_then(|p| p.clone())
+                            .unwrap_or("?".to_string());
+                        log_line!("{}> {}", pn, text)
+                    },
+                    ChatMessage::NickChange(new_nick) => {
+                        log_line!("*** Partner nick changed to {}", new_nick)
+                    },
+                };
+                future::ok(())
+            }
         })
         .map_err(|_| SaltyError::Crash("Something went wrong in message receive loop".into()));
 

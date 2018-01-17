@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use failure::Error;
 use futures::{Future, Stream, Sink, future};
@@ -16,10 +17,13 @@ const KEY_TEXT: &'static str = "text";
 const KEY_NICK: &'static str = "nick";
 
 
+/// The chat task is used for a simple 1-to-1 chat.
+///
+/// It supports sending text messages and changing the nickname.
 #[derive(Debug, Clone)]
 pub(crate) struct ChatTask {
     pub(crate) our_name: String,
-    pub(crate) peer_name: Option<String>,
+    pub(crate) peer_name: Arc<Mutex<Option<String>>>,
     remote: Remote,
     outgoing_tx: Option<Sender<Value>>,
     incoming_tx: Sender<ChatMessage>,
@@ -42,7 +46,7 @@ impl ChatTask {
     pub fn new<S: Into<String>>(our_name: S, remote: Remote, incoming_tx: Sender<ChatMessage>) -> Self {
         ChatTask {
             our_name: our_name.into(),
-            peer_name: None,
+            peer_name: Arc::new(Mutex::new(None)),
             remote,
             outgoing_tx: None,
             incoming_tx,
@@ -62,6 +66,21 @@ impl ChatTask {
             .map_err(|e| format!("Could not send message: {}", e));
         Box::new(future)
     }
+
+    /// Change the own nickname.
+    pub fn change_nick(&mut self, new_nick: &str) -> Box<Future<Item=(), Error=String>> {
+        let val: Value = Value::Map(vec![
+            (Value::String("type".into()), Value::String(TYPE_NICK_CHANGE.into())),
+            (Value::String(KEY_NICK.into()), Value::String(new_nick.into())),
+        ]);
+        let tx = self.outgoing_tx.clone().expect("outgoing_tx is None");
+        let future = tx
+            .send(val)
+            .map(|_| ())
+            .map_err(|e| format!("Could not change nickname: {}", e));
+        self.our_name = new_nick.into();
+        Box::new(future)
+    }
 }
 
 impl Task for ChatTask {
@@ -78,7 +97,10 @@ impl Task for ChatTask {
             },
             None => bail!("No data passed to task initialization"),
         };
-        self.peer_name = Some(peer_name);
+        match self.peer_name.lock() {
+            Ok(mut pn) => *pn = Some(peer_name),
+            Err(e) => bail!("Could not lock peer_name mutex: {}", e),
+        };
         Ok(())
     }
 
@@ -93,8 +115,8 @@ impl Task for ChatTask {
 
         // Handle incoming messages
         let incoming_tx = self.incoming_tx.clone();
+        let peer_name = self.peer_name.clone();
         self.remote.spawn(move |handle| {
-
             let handle = handle.clone();
             incoming_rx.for_each(move |val: Value| {
                 let map = match val {
@@ -138,6 +160,13 @@ impl Task for ChatTask {
                             .next();
                         match nick_opt {
                             Some(ref nick) => {
+                                // Update peer name in task
+                                peer_name
+                                    .lock()
+                                    .map(|mut name| *name = Some(nick.to_string()))
+                                    .unwrap_or_else(|e| warn!("Could not set peer name: {}", e));
+
+                                // Send nick change through message channel
                                 let incoming_tx = incoming_tx.clone();
                                 handle.spawn(
                                     incoming_tx

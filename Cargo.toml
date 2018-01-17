@@ -27,6 +27,7 @@ clap = "2.27"
 cursive = "0.7"
 dotenv = "0.10"
 env_logger = "0.5.0-rc.1"
+tokio-timer = "0.1"
 
 [features]
 default = []
