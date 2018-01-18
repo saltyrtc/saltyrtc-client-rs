@@ -11,7 +11,7 @@ use futures::sync::oneshot::Sender as OneshotSender;
 use rmpv::Value;
 
 use ::CloseCode;
-use task::Task;
+use tasks::{Task, TaskMessage};
 
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -39,11 +39,11 @@ impl Task for DummyTask {
         Ok(())
     }
 
-    fn start(&mut self, _: Sender<Value>, _: Receiver<Value>, _: OneshotSender<Option<CloseCode>>) {
+    fn start(&mut self, _: Sender<TaskMessage>, _: Receiver<TaskMessage>, _: OneshotSender<Option<CloseCode>>) {
         unimplemented!()
     }
 
-    fn supported_types(&self) -> &[&'static str] {
+    fn supported_types(&self) -> &'static [&'static str] {
         &["dummy"]
     }
 
@@ -57,10 +57,6 @@ impl Task for DummyTask {
 
     fn data(&self) -> Option<HashMap<String, Value>> {
         None
-    }
-
-    fn on_close(&mut self, reason: CloseCode) {
-        unimplemented!()
     }
 
     fn close(&mut self, reason: CloseCode) {

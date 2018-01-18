@@ -37,7 +37,7 @@ pub mod errors;
 mod helpers;
 mod protocol;
 mod send_all;
-mod task;
+pub mod tasks;
 #[cfg(test)]
 mod test_helpers;
 
@@ -69,7 +69,6 @@ use websocket::message::{OwnedMessage, CloseData};
 
 // Re-exports
 pub use protocol::{Role};
-pub use task::{Task, BoxedTask};
 
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
@@ -83,7 +82,7 @@ use crypto_types::{KeyPair, PublicKey, AuthToken};
 use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
 use helpers::libsodium_init;
 use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
-use task::{Tasks};
+use tasks::{Tasks, TaskMessage, BoxedTask};
 
 
 // Constants
@@ -218,6 +217,7 @@ impl SaltyClient {
 
     /// Encrypt a task message.
     pub fn encrypt_task_message(&mut self, val: Value) -> SaltyResult<Vec<u8>> {
+        trace!("Encrypting task message");
         self.signaling
             .encode_task_message(val)
             .map(|bbox: ByteBox| bbox.into_bytes())
@@ -232,6 +232,7 @@ impl SaltyClient {
 
     /// Encrypt a close message for the peer.
     pub fn encrypt_close_message(&mut self, reason: CloseCode) -> SaltyResult<Vec<u8>> {
+        trace!("Encrypting close message");
         self.signaling
             .encode_close_message(reason)
             .map(|bbox: ByteBox| bbox.into_bytes())
@@ -389,11 +390,11 @@ fn decode_ws_message(msg: OwnedMessage) -> SaltyResult<WsMessageDecoded> {
             WsMessageDecoded::ByteBox(bbox)
         },
         OwnedMessage::Ping(payload) => {
-            debug!("--> Incoming ping message");
+            debug!("--> Incoming WS ping message");
             WsMessageDecoded::Ping(payload)
         },
         OwnedMessage::Close(close_data) => {
-            debug!("--> Incoming close message");
+            debug!("--> Incoming WS close message");
             match close_data {
                 Some(data) => {
                     let close_code = CloseCode::from_number(data.status_code);
@@ -529,9 +530,6 @@ pub fn do_handshake(
                         HandleAction::TaskMessage(_) => return boxed!(future::err(
                             SaltyError::Crash("Received task message during handshake".into())
                         )),
-                        HandleAction::TaskClose(_) => return boxed!(future::err(
-                            SaltyError::Crash("Received close message during handshake".into())
-                        ))
                     }
                 }
 
@@ -589,9 +587,9 @@ pub fn task_loop(
 
     // Create communication channels
     // TODO: Use unbounded channels and `unbounded_send`!
-    let (outgoing_tx, outgoing_rx) = mpsc::channel::<Value>(SEND_CHANNEL_BUFFER);
+    let (outgoing_tx, outgoing_rx) = mpsc::channel::<TaskMessage>(SEND_CHANNEL_BUFFER);
     let (raw_outgoing_tx, raw_outgoing_rx) = mpsc::channel::<OwnedMessage>(SEND_CHANNEL_BUFFER);
-    let (incoming_tx, incoming_rx) = mpsc::channel::<Value>(RECV_CHANNEL_BUFFER);
+    let (incoming_tx, incoming_rx) = mpsc::channel::<TaskMessage>(RECV_CHANNEL_BUFFER);
     let (disconnect_tx, disconnect_rx) = oneshot::channel::<Option<CloseCode>>();
 
     // Stream future for processing incoming websocket messages
@@ -635,37 +633,20 @@ pub fn task_loop(
                         };
 
                         // Extract messages that should be sent back to the server
-                        let mut out_messages = vec![];
-                        let mut in_messages = vec![];
+                        let mut out_messages: Vec<OwnedMessage> = vec![];
+                        let mut in_messages: Vec<TaskMessage> = vec![];
+                        let mut close_stream = false;
                         for action in handle_actions {
+                            info!("Action: {:?}", action);
                             match action {
                                 HandleAction::Reply(bbox) => out_messages.push(OwnedMessage::Binary(bbox.into_bytes())),
-                                HandleAction::TaskMessage(val) => in_messages.push(val),
-                                HandleAction::TaskClose(reason) => {
-                                    // Get access to SaltyClient
-                                    let salty = match salty.try_borrow_mut() {
-                                        Ok(salty) => salty,
-                                        Err(e) => return boxed!(future::err(Err(
-                                            SaltyError::Crash(format!("Could not mutably borrow SaltyRTC instance: {}", e))
-                                        ))),
-                                    };
+                                HandleAction::TaskMessage(msg) => {
+                                    if let TaskMessage::Close(_) = msg {
+                                        close_stream = true;
+                                    }
 
-                                    // Get access to Task
-                                    let task = match salty.task() {
-                                        Some(task) => task,
-                                        None => return boxed!(future::err(Err(
-                                            SaltyError::Crash(format!("Task not set"))
-                                        )))
-                                    };
-
-                                    // Notify task about closing message
-                                    match task.lock() {
-                                        Ok(ref mut t) => t.close(reason),
-                                        Err(_) => {},
-                                    };
-
-                                    // Return a `future::err(Ok(_))` to stop processing the stream.
-                                    return boxed!(future::err(Ok(())))
+                                    // Forward message to user
+                                    in_messages.push(msg);
                                 },
                                 HandleAction::HandshakeDone => return boxed!(future::err(Err(
                                     SaltyError::Crash("Got HandleAction::HandshakeDone in task loop".into())
@@ -673,7 +654,7 @@ pub fn task_loop(
                             }
                         }
 
-                        // Handle queued messages
+                        // Handle outgoing queued messages
                         let out_future = if out_messages.is_empty() {
                             boxed!(future::ok(()))
                         } else {
@@ -686,6 +667,7 @@ pub fn task_loop(
                             boxed!(future)
                         };
 
+                        // Handle incoming queued messages
                         let in_future = if in_messages.is_empty() {
                             boxed!(future::ok(()))
                         } else {
@@ -699,7 +681,17 @@ pub fn task_loop(
                             boxed!(future)
                         };
 
-                        boxed!(out_future.join(in_future).map(|_| ()))
+                        boxed!(
+                            out_future
+                                .join(in_future)
+                                .and_then(move |_| if close_stream {
+                                    // Stop processing stream
+                                    Err(Ok(()))
+                                } else {
+                                    // Continue processing stream
+                                    Ok(())
+                                })
+                        )
                     },
                     WsMessageDecoded::Ping(payload) => {
                         let pong = OwnedMessage::Pong(payload);
@@ -722,15 +714,14 @@ pub fn task_loop(
         .select(
             disconnect_rx
                 .and_then({
-                    let raw_outgoing_tx = raw_outgoing_tx.clone();
+                    let outgoing_tx = outgoing_tx.clone();
                     move |reason_opt: Option<CloseCode>| {
-                        let close = OwnedMessage::Close(Some(CloseData {
-                            status_code: reason_opt.map(|cc| cc.as_number()).unwrap_or(1001),
-                            reason: reason_opt.map(|cc| cc.to_string()).unwrap_or("".to_string()),
-                        }));
-                        raw_outgoing_tx
-                            .send(close)
-                            .map(|_| debug!("<-- Enqueuing close message to peer"))
+                        info!("Disconnecting");
+
+                        // Send close message
+                        outgoing_tx
+                            .send(TaskMessage::Close(reason_opt.unwrap_or(CloseCode::WsGoingAway)))
+                            .map(|_| ())
                             .or_else(|e| {
                                 warn!("Could not enqueue close message: {}", e);
                                 future::ok(())
@@ -749,44 +740,96 @@ pub fn task_loop(
     // Transform future that sends values from the outgoing channel to the raw outgoing channel
     let transformer = outgoing_rx
 
-        // Encode and encrypt values
+        // Wrap errors in result
+        .map_err(|_| Err(()))
+
+        // Encode and encrypt values.
         .and_then({
             let salty = Rc::clone(&salty);
-            move |val: Value| {
-                // Encrypt message
+            move |msg: TaskMessage| {
+                trace!("Transforming outgoing message: {:?}", msg);
+
+                // Get reference to SaltyClient
                 // TODO: Can we do something about the errors here?
-                match salty.deref().try_borrow_mut() {
-                    Ok(mut s) => match s.encrypt_task_message(val) {
-                        Ok(bytes) => {
-                            debug!("<-- Enqueuing task message to peer");
-                            future::ok(OwnedMessage::Binary(bytes))
-                        },
-                        Err(_) => future::err(())
+                let mut salty_mut = match salty.deref().try_borrow_mut() {
+                    Ok(mut s) => s,
+                    Err(_) => return Err(Err(())),
+                };
+
+                // When we receive a `Value` message, simply send it as-is.
+                // But when we receive a `Close` message, also insert a WebSocket close message.
+                match msg {
+                    TaskMessage::Value(map) => {
+                        // Create message
+                        let val = Value::Map(
+                            map
+                                .into_iter()
+                                .map(|(k, v)| (Value::from(k), v))
+                                .collect()
+                        );
+                        // Encrypt message
+                        salty_mut
+                            .encrypt_task_message(val)
+                            .map(|bytes| {
+                                debug!("<-- Enqueuing task message to peer");
+                                stream::iter_result::<_, OwnedMessage, Result<(), ()>>(
+                                    vec![
+                                        Ok(OwnedMessage::Binary(bytes))
+                                    ]
+                                )
+                            })
+                            .map_err(|e| {
+                                warn!("Could not encrypt task message: {}", e);
+                                Err(())
+                            })
                     },
-                    Err(_) => future::err(()),
+                    TaskMessage::Close(reason) => {
+                        // Create and encrypt SaltyRTC close message,
+                        // followed by a WebSocket close message
+                        salty_mut
+                            .encrypt_close_message(reason)
+                            .map(|bytes| {
+                                debug!("<-- Enqueuing SaltyRTC close message to peer");
+                                debug!("<-- Enqueuing WebRTC close message to peer");
+                                stream::iter_result::<_, OwnedMessage, Result<(), ()>>(
+                                    vec![
+                                        Ok(OwnedMessage::Binary(bytes)),
+                                        Ok(OwnedMessage::Close(Some(CloseData {
+                                            status_code: reason.as_number(),
+                                            reason: reason.to_string(),
+                                        }))),
+                                        Err(Ok(())), // Terminate transformer future
+                                    ]
+                                )
+                            })
+                            .map_err(|e| {
+                                warn!("Could not encrypt SaltyRTC close message: {}", e);
+                                Err(())
+                            })
+                    },
                 }
             }
         })
 
+        .flatten()
+
         // Forward to raw queue
-        .forward(raw_outgoing_tx.sink_map_err(|_| ()))
+        .forward(raw_outgoing_tx.sink_map_err(|_| Err(())))
 
         // Ignore stream/sink
         .map(|(_, _)| debug!("† Transformer future done"))
 
-        // Map error types
-        .map_err(|_| SaltyError::Crash("TODO: read error".into()));
+        // Flatten errors
+        .or_else(|e| e.map_err(|_| SaltyError::Crash("Transformer future error (TODO)".into())));
 
     // Sink future for sending messages from the raw outgoing channel through the WebSocket
-    let writer = ws_sink
+    let writer = raw_outgoing_rx
 
-        // Map sink errors
-        .sink_map_err(|e| SaltyError::Crash(format!("TODO sink error: {:?}", e)))
+        .map_err(|_| SaltyError::Crash(format!("TODO receiver error")))
 
         // Forward all messages from the channel receiver to the sink
-        .send_all(
-            raw_outgoing_rx
-                .map_err(|_| SaltyError::Crash(format!("TODO receiver error")))
+        .forward(
+            ws_sink.sink_map_err(|e| SaltyError::Crash(format!("TODO sink error: {:?}", e)))
         )
 
         // Ignore sink
@@ -795,13 +838,8 @@ pub fn task_loop(
     // The task loop is finished when all futures are resolved.
     let task_loop = boxed!(
         future::ok(info!("Starting task loop future"))
-        .and_then(|_| future::select_all(vec![
-            boxed!(reader),
-            boxed!(transformer),
-            boxed!(writer),
-        ]))
+        .and_then(|_| reader.join(transformer).join(writer).map(|_| ()))
         .and_then(|_| future::ok(info!("† Task loop future done")))
-        .map_err(|(e, _, _)| e)
     );
 
     // Get reference to task

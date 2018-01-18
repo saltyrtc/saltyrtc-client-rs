@@ -30,7 +30,7 @@ pub(crate) mod types;
 #[cfg(test)] mod tests;
 
 use ::CloseCode;
-use ::task::{Tasks, BoxedTask};
+use ::tasks::{Tasks, BoxedTask, TaskMessage};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
@@ -241,6 +241,8 @@ pub(crate) trait Signaling {
 
     /// Handle an incoming message.
     fn handle_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+        trace!("handle_message");
+
         // Validate the nonce
         match self.validate_nonce(&bbox.nonce) {
             // It's valid! Carry on.
@@ -270,6 +272,8 @@ pub(crate) trait Signaling {
 
     /// Handle an incoming handshake message.
     fn handle_handshake_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+        trace!("handle_handshake_message");
+
         // Decode message depending on source
         let obox: OpenBox<Message> = if bbox.nonce.source().is_server() {
             self.decode_server_message(bbox)?
@@ -297,11 +301,60 @@ pub(crate) trait Signaling {
 
     /// Handle an incoming task message.
     fn handle_task_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+        trace!("handle_task_message");
+
         // Decode message
         let obox: OpenBox<Value> = self.decode_task_message(bbox)?;
 
-        // Pass task message to task
-        Ok(vec![HandleAction::TaskMessage(obox.message)])
+        // Convert to HashMap
+        let mut map: HashMap<String, Value> = HashMap::new();
+        match obox.message {
+            Value::Map(pairs) => {
+                for (k, v) in pairs {
+                    let key = k.as_str().ok_or(SignalingError::InvalidMessage("Task message map contains non-hashable key".into()))?;
+                    map.insert(key.into(), v);
+                }
+            },
+            _ => return Err(SignalingError::InvalidMessage("Task message is not a map".into())),
+        };
+
+        // Check msg type
+        let msg_type = map.get("type")
+            .ok_or(SignalingError::InvalidMessage("Task message does not contain type field".into()))?
+            .as_str()
+            .ok_or(SignalingError::InvalidMessage("Task message type is not a string".into()))?
+            .to_owned();
+
+        // Handle close messages
+        if msg_type == "close" {
+            let reason: CloseCode = map.get("reason")
+                .ok_or(SignalingError::InvalidMessage("Close message does not contain a reason field".into()))?
+                .as_u64()
+                .ok_or(SignalingError::InvalidMessage("Close message reason is not an integer".into()))
+                .and_then(|val: u64| {
+                    if val > ::std::u16::MAX as u64 {
+                        Err(SignalingError::InvalidMessage("Close message reason code is too large".into()))
+                    } else {
+                        Ok(val as u16)
+                    }
+                })
+                .and_then(|val: u16| {
+                    CloseCode::from_number(val)
+                        .ok_or(SignalingError::InvalidMessage("Close message reason is invalid".into()))
+                })?;
+            return Ok(vec![HandleAction::TaskMessage(TaskMessage::Close(reason))]);
+        }
+
+        // Pass supported task message to task
+        let task_supported_types = self.common()
+            .task_supported_types
+            .ok_or(SignalingError::Crash("Task supported types not set".into()))?;
+        if task_supported_types.iter().find(|t| *t == &msg_type).is_some() {
+            return Ok(vec![HandleAction::TaskMessage(TaskMessage::Value(map))])
+        }
+
+        warn!("Received task message with unsupported type: {}. Ignoring.", msg_type);
+        Ok(vec![])
     }
 
 
@@ -609,7 +662,14 @@ pub(crate) struct Common {
     pub(crate) tasks: Option<Tasks>,
 
     /// The chosen task.
+    ///
+    /// Be careful when locking the mutex, it's easy to end up with deadlocks!
     pub(crate) task: Option<Arc<Mutex<BoxedTask>>>,
+
+    /// The list of message types that the task accepts.
+    ///
+    /// This will be set once a task is chosen.
+    pub(crate) task_supported_types: Option<&'static [&'static str]>,
 
     /// The interval at which the server should send WebSocket ping messages.
     pub(crate) ping_interval: Option<Duration>,
@@ -930,6 +990,7 @@ impl InitiatorSignaling {
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
+                task_supported_types: None,
                 ping_interval: ping_interval,
             },
             responders: HashMap::new(),
@@ -1149,6 +1210,7 @@ impl InitiatorSignaling {
         actions.push(HandleAction::Reply(bbox));
 
         // Store chosen task
+        self.common_mut().task_supported_types = Some(chosen_task.supported_types());
         self.common_mut().task = Some(Arc::new(Mutex::new(chosen_task)));
 
         // State transitions
@@ -1353,6 +1415,7 @@ impl ResponderSignaling {
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
+                task_supported_types: None,
                 ping_interval: ping_interval,
             },
             initiator: InitiatorContext::new(initiator_pubkey),
@@ -1511,6 +1574,7 @@ impl ResponderSignaling {
         info!("Initiator authenticated");
 
         // Store chosen task
+        self.common_mut().task_supported_types = Some(chosen_task.supported_types());
         self.common_mut().task = Some(Arc::new(Mutex::new(chosen_task)));
 
         // State transitions

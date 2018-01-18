@@ -38,8 +38,8 @@ pub trait Task : Debug + Any {
     ///
     /// This is the point where the task can take over.
     fn start(&mut self,
-             outgoing_tx: Sender<Value>,
-             incoming_rx: Receiver<Value>,
+             outgoing_tx: Sender<TaskMessage>,
+             incoming_rx: Receiver<TaskMessage>,
              disconnect_tx: OneshotSender<Option<CloseCode>>);
 
     /// Return supported message types.
@@ -48,7 +48,7 @@ pub trait Task : Debug + Any {
     /// Otherwise, the message is dropped.
     ///
     /// TODO: Implement this
-    fn supported_types(&self) -> &[&'static str];
+    fn supported_types(&self) -> &'static [&'static str];
 
     /// Send bytes through the task signaling channel.
     ///
@@ -63,9 +63,6 @@ pub trait Task : Debug + Any {
 
     /// Return the task data used for negotiation in the `auth` message.
     fn data(&self) -> Option<HashMap<String, Value>>;
-
-    /// This method is called by the signaling class when sending and receiving 'close' messages.
-    fn on_close(&mut self, reason: CloseCode);
 
     /// This method can be called by the user to close the connection.
     fn close(&mut self, reason: CloseCode);
@@ -135,6 +132,21 @@ impl IntoIterator for Tasks {
         self.0.into_iter()
     }
 }
+
+
+/// A task may either send an arbitrary value, or a `Close` message.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TaskMessage {
+    /// Arbitrary maps can be sent over the encrypted channel,
+    /// as long as they contain a `type` key.
+    Value(HashMap<String, Value>),
+
+    /// Close messages should be triggered by the task,
+    /// when the user application requests to disconnect,
+    /// or by the signaling, when the peer sends a 'close' message.
+    Close(CloseCode),
+}
+
 
 #[cfg(test)]
 mod tests {

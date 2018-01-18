@@ -7,7 +7,8 @@ use failure::Error;
 use futures::{Future, Stream, Sink, future};
 use futures::sync::mpsc::{Sender, Receiver};
 use futures::sync::oneshot::Sender as OneshotSender;
-use saltyrtc_client::{Task, CloseCode};
+use saltyrtc_client::{BoxedFuture, CloseCode};
+use saltyrtc_client::tasks::{Task, TaskMessage};
 use saltyrtc_client::rmpv::Value;
 use tokio_core::reactor::Remote;
 
@@ -15,8 +16,17 @@ use tokio_core::reactor::Remote;
 // Message types
 const TYPE_MSG: &'static str = "msg";
 const TYPE_NICK_CHANGE: &'static str = "nick_change";
+const KEY_TYPE: &'static str = "type";
 const KEY_TEXT: &'static str = "text";
 const KEY_NICK: &'static str = "nick";
+
+
+/// Wrap future in a box with type erasure.
+macro_rules! boxed {
+    ($future:expr) => {{
+        Box::new($future) as BoxedFuture<_, _>
+    }}
+}
 
 
 /// The chat task is used for a simple 1-to-1 chat.
@@ -29,7 +39,7 @@ pub(crate) struct ChatTask {
     pub(crate) our_name: String,
     pub(crate) peer_name: Arc<Mutex<Option<String>>>,
     remote: Remote,
-    outgoing_tx: Option<Sender<Value>>,
+    outgoing_tx: Option<Sender<TaskMessage>>,
     incoming_tx: Sender<ChatMessage>,
     disconnect_tx: Option<OneshotSender<Option<CloseCode>>>,
 }
@@ -62,30 +72,36 @@ impl ChatTask {
 
     /// Send a text message through the secure channel.
     pub fn send_msg(&self, msg: &str) -> Box<Future<Item=(), Error=String>> {
-        let val: Value = Value::Map(vec![
-            (Value::String("type".into()), Value::String(TYPE_MSG.into())),
-            (Value::String(KEY_TEXT.into()), Value::String(msg.into())),
-        ]);
+        // Prepare message map
+        let mut map: HashMap<String, Value> = HashMap::new();
+        map.insert(KEY_TYPE.into(), Value::String(TYPE_MSG.into()));
+        map.insert(KEY_TEXT.into(), Value::String(msg.into()));
+
+        // Send message through channel
         let tx = self.outgoing_tx.clone().expect("outgoing_tx is None");
         let future = tx
-            .send(val)
+            .send(TaskMessage::Value(map))
             .map(|_| ())
             .map_err(|e| format!("Could not send message: {}", e));
+
         Box::new(future)
     }
 
     /// Change the own nickname.
     pub fn change_nick(&mut self, new_nick: &str) -> Box<Future<Item=(), Error=String>> {
-        let val: Value = Value::Map(vec![
-            (Value::String("type".into()), Value::String(TYPE_NICK_CHANGE.into())),
-            (Value::String(KEY_NICK.into()), Value::String(new_nick.into())),
-        ]);
+        // Prepare message map
+        let mut map: HashMap<String, Value> = HashMap::new();
+        map.insert(KEY_TYPE.into(), Value::String(TYPE_NICK_CHANGE.into()));
+        map.insert(KEY_NICK.into(), Value::String(new_nick.into()));
+
+        // Send message through channel
         let tx = self.outgoing_tx.clone().expect("outgoing_tx is None");
         let future = tx
-            .send(val)
+            .send(TaskMessage::Value(map))
             .map(|_| ())
             .map_err(|e| format!("Could not change nickname: {}", e));
         self.our_name = new_nick.into();
+
         Box::new(future)
     }
 }
@@ -116,8 +132,8 @@ impl Task for ChatTask {
     /// This is the point where the task can take over.
     fn start(
         &mut self,
-        outgoing_tx: Sender<Value>,
-        incoming_rx: Receiver<Value>,
+        outgoing_tx: Sender<TaskMessage>,
+        incoming_rx: Receiver<TaskMessage>,
         disconnect_tx: OneshotSender<Option<CloseCode>>,
     ) {
         info!("Peer handshake done");
@@ -133,27 +149,30 @@ impl Task for ChatTask {
         let peer_name = self.peer_name.clone();
         self.remote.spawn(move |handle| {
             let handle = handle.clone();
-            incoming_rx.for_each(move |val: Value| {
-                let map = match val {
-                    Value::Map(map) => map,
-                    _ => panic!("Invalid msgpack message type (not a map)"),
+            incoming_rx.for_each(move |msg: TaskMessage| {
+
+                let map: HashMap<String, Value> = match msg {
+                    TaskMessage::Value(map) => map,
+                    TaskMessage::Close(reason) => {
+                        // If a Close message from the peer arrives,
+                        // send a ChatMessage::Disconnect to the user.
+                        info!("Received close message from peer (reason: {})", reason);
+                        return boxed!(
+                            incoming_tx
+                                .clone()
+                                .send(ChatMessage::Disconnect(reason))
+                                .map(|_| ())
+                                .map_err(|_| ())
+                        );
+                    }
                 };
 
-                let msg_type = map
-                    .iter()
-                    .filter(|&&(ref k, _)| k.as_str() == Some("type"))
-                    .filter_map(|&(_, ref v)| v.as_str())
-                    .next()
-                    .expect("Message is missing valid type");
+                let msg_type_val = map.get(KEY_TYPE).expect("Message is missing type");
+                let msg_type = msg_type_val.as_str().expect("Message type is not a string");
 
                 match msg_type {
                     TYPE_MSG => {
-                        let text_opt = map
-                            .iter()
-                            .filter(|&&(ref k, _)| k.as_str() == Some(KEY_TEXT))
-                            .filter_map(|&(_, ref v)| v.as_str())
-                            .next();
-                        match text_opt {
+                        match map.get(KEY_TEXT).and_then(|v| v.as_str()) {
                             Some(ref text) => {
                                 let incoming_tx = incoming_tx.clone();
                                 handle.spawn(
@@ -168,12 +187,7 @@ impl Task for ChatTask {
                     },
                     TYPE_NICK_CHANGE => {
                         // TODO: DRY
-                        let nick_opt = map
-                            .iter()
-                            .filter(|&&(ref k, _)| k.as_str() == Some(KEY_NICK))
-                            .filter_map(|&(_, ref v)| v.as_str())
-                            .next();
-                        match nick_opt {
+                        match map.get(KEY_NICK).and_then(|v| v.as_str()) {
                             Some(ref nick) => {
                                 // Update peer name in task
                                 peer_name
@@ -196,8 +210,9 @@ impl Task for ChatTask {
                     other => warn!("Unknown message type: {}", other),
                 };
 
-                future::ok(())
+                boxed!(future::ok(()))
             })
+            .map(|_| debug!("† Chat task receiving future done"))
         });
     }
 
@@ -205,7 +220,7 @@ impl Task for ChatTask {
     ///
     /// Incoming messages with accepted types will be passed to the task.
     /// Otherwise, the message is dropped.
-    fn supported_types(&self) -> &[&'static str] {
+    fn supported_types(&self) -> &'static [&'static str] {
         &[TYPE_MSG, TYPE_NICK_CHANGE]
     }
 
@@ -232,24 +247,9 @@ impl Task for ChatTask {
         Some(map)
     }
 
-    /// This method is called by the signaling class when sending and receiving 'close' messages.
-    fn on_close(&mut self, reason: CloseCode) {
-        let incoming_tx = self.incoming_tx.clone();
-        let disconnect_tx = mem::replace(&mut self.disconnect_tx, None);
-        self.remote.spawn(move |_|
-            incoming_tx
-                .send(ChatMessage::Disconnect(reason))
-                .then(|_| {
-                    if let Some(channel) = disconnect_tx {
-                        // Shut down task loop, if that hasn't been done yet.
-                        let _ = channel.send(None);
-                    }
-                    future::ok(())
-                })
-        );
-    }
-
     /// This method can be called by the user to close the connection.
+    ///
+    /// It will send the close reason through the disconnect oneshot channel.
     fn close(&mut self, reason: CloseCode) {
         let disconnect_tx = mem::replace(&mut self.disconnect_tx, None);
         if let Some(channel) = disconnect_tx {

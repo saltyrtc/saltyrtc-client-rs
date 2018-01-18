@@ -18,7 +18,7 @@ use errors::{SignalingError, SignalingResult};
 use ::CloseCode;
 use ::protocol::{Address, Cookie};
 use ::protocol::send_error::SendErrorId;
-use ::task::Tasks;
+use ::tasks::Tasks;
 
 
 /// The `Message` enum contains all possible message types that may be used
@@ -442,6 +442,7 @@ impl ResponderAuthBuilder {
 pub(crate) struct Close {
     pub(crate) reason: u16,
 }
+
 
 impl Close {
     pub(crate) fn new(reason: u16) -> Self {

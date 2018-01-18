@@ -405,9 +405,10 @@ fn main() {
                         future::ok(())
                     },
                     ChatMessage::Disconnect(reason) => {
-                        log_line!("*** Connection closed, reason: {}", reason);
+                        log_line!("*** Connection with peer closed, reason: {}", reason);
+                        log_line!("*** Use Ctrl+C to exit");
                         future::err(Ok(()))
-                    }
+                    },
                 }
             }
         })

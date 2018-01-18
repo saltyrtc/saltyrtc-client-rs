@@ -421,7 +421,6 @@ mod client_auth {
             HandleAction::Reply(bbox) => bbox,
             HandleAction::HandshakeDone => panic!("Unexpected HandshakeDone"),
             HandleAction::TaskMessage(_) => panic!("Unexpected TaskMessage"),
-            HandleAction::TaskClose(_) => panic!("Unexpected TaskClose"),
         };
 
         let decrypted = OpenBox::<Message>::decrypt(
