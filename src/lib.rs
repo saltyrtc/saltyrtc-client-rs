@@ -379,7 +379,7 @@ pub fn connect(
 fn decode_ws_message(msg: OwnedMessage) -> SaltyResult<WsMessageDecoded> {
     let decoded = match msg {
         OwnedMessage::Binary(bytes) => {
-            debug!("Incoming binary message ({} bytes)", bytes.len());
+            debug!("--> Incoming binary message ({} bytes)", bytes.len());
 
             // Parse into ByteBox
             let bbox = ByteBox::from_slice(&bytes)
@@ -389,10 +389,11 @@ fn decode_ws_message(msg: OwnedMessage) -> SaltyResult<WsMessageDecoded> {
             WsMessageDecoded::ByteBox(bbox)
         },
         OwnedMessage::Ping(payload) => {
-            debug!("Incoming ping message");
+            debug!("--> Incoming ping message");
             WsMessageDecoded::Ping(payload)
         },
         OwnedMessage::Close(close_data) => {
+            debug!("--> Incoming close message");
             match close_data {
                 Some(data) => {
                     let close_code = CloseCode::from_number(data.status_code);
@@ -568,7 +569,7 @@ pub fn do_handshake(
 pub fn task_loop(
     client: WsClient,
     salty: Rc<RefCell<SaltyClient>>,
-) -> Result<(Arc<Mutex<BoxedTask>>, BoxedFuture<(((), ()), ()), SaltyError>), SaltyError> {
+) -> Result<(Arc<Mutex<BoxedTask>>, BoxedFuture<(), SaltyError>), SaltyError> {
     let task_name = salty
         .deref()
         .try_borrow()
@@ -704,7 +705,7 @@ pub fn task_loop(
                         let pong = OwnedMessage::Pong(payload);
                         let future = raw_outgoing_tx
                             .send(pong)
-                            .map(|_| debug!("Enqueued pong message"))
+                            .map(|_| debug!("<-- Enqueuing pong message"))
                             .map_err(|e| Err(SaltyError::Network(format!("Could not enqueue pong message: {}", e))));
                         boxed!(future)
                     },
@@ -729,7 +730,7 @@ pub fn task_loop(
                         }));
                         raw_outgoing_tx
                             .send(close)
-                            .map(|_| debug!("Sent close message"))
+                            .map(|_| debug!("<-- Enqueuing close message to peer"))
                             .or_else(|e| {
                                 warn!("Could not enqueue close message: {}", e);
                                 future::ok(())
@@ -742,7 +743,7 @@ pub fn task_loop(
                 })
         )
 
-        .map(|_| ())
+        .map(|_| debug!("† Reader future done"))
         .map_err(|(e, _next)| e);
 
     // Transform future that sends values from the outgoing channel to the raw outgoing channel
@@ -756,7 +757,10 @@ pub fn task_loop(
                 // TODO: Can we do something about the errors here?
                 match salty.deref().try_borrow_mut() {
                     Ok(mut s) => match s.encrypt_task_message(val) {
-                        Ok(bytes) => future::ok(OwnedMessage::Binary(bytes)),
+                        Ok(bytes) => {
+                            debug!("<-- Enqueuing task message to peer");
+                            future::ok(OwnedMessage::Binary(bytes))
+                        },
                         Err(_) => future::err(())
                     },
                     Err(_) => future::err(()),
@@ -768,7 +772,7 @@ pub fn task_loop(
         .forward(raw_outgoing_tx.sink_map_err(|_| ()))
 
         // Ignore stream/sink
-        .map(|(_, _)| ())
+        .map(|(_, _)| debug!("† Transformer future done"))
 
         // Map error types
         .map_err(|_| SaltyError::Crash("TODO: read error".into()));
@@ -786,10 +790,19 @@ pub fn task_loop(
         )
 
         // Ignore sink
-        .map(|_| ());
+        .map(|_| debug!("† Writer future done"));
 
     // The task loop is finished when all futures are resolved.
-    let task_loop = boxed!(reader.join(transformer).join(writer));
+    let task_loop = boxed!(
+        future::ok(info!("Starting task loop future"))
+        .and_then(|_| future::select_all(vec![
+            boxed!(reader),
+            boxed!(transformer),
+            boxed!(writer),
+        ]))
+        .and_then(|_| future::ok(info!("† Task loop future done")))
+        .map_err(|(e, _, _)| e)
+    );
 
     // Get reference to task
     let task = match salty.try_borrow_mut() {

@@ -1,24 +1,21 @@
 //! Connect to a server as initiator and print the connection info.
 
-extern crate chrono;
 extern crate clap;
 extern crate cursive;
 extern crate data_encoding;
-extern crate dotenv;
-extern crate env_logger;
 #[macro_use] extern crate failure;
 extern crate futures;
 #[macro_use] extern crate log;
 extern crate native_tls;
 extern crate saltyrtc_client;
+extern crate log4rs;
 extern crate tokio_core;
 
 mod chat_task;
 
 use std::cell::RefCell;
-use std::env;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::Path;
 use std::process;
 use std::rc::Rc;
@@ -26,18 +23,23 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use chrono::Local;
 use clap::{Arg, App, SubCommand};
 use cursive::{Cursive};
 use cursive::traits::{Identifiable};
 use cursive::views::{TextView, EditView, BoxView, LinearLayout};
 use data_encoding::{HEXLOWER};
-use env_logger::{Builder};
 use futures::{Sink, Stream, future};
-use futures::future::{Future};
-use futures::sync::mpsc::{channel};
+use futures::future::Future;
+use futures::sync::mpsc::channel;
+use log::LevelFilter;
+use log4rs::Handle;
+use log4rs::append::console::ConsoleAppender;
+use log4rs::append::file::FileAppender;
+use log4rs::encode::pattern::PatternEncoder;
+use log4rs::config::{Appender, Config, Logger, Root};
+use log4rs::filter::threshold::ThresholdFilter;
 use native_tls::{TlsConnector, Certificate, Protocol};
-use saltyrtc_client::{SaltyClientBuilder, Role, WsClient, Task, BoxedFuture};
+use saltyrtc_client::{SaltyClientBuilder, Role, WsClient, Task, BoxedFuture, CloseCode};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
 use saltyrtc_client::errors::{SaltyError};
 use tokio_core::reactor::{Core};
@@ -60,19 +62,6 @@ macro_rules! boxed {
 
 
 fn main() {
-    dotenv::dotenv().ok();
-    Builder::new()
-        .format(|buf, record| {
-            writeln!(buf, "{} [{:<5}] {} ({}:{})",
-                     Local::now().format("%Y-%m-%dT%H:%M:%S%.3f"),
-                     record.level(),
-                     record.args(),
-                     record.file().unwrap_or("?"),
-                     record.line().map(|num| num.to_string()).unwrap_or("?".to_string()))
-        })
-        .parse(&env::var("RUST_LOG").unwrap_or_default())
-        .init();
-
     const ARG_PATH: &'static str = "path";
     const ARG_AUTHTOKEN: &'static str = "authtoken";
     const ARG_PING_INTERVAL: &'static str = "ping_interval";
@@ -83,7 +72,7 @@ fn main() {
         .takes_value(true)
         .value_name("SECONDS")
         .required(false)
-        .default_value("30")
+        .default_value("60")
         .help("The WebSocket ping interval (set to 0 to disable pings)");
     let app = App::new("SaltyRTC Test Client")
         .version(VERSION)
@@ -127,6 +116,9 @@ fn main() {
             process::exit(1);
         },
     };
+
+    // Set up logging
+    setup_logging(role);
 
     // Tokio reactor core
     let mut core = Core::new().unwrap();
@@ -252,13 +244,13 @@ fn main() {
     let (cb_sink_tx, cb_sink_rx) = mpsc::sync_channel(1);
     let (chat_msg_tx, chat_msg_rx) = channel::<String>(TUI_CHANNEL_BUFFER_SIZE);
     let remote = core.remote();
-    thread::spawn(move || {
+    let tui_thread = thread::spawn(move || {
         // Launch TUI
         let mut tui = Cursive::new();
         tui.set_fps(10);
 
         // Create text view (for displaying messages)
-        let text_view = TextView::new("=== Welcome to SaltyChat! ===\nPress Ctrl+C to exit.\nType /help to list available commands.\n\n")
+        let text_view = TextView::new("=== Welcome to SaltyChat! ===\nType /quit to exit.\nType /help to list available commands.\n\n")
             .scrollable(true)
             .with_id(VIEW_TEXT_ID);
 
@@ -347,6 +339,9 @@ fn main() {
                             tui.quit();
                         })).unwrap();
 
+                        // Disconnect
+                        chat_task.close(CloseCode::WsGoingAway);
+
                         boxed!(future::err(Ok(())))
                     }
                     "/nick" => {
@@ -378,13 +373,19 @@ fn main() {
             }
         })
         .or_else(|res| match res {
-            Ok(_) => future::ok(()),
+            Ok(_) => future::ok(debug!("† Send loop future done")),
             Err(_) => future::err(SaltyError::Crash("Something went wrong when forwarding messages to task".into()))
         });
 
     // Chat message receive loop
-    // TODO: Sanitize incoming messages
+    //
+    // The closure passed to `for_each` must return:
+    //
+    // * `future::ok(())` to continue listening for incoming messages
+    // * `future::err(Ok(()))` to stop the loop without an error
+    // * `future::err(Err(_))` to stop the loop with an error
     let receive_loop = incoming_rx
+        .map_err(|_| Err(()))
         .for_each({
             |msg: ChatMessage| {
                 match msg {
@@ -394,26 +395,79 @@ fn main() {
                             .ok()
                             .and_then(|p| p.clone())
                             .unwrap_or("?".to_string());
-                        log_line!("{}> {}", pn, text)
+                        log_line!("{}> {}", pn, text);
+                        future::ok(())
                     },
                     ChatMessage::NickChange(new_nick) => {
-                        log_line!("*** Partner nick changed to {}", new_nick)
+                        log_line!("*** Partner nick changed to {}", new_nick);
+                        future::ok(())
                     },
                     ChatMessage::Disconnect(reason) => {
-                        log_line!("*** Connection closed, reason: {}", reason)
+                        log_line!("*** Connection closed, reason: {}", reason);
+                        future::err(Ok(()))
                     }
-                };
-                future::ok(())
+                }
             }
         })
-        .map_err(|_| SaltyError::Crash("Something went wrong in message receive loop".into()));
+        .or_else(|res| match res {
+            Ok(_) => future::ok(debug!("† Receive loop future done")),
+            Err(_) => future::err(SaltyError::Crash("Something went wrong in message receive loop".into())),
+        });
+
+    // Main future
+    let main_loop = task_loop
+        .join(
+            send_loop
+                .select(receive_loop)
+                .map_err(|(e, ..)| e)
+        );
 
     // Run future in reactor
-    match core.run(task_loop.join(send_loop).join(receive_loop)) {
+    match core.run(main_loop) {
         Ok(_) => println!("Success."),
         Err(e) => {
             println!("{}", e);
             process::exit(1);
         },
     };
+
+    // Wait for TUI thread to exit
+    tui_thread.join().unwrap();
+
+    info!("Goodbye!");
+}
+
+fn setup_logging(role: Role) -> Handle {
+    // Log format
+    let format = "{d(%Y-%m-%dT%H:%M:%S%.3f)} [{l:<5}] {m} (({f}:{L})){n}";
+
+    // Instantiate appenders
+    let stdout = ConsoleAppender::builder()
+        .encoder(Box::new(PatternEncoder::new(format)))
+        .build();
+    let file = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new(format)))
+        .build(match role {
+            Role::Initiator => "chat.initiator.log",
+            Role::Responder => "chat.responder.log",
+        })
+        .unwrap();
+
+    // Instantiate filters
+    let info_filter = ThresholdFilter::new(LevelFilter::Info);
+
+    let config = Config::builder()
+        // Appenders
+        .appender(Appender::builder().filter(Box::new(info_filter)).build("stdout", Box::new(stdout)))
+        .appender(Appender::builder().build("file", Box::new(file)))
+
+        // Loggers
+        .logger(Logger::builder().build("saltyrtc_client", LevelFilter::Debug))
+        .logger(Logger::builder().build("chat", LevelFilter::Debug))
+
+        // Root logger
+        .build(Root::builder().appender("stdout").appender("file").build(LevelFilter::Info))
+        .unwrap();
+
+    log4rs::init_config(config).unwrap()
 }

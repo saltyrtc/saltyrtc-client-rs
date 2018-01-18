@@ -74,21 +74,11 @@ to connect to the initiator with a responder.
 To see all options, use `cargo run --example chat -- initiator --help` and
 `cargo run --example chat -- responder --help`.
 
+The chat example will log to a file called `chat.log`.
+
 **Note:** The example chat currently expects a [SaltyRTC
 Server](https://github.com/saltyrtc/saltyrtc-server-python/) instance to run on
 `localhost:6699`.
-
-## Logging
-
-The examples use [`env_logger`](https://doc.rust-lang.org/log/env_logger/index.html).
-To see the logs, export an env variable:
-
-    export RUST_LOG=saltyrtc_client=TRACE
-
-The examples initialize the [`dotenv`](https://crates.io/crates/dotenv) crate,
-so you can also store this setting in an `.env` file:
-
-    echo "RUST_LOG=saltyrtc_client=DEBUG" >> .env
 
 
 ## Msgpack Debugging
