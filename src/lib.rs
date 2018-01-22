@@ -12,8 +12,6 @@ extern crate data_encoding;
 #[macro_use]
 extern crate failure;
 #[macro_use]
-extern crate futures;
-#[macro_use]
 extern crate log;
 #[macro_use]
 extern crate mopa;
@@ -28,6 +26,8 @@ extern crate tokio_core;
 extern crate websocket;
 
 // Re-exports
+#[macro_use]
+pub extern crate futures;
 pub extern crate rmpv;
 
 // Modules
