@@ -124,26 +124,11 @@ fn main() {
     // Tokio reactor core
     let mut core = Core::new().unwrap();
 
-    // Read server certificate bytes
-    let mut server_cert_bytes: Vec<u8> = vec![];
-    File::open(&Path::new("saltyrtc.der"))
-        .expect("Could not open saltyrtc.der")
-        .read_to_end(&mut server_cert_bytes)
-        .expect("Could not read saltyrtc.der");
-
-    // Parse server certificate
-    let server_cert = Certificate::from_der(&server_cert_bytes)
-        .unwrap_or_else(|e| {
-            panic!("Problem with CA cert: {}", e);
-        });
-
     // Create TLS connector instance
     let mut tls_builder = TlsConnector::builder()
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector builder: {}", e));
     tls_builder.supported_protocols(&[Protocol::Tlsv11, Protocol::Tlsv11, Protocol::Tlsv10])
         .unwrap_or_else(|e| panic!("Could not set TLS protocols: {}", e));
-    tls_builder.add_root_certificate(server_cert)
-        .unwrap_or_else(|e| panic!("Could not add root certificate: {}", e));
     let tls_connector = tls_builder.build()
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e));
 
@@ -208,8 +193,7 @@ fn main() {
 
     // Connect to server
     let connect_future = saltyrtc_client::connect(
-//            &format!("wss://saltyrtc-00.threema.ch:443/{}", path),
-            &format!("wss://localhost:8765/{}", path),
+            &format!("wss://saltyrtc-00.threema.ch:443/{}", path),
             Some(tls_connector),
             &core.handle(),
             salty_rc.clone(),
