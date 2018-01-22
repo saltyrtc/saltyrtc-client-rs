@@ -26,6 +26,7 @@ use std::time::Duration;
 use clap::{Arg, App, SubCommand};
 use cursive::{Cursive};
 use cursive::traits::{Identifiable};
+use cursive::view::ScrollStrategy;
 use cursive::views::{TextView, EditView, BoxView, LinearLayout};
 use data_encoding::{HEXLOWER};
 use futures::{Sink, Stream, future};
@@ -252,6 +253,7 @@ fn main() {
         // Create text view (for displaying messages)
         let text_view = TextView::new("=== Welcome to SaltyChat! ===\nType /quit to exit.\nType /help to list available commands.\n\n")
             .scrollable(true)
+            .scroll_strategy(ScrollStrategy::StickToBottom)
             .with_id(VIEW_TEXT_ID);
 
         // Create input view (for composing messages)
