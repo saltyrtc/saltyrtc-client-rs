@@ -9,7 +9,7 @@ use futures::sync::mpsc::{Sender, Receiver};
 use futures::sync::oneshot::Sender as OneshotSender;
 use saltyrtc_client::{BoxedFuture, CloseCode};
 use saltyrtc_client::tasks::{Task, TaskMessage};
-use saltyrtc_client::rmpv::Value;
+use saltyrtc_client::dep::rmpv::Value;
 use tokio_core::reactor::Remote;
 
 

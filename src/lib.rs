@@ -12,11 +12,14 @@ extern crate data_encoding;
 #[macro_use]
 extern crate failure;
 #[macro_use]
+extern crate futures;
+#[macro_use]
 extern crate log;
 #[macro_use]
 extern crate mopa;
 extern crate native_tls;
 extern crate rmp_serde;
+extern crate rmpv;
 extern crate rust_sodium;
 extern crate rust_sodium_sys;
 extern crate serde;
@@ -25,10 +28,12 @@ extern crate serde_derive;
 extern crate tokio_core;
 extern crate websocket;
 
-// Re-exports
-#[macro_use]
-pub extern crate futures;
-pub extern crate rmpv;
+/// Re-exports of dependencies that are in the public API.
+pub mod dep {
+    pub extern crate futures;
+    pub extern crate native_tls;
+    pub extern crate rmpv;
+}
 
 // Modules
 mod boxes;
