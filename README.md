@@ -48,7 +48,6 @@ initiator or responder.
 If you start the chat as initiator, the signaling path and auth token will be
 randomly generated and printed:
 
-    $ export RUST_LOG=saltyrtc_client=DEBUG
     $ cargo run --example chat -- initiator
     INFO:saltyrtc_client::crypto: Generating new key pair
     INFO:saltyrtc_client::crypto: Generating new auth token
@@ -74,7 +73,7 @@ to connect to the initiator with a responder.
 To see all options, use `cargo run --example chat -- initiator --help` and
 `cargo run --example chat -- responder --help`.
 
-The chat example will log to a file called `chat.log`.
+The chat example will log to a file called `chat.<role>.log`.
 
 **Note:** The example chat currently expects a [SaltyRTC
 Server](https://github.com/saltyrtc/saltyrtc-server-python/) instance to run on

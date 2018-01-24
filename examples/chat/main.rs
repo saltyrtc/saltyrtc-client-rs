@@ -33,17 +33,17 @@ use futures::{Sink, Stream, future};
 use futures::future::Future;
 use futures::sync::mpsc::channel;
 use log::LevelFilter;
-use log4rs::Handle;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Config, Logger, Root};
 use log4rs::filter::threshold::ThresholdFilter;
 use native_tls::{TlsConnector, Certificate, Protocol};
-use saltyrtc_client::{SaltyClientBuilder, Role, WsClient, Task, BoxedFuture, CloseCode};
+use saltyrtc_client::{SaltyClientBuilder, Role, WsClient, BoxedFuture, CloseCode};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
-use saltyrtc_client::errors::{SaltyError};
-use tokio_core::reactor::{Core};
+use saltyrtc_client::errors::SaltyError;
+use saltyrtc_client::tasks::Task;
+use tokio_core::reactor::Core;
 
 use chat_task::{ChatTask, ChatMessage};
 
@@ -119,7 +119,7 @@ fn main() {
     };
 
     // Set up logging
-    setup_logging(role);
+    let log_handle = log4rs::init_config(setup_logging(role, true)).unwrap();
 
     // Tokio reactor core
     let mut core = Core::new().unwrap();
@@ -240,6 +240,12 @@ fn main() {
             println!("{}", e);
             process::exit(1);
         });
+
+    // Disable logging to stdout
+    // (Causes errors in combination with TUI
+    println!("Starting TUI and disabling logging to stdout. See `chat.{}.log` for logs.",
+             role.to_string().to_lowercase());
+    log_handle.set_config(setup_logging(role, false));
 
     // Launch TUI thread
     let (cb_sink_tx, cb_sink_rx) = mpsc::sync_channel(1);
@@ -440,7 +446,7 @@ fn main() {
     info!("Goodbye!");
 }
 
-fn setup_logging(role: Role) -> Handle {
+fn setup_logging(role: Role, log_to_stdout: bool) -> Config {
     // Log format
     let format = "{d(%Y-%m-%dT%H:%M:%S%.3f)} [{l:<5}] {m} (({f}:{L})){n}";
 
@@ -459,18 +465,23 @@ fn setup_logging(role: Role) -> Handle {
     // Instantiate filters
     let info_filter = ThresholdFilter::new(LevelFilter::Info);
 
-    let config = Config::builder()
+    // Config builder
+    let builder = Config::builder()
+
         // Appenders
         .appender(Appender::builder().filter(Box::new(info_filter)).build("stdout", Box::new(stdout)))
         .appender(Appender::builder().build("file", Box::new(file)))
 
         // Loggers
-        .logger(Logger::builder().build("saltyrtc_client", LevelFilter::Debug))
-        .logger(Logger::builder().build("chat", LevelFilter::Debug))
+        .logger(Logger::builder().build("saltyrtc_client", LevelFilter::Trace))
+        .logger(Logger::builder().build("chat", LevelFilter::Trace));
 
-        // Root logger
-        .build(Root::builder().appender("stdout").appender("file").build(LevelFilter::Info))
-        .unwrap();
+    // Root logger
+    let root = match log_to_stdout {
+        true => Root::builder().appender("stdout").appender("file"),
+        false => Root::builder().appender("file"),
+    };
 
-    log4rs::init_config(config).unwrap()
+    // Build configuration
+    builder.build(root.build(LevelFilter::Info)).unwrap()
 }
