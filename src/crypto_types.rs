@@ -198,15 +198,6 @@ pub struct UnsignedKeys {
     client_permanent_key: PublicKey,
 }
 
-impl UnsignedKeys {
-    pub fn new(server_session_key: PublicKey, client_permanent_key: PublicKey) -> Self {
-        UnsignedKeys {
-            server_session_key: server_session_key,
-            client_permanent_key: client_permanent_key,
-        }
-    }
-}
-
 
 /// The number of bytes in the [`SignedKeys`](struct.SignedKeys.html) array.
 const SIGNED_KEYS_BYTES: usize = 2 * box_::PUBLICKEYBYTES + box_::MACBYTES;

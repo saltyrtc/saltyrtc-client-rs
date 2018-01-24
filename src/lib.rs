@@ -751,10 +751,7 @@ pub fn task_loop(
 
                 // Get reference to SaltyClient
                 // TODO: Can we do something about the errors here?
-                let mut salty_mut = match salty.deref().try_borrow_mut() {
-                    Ok(mut s) => s,
-                    Err(_) => return Err(Err(())),
-                };
+                let mut salty_mut = salty.deref().try_borrow_mut().map_err(|_| Err(()))?;
 
                 // When we receive a `Value` message, simply send it as-is.
                 // But when we receive a `Close` message, also insert a WebSocket close message.

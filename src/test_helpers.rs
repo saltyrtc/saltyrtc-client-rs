@@ -34,7 +34,7 @@ impl DummyTask {
 }
 
 impl Task for DummyTask {
-    fn init(&mut self, data: &Option<HashMap<String, Value>>) -> Result<(), Error> {
+    fn init(&mut self, _data: &Option<HashMap<String, Value>>) -> Result<(), Error> {
         self.initialized = true;
         Ok(())
     }
@@ -47,7 +47,7 @@ impl Task for DummyTask {
         &["dummy"]
     }
 
-    fn send_signaling_message(&self, payload: &[u8]) {
+    fn send_signaling_message(&self, _payload: &[u8]) {
         unimplemented!()
     }
 
@@ -59,7 +59,7 @@ impl Task for DummyTask {
         None
     }
 
-    fn close(&mut self, reason: CloseCode) {
+    fn close(&mut self, _reason: CloseCode) {
         unimplemented!()
     }
 }

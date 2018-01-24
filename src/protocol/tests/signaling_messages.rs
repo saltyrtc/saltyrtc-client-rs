@@ -514,6 +514,7 @@ mod token {
     /// message containing the id of the responder who sent the message and
     /// a close code of 3005 (Initiator Could Not Decrypt) in the reason
     /// field.
+    #[test]
     fn token_initiator_cannot_decrypt() {
         // TODO (#19)!
     }

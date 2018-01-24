@@ -76,15 +76,6 @@ impl Nonce {
         bytes
     }
 
-    /// Create a new instance with dummy data. Used in testing.
-    #[cfg(test)]
-    pub(crate) fn random() -> Self {
-        ::helpers::libsodium_init_or_panic();
-        let mut bytes = [0u8; 24];
-        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
-        Self::from_bytes(&bytes).unwrap()
-    }
-
     /// Return a reference to the cookie bytes.
     pub(crate) fn cookie(&self) -> &Cookie {
         &self.cookie

@@ -220,27 +220,11 @@ impl ServerAuth {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct NewInitiator;
 
-impl NewInitiator {
-    /// Create a new `NewInitiator` message.
-    #[cfg(test)]
-    pub(crate) fn new() -> Self {
-        Self { }
-    }
-}
-
 
 /// Sent by the server to the initiator when a new responder joins.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct NewResponder {
     pub(crate) id: Address,
-}
-
-impl NewResponder {
-    /// Create a new `NewResponder` message.
-    #[cfg(test)]
-    pub(crate) fn new(id: Address) -> Self {
-        Self { id }
-    }
 }
 
 
@@ -445,6 +429,7 @@ pub(crate) struct Close {
 
 
 impl Close {
+    #[cfg(test)]
     pub(crate) fn new(reason: u16) -> Self {
         Self { reason  }
     }
