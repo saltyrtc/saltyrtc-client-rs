@@ -131,7 +131,7 @@ impl KeyPair {
 
 
 /// Wrapper for holding an auth token and encrypting / decrypting messages.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthToken(SecretKey);
 
 impl AuthToken {
