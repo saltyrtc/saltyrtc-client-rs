@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: saltyrtc/circleci-image-rs:latest
+      - image: saltyrtc/circleci-image-rs:master
     steps:
       - checkout
       # Load cargo target from cache if possible.
@@ -12,17 +12,46 @@ jobs:
             - v1-cargo-cache-{{ arch }}-{{ .Branch }}
             - v1-cargo-cache-{{ arch }}
 
-      # Show versions
-      - run: rustc --version && cargo --version
+      # Diagnostics
+      - run:
+          name: Show versions
+          command: rustc --version && cargo --version
 
-      # Regular build
-      - run: cargo build
-      # Run tests
-      - run: cargo test
-      # Build with msgpack debugging
-      - run: cargo build --features 'msgpack-debugging'
-      # Run audit
-      - run: cargo audit
+      # Build and test main Rust code
+      - run:
+          name: Build (Rust)
+          command: cargo build
+      - run:
+          name: Test (Rust)
+          command: cargo test
+      - run:
+          name: Build with flags (Rust)
+          command: cargo build
+      - run:
+          name: Audit (Rust)
+          command: cargo audit
+
+      # Build and test FFI Rust code
+      - run:
+          name: Build (Rust FFI)
+          command: cd ffi && cargo build
+      - run:
+          name: Test (Rust FFI)
+          command: cd ffi && cargo test
+      - run:
+          name: Audit (Rust FFI)
+          command: cd ffi && cargo audit
+
+      # Build and run C tests
+      - run:
+          name: Build (C FFI)
+          command: cd ffi && meson build && cd build && ninja
+      - run:
+          name: Test (C FFI)
+          command: ffi/build/tests
+      - run:
+          name: Check for memory leaks (C FFI)
+          command: valgrind --error-exitcode=23 --leak-check=full ffi/build/tests
 
       - save_cache:
           key: v1-cargo-cache-{{ arch }}-{{ .Branch }}

@@ -93,6 +93,11 @@ env var. This is the default URL:
     MSGPACK_DEBUG_URL='https://msgpack.dbrgn.ch/#base64='
 
 
+## FFI
+
+You can find C FFI bindings in the `ffi` subdirectory of this source repository.
+
+
 <!-- Badges -->
 [circle-ci]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/develop
 [circle-ci-badge]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/develop.svg?style=shield
