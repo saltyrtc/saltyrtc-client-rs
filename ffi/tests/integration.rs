@@ -25,11 +25,10 @@ fn build_tests() -> (MutexGuard<'static, ()>, PathBuf) {
     let build_dir = Path::new(out_dir).join("build");
 
     println!("Running meson...");
-    let output = Command::new("meson")
+    Command::new("meson")
         .arg(build_dir.to_str().unwrap())
         .output()
         .expect("Could not run meson to build C tests");
-    assert_output_success(output);
 
     println!("Running ninja...");
     let output = Command::new("ninja")
