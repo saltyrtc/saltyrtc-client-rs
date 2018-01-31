@@ -46,9 +46,11 @@ jobs:
           key: v1-cargo-cache-{{ arch }}-{{ .Branch }}
           paths:
             - target
+            - ffi/target
             - /usr/local/cargo
       - save_cache:
           key: v1-cargo-cache-{{ arch }}
           paths:
             - target
+            - ffi/target
             - /usr/local/cargo
