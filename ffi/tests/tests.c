@@ -6,7 +6,7 @@
 #include "../saltyrtc_client_ffi.h"
 
 int main() {
-    printf("START\n");
+    printf("START C TESTS\n");
 
     printf("  Creating key pair\n");
     salty_keypair_t *keypair = salty_keypair_new();
@@ -26,5 +26,5 @@ int main() {
     printf("  Freeing key pair\n");
     salty_keypair_free(keypair);
 
-    printf("END\n");
+    printf("END C TESTS\n");
 }

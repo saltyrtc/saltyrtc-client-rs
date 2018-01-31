@@ -14,3 +14,6 @@ tokio-core = "0.1"
 
 [build-dependencies]
 cbindgen = "0.4"
+
+[dev-dependencies]
+lazy_static = "1.0"

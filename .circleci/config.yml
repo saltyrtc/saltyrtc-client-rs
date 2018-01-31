@@ -17,7 +17,7 @@ jobs:
           name: Show versions
           command: rustc --version && cargo --version
 
-      # Build and test main Rust code
+      # Build and test main crate
       - run:
           name: Build (Rust)
           command: cargo build
@@ -31,7 +31,7 @@ jobs:
           name: Audit (Rust)
           command: cargo audit
 
-      # Build and test FFI Rust code
+      # Build and test FFI crate
       - run:
           name: Build (Rust FFI)
           command: cd ffi && cargo build
@@ -41,17 +41,6 @@ jobs:
       - run:
           name: Audit (Rust FFI)
           command: cd ffi && cargo audit
-
-      # Build and run C tests
-      - run:
-          name: Build (C FFI)
-          command: cd ffi && meson build && cd build && ninja
-      - run:
-          name: Test (C FFI)
-          command: ffi/build/tests
-      - run:
-          name: Check for memory leaks (C FFI)
-          command: valgrind --error-exitcode=23 --leak-check=full ffi/build/tests
 
       - save_cache:
           key: v1-cargo-cache-{{ arch }}-{{ .Branch }}
