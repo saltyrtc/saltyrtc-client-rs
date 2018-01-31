@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use failure::Error;
-use futures::sync::mpsc::{Sender, Receiver};
+use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use futures::sync::oneshot::Sender as OneshotSender;
 use rmpv::Value;
 
@@ -39,7 +39,7 @@ impl Task for DummyTask {
         Ok(())
     }
 
-    fn start(&mut self, _: Sender<TaskMessage>, _: Receiver<TaskMessage>, _: OneshotSender<Option<CloseCode>>) {
+    fn start(&mut self, _: UnboundedSender<TaskMessage>, _: UnboundedReceiver<TaskMessage>, _: OneshotSender<Option<CloseCode>>) {
         unimplemented!()
     }
 

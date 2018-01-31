@@ -5,13 +5,13 @@
 ///
 /// All tasks need to implement this interface.
 
-use std::borrow::{Cow};
-use std::collections::{HashMap};
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::iter::IntoIterator;
 
 use failure::Error;
-use futures::sync::mpsc::{Sender, Receiver};
+use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use futures::sync::oneshot::Sender as OneshotSender;
 use mopa::Any;
 use rmpv::Value;
@@ -38,8 +38,8 @@ pub trait Task : Debug + Any {
     ///
     /// This is the point where the task can take over.
     fn start(&mut self,
-             outgoing_tx: Sender<TaskMessage>,
-             incoming_rx: Receiver<TaskMessage>,
+             outgoing_tx: UnboundedSender<TaskMessage>,
+             incoming_rx: UnboundedReceiver<TaskMessage>,
              disconnect_tx: OneshotSender<Option<CloseCode>>);
 
     /// Return supported message types.

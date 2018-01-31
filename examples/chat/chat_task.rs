@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use failure::Error;
 use futures::{Future, Stream, Sink, future};
-use futures::sync::mpsc::{Sender, Receiver};
+use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use futures::sync::oneshot::Sender as OneshotSender;
 use saltyrtc_client::{BoxedFuture, CloseCode};
 use saltyrtc_client::tasks::{Task, TaskMessage};
@@ -39,8 +39,8 @@ pub(crate) struct ChatTask {
     pub(crate) our_name: String,
     pub(crate) peer_name: Arc<Mutex<Option<String>>>,
     remote: Remote,
-    outgoing_tx: Option<Sender<TaskMessage>>,
-    incoming_tx: Sender<ChatMessage>,
+    outgoing_tx: Option<UnboundedSender<TaskMessage>>,
+    incoming_tx: UnboundedSender<ChatMessage>,
     disconnect_tx: Option<OneshotSender<Option<CloseCode>>>,
 }
 
@@ -59,7 +59,7 @@ impl ChatTask {
     /// * `our_name`: Our local chat nickname.
     /// * `remote` A remote reference to a Tokio reactor core.
     /// * `incoming_tx`: The futures channel sender through which incoming chat messages are sent.
-    pub fn new<S: Into<String>>(our_name: S, remote: Remote, incoming_tx: Sender<ChatMessage>) -> Self {
+    pub fn new<S: Into<String>>(our_name: S, remote: Remote, incoming_tx: UnboundedSender<ChatMessage>) -> Self {
         ChatTask {
             our_name: our_name.into(),
             peer_name: Arc::new(Mutex::new(None)),
@@ -132,8 +132,8 @@ impl Task for ChatTask {
     /// This is the point where the task can take over.
     fn start(
         &mut self,
-        outgoing_tx: Sender<TaskMessage>,
-        incoming_rx: Receiver<TaskMessage>,
+        outgoing_tx: UnboundedSender<TaskMessage>,
+        incoming_rx: UnboundedReceiver<TaskMessage>,
         disconnect_tx: OneshotSender<Option<CloseCode>>,
     ) {
         info!("Peer handshake done");

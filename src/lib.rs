@@ -94,8 +94,6 @@ use tasks::{Tasks, TaskMessage, BoxedTask};
 const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
 #[cfg(feature = "msgpack-debugging")]
 const DEFAULT_MSGPACK_DEBUG_URL: &'static str = "https://msgpack.dbrgn.ch/#base64=";
-const SEND_CHANNEL_BUFFER: usize = 32;
-const RECV_CHANNEL_BUFFER: usize = 32;
 
 
 /// A type alias for a boxed future.
@@ -591,10 +589,9 @@ pub fn task_loop(
     let (ws_sink, ws_stream) = client.split();
 
     // Create communication channels
-    // TODO: Use unbounded channels and `unbounded_send`!
-    let (outgoing_tx, outgoing_rx) = mpsc::channel::<TaskMessage>(SEND_CHANNEL_BUFFER);
-    let (raw_outgoing_tx, raw_outgoing_rx) = mpsc::channel::<OwnedMessage>(SEND_CHANNEL_BUFFER);
-    let (incoming_tx, incoming_rx) = mpsc::channel::<TaskMessage>(RECV_CHANNEL_BUFFER);
+    let (outgoing_tx, outgoing_rx) = mpsc::unbounded::<TaskMessage>();
+    let (raw_outgoing_tx, raw_outgoing_rx) = mpsc::unbounded::<OwnedMessage>();
+    let (incoming_tx, incoming_rx) = mpsc::unbounded::<TaskMessage>();
     let (disconnect_tx, disconnect_rx) = oneshot::channel::<Option<CloseCode>>();
 
     // Stream future for processing incoming websocket messages

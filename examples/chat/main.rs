@@ -19,7 +19,7 @@ use std::io::Read;
 use std::path::Path;
 use std::process;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::mpsc as std_mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -31,7 +31,7 @@ use cursive::views::{TextView, EditView, BoxView, LinearLayout};
 use data_encoding::{HEXLOWER};
 use futures::{Sink, Stream, future};
 use futures::future::Future;
-use futures::sync::mpsc::channel;
+use futures::sync::mpsc as futures_mpsc;
 use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::append::file::FileAppender;
@@ -51,7 +51,6 @@ use chat_task::{ChatTask, ChatMessage};
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const VIEW_TEXT_ID: &'static str = "text";
 const VIEW_INPUT_ID: &'static str = "input";
-const TUI_CHANNEL_BUFFER_SIZE: usize = 64;
 
 
 /// Wrap future in a box with type erasure.
@@ -164,7 +163,7 @@ fn main() {
     };
 
     // Create new SaltyRTC client instance
-    let (incoming_tx, incoming_rx) = channel::<ChatMessage>(TUI_CHANNEL_BUFFER_SIZE);
+    let (incoming_tx, incoming_rx) = futures_mpsc::unbounded::<ChatMessage>();
     let (salty, auth_token_hex) = match role {
         Role::Initiator => {
             let task = ChatTask::new("initiat0r", core.remote(), incoming_tx);
@@ -248,8 +247,8 @@ fn main() {
     log_handle.set_config(setup_logging(role, false));
 
     // Launch TUI thread
-    let (cb_sink_tx, cb_sink_rx) = mpsc::sync_channel(1);
-    let (chat_msg_tx, chat_msg_rx) = channel::<String>(TUI_CHANNEL_BUFFER_SIZE);
+    let (cb_sink_tx, cb_sink_rx) = std_mpsc::sync_channel(1);
+    let (chat_msg_tx, chat_msg_rx) = futures_mpsc::unbounded::<String>();
     let remote = core.remote();
     let tui_thread = thread::spawn(move || {
         // Launch TUI
