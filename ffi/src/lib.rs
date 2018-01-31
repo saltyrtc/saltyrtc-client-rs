@@ -25,8 +25,8 @@ use tokio_core::reactor::{Core, Remote};
 /// See https://stackoverflow.com/a/33929480/284318
 #[repr(C)]
 pub struct FFITraitObject {
-    data: *mut c_void,
-    vtable: *mut c_void,
+    pub data: *mut c_void,
+    pub vtable: *mut c_void,
 }
 
 // *** TYPES *** //
