@@ -71,7 +71,7 @@ impl ChatTask {
     }
 
     /// Send a text message through the secure channel.
-    pub fn send_msg(&self, msg: &str) -> Box<Future<Item=(), Error=String>> {
+    pub fn send_msg(&self, msg: &str) -> Result<(), String> {
         // Prepare message map
         let mut map: HashMap<String, Value> = HashMap::new();
         map.insert(KEY_TYPE.into(), Value::String(TYPE_MSG.into()));
@@ -79,16 +79,13 @@ impl ChatTask {
 
         // Send message through channel
         let tx = self.outgoing_tx.clone().expect("outgoing_tx is None");
-        let future = tx
-            .send(TaskMessage::Value(map))
-            .map(|_| ())
-            .map_err(|e| format!("Could not send message: {}", e));
-
-        Box::new(future)
+        tx
+            .unbounded_send(TaskMessage::Value(map))
+            .map_err(|e| format!("Could not send message: {}", e))
     }
 
     /// Change the own nickname.
-    pub fn change_nick(&mut self, new_nick: &str) -> Box<Future<Item=(), Error=String>> {
+    pub fn change_nick(&mut self, new_nick: &str) -> Result<(), String> {
         // Prepare message map
         let mut map: HashMap<String, Value> = HashMap::new();
         map.insert(KEY_TYPE.into(), Value::String(TYPE_NICK_CHANGE.into()));
@@ -96,13 +93,13 @@ impl ChatTask {
 
         // Send message through channel
         let tx = self.outgoing_tx.clone().expect("outgoing_tx is None");
-        let future = tx
-            .send(TaskMessage::Value(map))
-            .map(|_| ())
+        let res = tx
+            .unbounded_send(TaskMessage::Value(map))
             .map_err(|e| format!("Could not change nickname: {}", e));
-        self.our_name = new_nick.into();
-
-        Box::new(future)
+        if res.is_ok() {
+            self.our_name = new_nick.into();
+        }
+        res
     }
 }
 

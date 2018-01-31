@@ -355,10 +355,13 @@ fn main() {
                         match parts.next() {
                             Some(nick) => {
                                 log_line!("*** Changing nickname to {}", nick);
-                                let future = chat_task
-                                    .change_nick(&nick)
-                                    .map_err(|_| Err(()));
-                                boxed!(future)
+                                match chat_task.change_nick(&nick) {
+                                    Ok(_) => boxed!(future::ok(())),
+                                    Err(e) => {
+                                        log_line!("*** Error: {}", e);
+                                        boxed!(future::err(Err(())))
+                                    }
+                                }
                             }
                             None => {
                                 log_line!("*** Usage: /nick <new-nickname>");
@@ -373,10 +376,13 @@ fn main() {
                 }
             } else {
                 log_line!("{}> {}", chat_task.our_name, msg);
-                let future = chat_task
-                    .send_msg(&msg)
-                    .map_err(|_| Err(()));
-                boxed!(future)
+                match chat_task.send_msg(&msg) {
+                    Ok(_) => boxed!(future::ok(())),
+                    Err(e) => {
+                        log_line!("*** Error: {}", e);
+                        boxed!(future::err(Err(())))
+                    }
+                }
             }
         })
         .or_else(|res| match res {
