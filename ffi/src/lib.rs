@@ -12,6 +12,7 @@ extern crate saltyrtc_client;
 extern crate tokio_core;
 
 use std::boxed::Box;
+use std::os::raw::c_void;
 use std::ptr;
 
 use saltyrtc_client::crypto::{KeyPair};
@@ -24,8 +25,8 @@ use tokio_core::reactor::{Core, Remote};
 /// See https://stackoverflow.com/a/33929480/284318
 #[repr(C)]
 pub struct FFITraitObject {
-    data: *mut (),
-    vtable: *mut (),
+    data: *mut c_void,
+    vtable: *mut c_void,
 }
 
 // *** TYPES *** //
