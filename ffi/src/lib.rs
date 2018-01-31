@@ -1,6 +1,12 @@
-/// FFI bindings for the `saltyrtc-client` crate.
-///
-/// The implementation makes use of the opaque pointer pattern.
+//! FFI bindings for the `saltyrtc-client` crate.
+//!
+//! The implementation makes use of the opaque pointer pattern.
+//!
+//! Note: These bindings should not be used directly to build a native library,
+//! instead a custom library crate should inherit from both this crate and
+//! from the task FFI crate.
+#![allow(non_camel_case_types)]
+
 #[macro_use] extern crate log;
 extern crate saltyrtc_client;
 extern crate tokio_core;
@@ -9,22 +15,39 @@ use std::boxed::Box;
 use std::ptr;
 
 use saltyrtc_client::crypto::{KeyPair};
+use saltyrtc_client::tasks::Task;
 use tokio_core::reactor::{Core, Remote};
+
+// *** GENERAL TYPES *** //
+
+/// FFI representation of a trait object.
+/// See https://stackoverflow.com/a/33929480/284318
+#[repr(C)]
+struct FFITraitObject {
+    data: *mut (),
+    vtable: *mut (),
+}
+
+// *** TYPES *** //
 
 /// A key pair.
 #[no_mangle]
-#[allow(non_camel_case_types)]
 pub enum salty_keypair_t {}
 
 /// An event loop instance.
 #[no_mangle]
-#[allow(non_camel_case_types)]
 pub enum salty_event_loop_t {}
 
 /// A remote handle to an event loop instance.
 #[no_mangle]
-#[allow(non_camel_case_types)]
 pub enum salty_remote_t {}
+
+/// A task instance.
+#[no_mangle]
+pub type salty_task_t = FFITraitObject;
+
+
+// *** KEY PAIRS *** //
 
 /// Create a new `KeyPair` instance and return an opaque pointer to it.
 #[no_mangle]
@@ -41,6 +64,9 @@ pub unsafe extern "C" fn salty_keypair_free(ptr: *mut salty_keypair_t) {
     }
     Box::from_raw(ptr as *mut KeyPair);
 }
+
+
+// *** EVENT LOOP *** //
 
 /// Create a new event loop instance.
 ///

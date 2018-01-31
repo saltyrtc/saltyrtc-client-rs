@@ -11,6 +11,12 @@
 #include <stdbool.h>
 
 /*
+ * FFI representation of a trait object.
+ * See https://stackoverflow.com/a/33929480/284318
+ */
+typedef struct FFITraitObject FFITraitObject;
+
+/*
  * An event loop instance.
  */
 typedef struct salty_event_loop_t salty_event_loop_t;
@@ -24,6 +30,11 @@ typedef struct salty_keypair_t salty_keypair_t;
  * A remote handle to an event loop instance.
  */
 typedef struct salty_remote_t salty_remote_t;
+
+/*
+ * A task instance.
+ */
+typedef FFITraitObject salty_task_t;
 
 /*
  * Free an event loop instance.
