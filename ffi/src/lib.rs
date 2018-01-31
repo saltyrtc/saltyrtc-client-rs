@@ -23,7 +23,7 @@ use tokio_core::reactor::{Core, Remote};
 /// FFI representation of a trait object.
 /// See https://stackoverflow.com/a/33929480/284318
 #[repr(C)]
-struct FFITraitObject {
+pub struct FFITraitObject {
     data: *mut (),
     vtable: *mut (),
 }
