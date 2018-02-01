@@ -5,6 +5,14 @@
 //! Note: These bindings should not be used directly to build a native library,
 //! instead a custom library crate should inherit from both this crate and
 //! from the task FFI crate.
+//!
+//! That's also why only some of the types are exposed. It's not currently
+//! meant as a full FFI bindings solution, it only provides some common
+//! building blocks.
+//!
+//! While the library generates a C header file, this is primarily meant
+//! for testing. FFI crates inheriting from this crate should probably
+//! re-export all relevant types and generate their own header files.
 #![allow(non_camel_case_types)]
 
 #[macro_use] extern crate log;
@@ -12,22 +20,11 @@ extern crate saltyrtc_client;
 extern crate tokio_core;
 
 use std::boxed::Box;
-use std::os::raw::c_void;
 use std::ptr;
 
-use saltyrtc_client::crypto::{KeyPair};
-use saltyrtc_client::tasks::Task;
+use saltyrtc_client::crypto::KeyPair;
 use tokio_core::reactor::{Core, Remote};
 
-// *** GENERAL TYPES *** //
-
-/// FFI representation of a trait object.
-/// See https://stackoverflow.com/a/33929480/284318
-#[repr(C)]
-pub struct FFITraitObject {
-    pub data: *mut c_void,
-    pub vtable: *mut c_void,
-}
 
 // *** TYPES *** //
 
@@ -42,10 +39,6 @@ pub enum salty_event_loop_t {}
 /// A remote handle to an event loop instance.
 #[no_mangle]
 pub enum salty_remote_t {}
-
-/// A task instance.
-#[no_mangle]
-pub type salty_task_t = FFITraitObject;
 
 
 // *** KEY PAIRS *** //
