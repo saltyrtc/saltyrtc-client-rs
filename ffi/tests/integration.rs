@@ -19,7 +19,10 @@ fn assert_output_success(output: Output) {
 }
 
 fn build_tests() -> (MutexGuard<'static, ()>, PathBuf) {
-    let guard = C_TEST_MUTEX.lock().unwrap();
+    let guard = match C_TEST_MUTEX.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
 
     let out_dir = env!("OUT_DIR");
     let build_dir = Path::new(out_dir).join("build");
