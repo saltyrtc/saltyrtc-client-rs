@@ -40,6 +40,10 @@ pub enum salty_event_loop_t {}
 #[no_mangle]
 pub enum salty_remote_t {}
 
+/// A SaltyRTC client instance.
+#[no_mangle]
+pub enum salty_client_t {}
+
 
 // *** KEY PAIRS *** //
 
