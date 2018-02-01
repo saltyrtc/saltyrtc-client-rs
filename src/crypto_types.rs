@@ -160,6 +160,16 @@ impl AuthToken {
         Ok(AuthToken(key))
     }
 
+    /// Create an `AuthToken` instance from a 32 byte slice.
+    pub fn from_slice(hex_str: &[u8]) -> SaltyResult<Self> {
+        if hex_str.len() != 32 {
+            return Err(SaltyError::Decode("Invalid auth token bytes: Slice must be 32 bytes long".into()));
+        }
+        let key = SecretKey::from_slice(hex_str)
+            .ok_or(SaltyError::Decode("Invalid auth token bytes: Could not create SecretKey".into()))?;
+        Ok(AuthToken(key))
+    }
+
     /// Return a reference to the secret key.
     pub fn secret_key(&self) -> &SecretKey {
         &self.0
@@ -421,6 +431,18 @@ mod tests {
         let valid_key = "53459fb52fdeeb74103a2932a5eff8095ea1efbaf657f2181722c4e61e6f7e79";
         let res3 = AuthToken::from_hex_str(&valid_key);
         let _ = res3.unwrap();
+    }
+
+    /// Test the `AuthToken::from_slice` method.
+    #[test]
+    fn auth_token_from_slice() {
+        let too_short = [0; 31];
+        let res1 = AuthToken::from_slice(&too_short);
+        assert_eq!(res1, Err(SaltyError::Decode("Invalid auth token bytes: Slice must be 32 bytes long".into())));
+
+        let valid_token = [1; 32];
+        let res2 = AuthToken::from_slice(&valid_token);
+        let _ = res2.unwrap();
     }
 
 }
