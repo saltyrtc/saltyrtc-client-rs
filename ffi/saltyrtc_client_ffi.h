@@ -11,6 +11,11 @@
 #include <stdbool.h>
 
 /*
+ * A SaltyRTC client instance.
+ */
+typedef struct salty_client_t salty_client_t;
+
+/*
  * An event loop instance.
  */
 typedef struct salty_event_loop_t salty_event_loop_t;

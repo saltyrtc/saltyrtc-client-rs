@@ -6,5 +6,10 @@ braces = "SameLine"
 [parse]
 parse_deps = false
 
+[export]
+include = [
+    "salty_client_t",
+]
+
 [fn]
 args = "Vertical"
