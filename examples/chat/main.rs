@@ -139,7 +139,7 @@ fn main() {
     // Create TLS connector instance
     let mut tls_builder = TlsConnector::builder()
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector builder: {}", e));
-    tls_builder.supported_protocols(&[Protocol::Tlsv11, Protocol::Tlsv11, Protocol::Tlsv10])
+    tls_builder.supported_protocols(&[Protocol::Tlsv12, Protocol::Tlsv11, Protocol::Tlsv10])
         .unwrap_or_else(|e| panic!("Could not set TLS protocols: {}", e));
     tls_builder.add_root_certificate(server_cert)
         .unwrap_or_else(|e| panic!("Could not add root certificate: {}", e));
