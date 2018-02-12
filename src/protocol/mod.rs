@@ -120,6 +120,9 @@ pub(crate) trait Signaling {
     /// Return the peer context with the specified address.
     fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut PeerContext>;
 
+    /// Return the initiator public permanent key.
+    fn initiator_pubkey(&self) -> &PublicKey;
+
     /// Validate the nonce destination.
     fn validate_nonce_destination(&mut self, nonce: &Nonce) -> Result<(), ValidationError>;
 
@@ -753,6 +756,10 @@ impl Signaling for InitiatorSignaling {
         }
     }
 
+    fn initiator_pubkey(&self) -> &PublicKey {
+        self.common().permanent_keypair.public_key()
+    }
+
     fn validate_nonce_destination(&mut self, nonce: &Nonce) -> Result<(), ValidationError> {
 		// A client MUST check that the destination address targets its
 		// assigned identity (or `0x00` during authentication).
@@ -1256,6 +1263,10 @@ impl Signaling for ResponderSignaling {
             Identity::Initiator => Some(&mut self.initiator),
             Identity::Responder(_) => None,
         }
+    }
+
+    fn initiator_pubkey(&self) -> &PublicKey {
+        &self.initiator.permanent_key
     }
 
     fn validate_nonce_destination(&mut self, nonce: &Nonce) -> Result<(), ValidationError> {

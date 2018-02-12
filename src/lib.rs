@@ -56,20 +56,21 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 // Third party imports
+use data_encoding::HEXLOWER;
 use futures::{stream, Future, Stream, Sink};
 use futures::future::{self, Loop};
 use futures::sync::mpsc;
 use futures::sync::oneshot;
-use native_tls::{TlsConnector};
+use native_tls::TlsConnector;
 use rmpv::Value;
-use tokio_core::reactor::{Handle};
+use tokio_core::reactor::Handle;
 use tokio_core::net::TcpStream;
-use websocket::{WebSocketError};
-use websocket::client::{ClientBuilder};
+use websocket::WebSocketError;
+use websocket::client::ClientBuilder;
 use websocket::client::async::{Client, TlsStream};
-use websocket::client::builder::{Url};
-use websocket::ws::dataframe::{DataFrame};
-use websocket::header::{WebSocketProtocol};
+use websocket::client::builder::Url;
+use websocket::ws::dataframe::DataFrame;
+use websocket::header::WebSocketProtocol;
 use websocket::message::{OwnedMessage, CloseData};
 
 // Re-exports
@@ -78,7 +79,7 @@ pub use protocol::{Role};
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
     pub use crypto_types::{KeyPair, PublicKey, PrivateKey, AuthToken};
-    pub use crypto_types::{public_key_from_hex_str};
+    pub use crypto_types::public_key_from_hex_str;
 }
 
 // Internal imports
@@ -210,6 +211,11 @@ impl SaltyClient {
         self.signaling.auth_token()
     }
 
+    /// Return a reference to the initiator public key.
+    pub fn initiator_pubkey(&self) -> &PublicKey {
+        self.signaling.initiator_pubkey()
+    }
+
     /// Return a reference to the selected task.
     pub fn task(&self) -> Option<Arc<Mutex<BoxedTask>>> {
         self.signaling
@@ -332,7 +338,8 @@ enum WsMessageDecoded {
 /// The future completes once the server connection is established.
 /// It returns the async websocket client instance.
 pub fn connect(
-    url: &str, // TODO: Derive from SaltyClient instance
+    host: &str,
+    port: u16,
     tls_config: Option<TlsConnector>,
     handle: &Handle,
     salty: Rc<RefCell<SaltyClient>>,
@@ -341,7 +348,11 @@ pub fn connect(
     libsodium_init()?;
 
     // Parse URL
-    let ws_url = match Url::parse(url) {
+    let path = salty.try_borrow()
+        .map(|client| HEXLOWER.encode(&client.initiator_pubkey().0))
+        .map_err(|_| SaltyError::Crash("Could not borrow SaltyClient instance".into()))?;
+    let url = format!("wss://{}:{}/{}", host, port, path);
+    let ws_url = match Url::parse(&url) {
         Ok(b) => b,
         Err(e) => return Err(SaltyError::Decode(format!("Could not parse URL: {}", e))),
     };

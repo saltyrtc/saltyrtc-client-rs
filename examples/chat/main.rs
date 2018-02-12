@@ -207,8 +207,8 @@ fn main() {
 
     // Connect to server
     let connect_future = saltyrtc_client::connect(
-//            &format!("wss://saltyrtc-00.threema.ch:443/{}", path),
-            &format!("wss://localhost:8765/{}", path),
+            "localhost",
+            8765,
             Some(tls_connector),
             &core.handle(),
             salty_rc.clone(),
