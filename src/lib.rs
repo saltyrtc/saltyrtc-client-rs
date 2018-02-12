@@ -195,6 +195,11 @@ pub struct SaltyClient {
 
 impl SaltyClient {
 
+    /// Instantiate a new builder.
+    pub fn build(permanent_key: KeyPair) -> SaltyClientBuilder {
+        SaltyClientBuilder::new(permanent_key)
+    }
+
     /// Return the assigned role.
     pub fn role(&self) -> Role {
         self.signaling.role()
@@ -460,7 +465,7 @@ fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> Sal
             return Ok(action);
         },
     };
-    Ok((PipelineAction::ByteBox((client, bbox))))
+    Ok(PipelineAction::ByteBox((client, bbox)))
 }
 
 /// Do the server and peer handshake.

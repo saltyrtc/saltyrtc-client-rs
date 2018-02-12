@@ -39,7 +39,7 @@ use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Config, Logger, Root};
 use log4rs::filter::threshold::ThresholdFilter;
 use native_tls::{TlsConnector, Certificate, Protocol};
-use saltyrtc_client::{SaltyClientBuilder, Role, WsClient, BoxedFuture, CloseCode};
+use saltyrtc_client::{SaltyClient, Role, WsClient, BoxedFuture, CloseCode};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
 use saltyrtc_client::errors::SaltyError;
 use saltyrtc_client::tasks::Task;
@@ -167,7 +167,7 @@ fn main() {
     let (salty, auth_token_hex) = match role {
         Role::Initiator => {
             let task = ChatTask::new("initiat0r", core.remote(), incoming_tx);
-            let salty = SaltyClientBuilder::new(keypair)
+            let salty = SaltyClient::build(keypair)
                 .add_task(Box::new(task))
                 .with_ping_interval(Some(ping_interval))
                 .initiator()
@@ -180,7 +180,7 @@ fn main() {
             let auth_token_hex = args.value_of(ARG_AUTHTOKEN).expect("Auth token not supplied").to_string();
             let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
             let initiator_pubkey = public_key_from_hex_str(&path).unwrap();
-            let salty = SaltyClientBuilder::new(keypair)
+            let salty = SaltyClient::build(keypair)
                 .add_task(Box::new(task))
                 .with_ping_interval(Some(ping_interval))
                 .responder(initiator_pubkey, Some(auth_token))
