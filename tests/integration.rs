@@ -5,12 +5,15 @@
 
 extern crate failure;
 extern crate saltyrtc_client;
+extern crate tokio_core;
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::rc::Rc;
 use std::time::Duration;
 
 use failure::Error;
@@ -21,6 +24,7 @@ use saltyrtc_client::dep::futures::sync::mpsc::{UnboundedSender, UnboundedReceiv
 use saltyrtc_client::dep::futures::sync::oneshot::Sender as OneshotSender;
 use saltyrtc_client::dep::rmpv::Value;
 use saltyrtc_client::tasks::{Task, TaskMessage};
+use tokio_core::reactor::Core;
 
 
 fn get_tls_connector() -> TlsConnector {
@@ -49,18 +53,38 @@ fn get_tls_connector() -> TlsConnector {
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e))
 }
 
+
 /// Connection timeout to a server should be configurable.
 #[test]
 fn connection_error() {
+    // Initialize SaltyRTC
     let keypair = KeyPair::new();
     let task = DummyTask::new(1);
-    let salty = SaltyClient::build(keypair)
-        .add_task(Box::new(task))
-        .with_ping_interval(Some(Duration::from_secs(30)))
-        .initiator()
-        .expect("Could not create SaltyClient instance");
+    let salty = Rc::new(RefCell::new(
+        SaltyClient::build(keypair)
+            .add_task(Box::new(task))
+            .with_ping_interval(Some(Duration::from_secs(30)))
+            .initiator()
+            .expect("Could not create SaltyClient instance")
+    ));
 
-    //saltyrtc_client::connect()
+    // Reactor
+    let mut core = Core::new().unwrap();
+    let handle = core.handle();
+
+    // Connect
+    let future = saltyrtc_client::connect(
+        "localhost",
+        8765,
+        Some(get_tls_connector()),
+        &handle,
+        salty,
+    ).unwrap();
+
+    // Run future to completion
+    core.run(future).unwrap();
+
+    // TODO: Actually test the testcase
 }
 
 
