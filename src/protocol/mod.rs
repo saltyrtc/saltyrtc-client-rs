@@ -35,7 +35,7 @@ use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderConte
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
     Message, ServerHello, ServerAuth, ClientHello, ClientAuth,
-    NewResponder, DropResponder, DropReason,
+    NewInitiator, NewResponder, DropResponder, DropReason,
     SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder, Close,
 };
 pub(crate) use self::nonce::{Nonce};
@@ -482,10 +482,12 @@ pub(crate) trait Signaling {
                 self.handle_server_hello(msg),
             (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
                 self.handle_server_auth(msg),
+            (ServerHandshakeState::Done, Message::NewInitiator(msg)) =>
+                self.handle_new_initiator(msg),
             (ServerHandshakeState::Done, Message::NewResponder(msg)) =>
                 self.handle_new_responder(msg),
             (ServerHandshakeState::Done, Message::DropResponder(_msg)) =>
-                unimplemented!("Handling DropResponder messages not yet implemented"),
+                unimplemented!("TODO (#36): Handling DropResponder messages not yet implemented"),
             (ServerHandshakeState::Done, Message::SendError(msg)) =>
                 self.handle_send_error(msg),
 
@@ -627,6 +629,9 @@ pub(crate) trait Signaling {
 
     /// Role-specific handling of an incoming [`ServerAuth`](messages/struct.ServerAuth.html) message.
     fn handle_server_auth_impl(&mut self, msg: &ServerAuth) -> SignalingResult<Vec<HandleAction>>;
+
+    /// Handle an incoming [`NewInitiator`](messages/struct.NewInitiator.html) message.
+    fn handle_new_initiator(&mut self, msg: NewInitiator) -> SignalingResult<Vec<HandleAction>>;
 
     /// Handle an incoming [`NewResponder`](messages/struct.NewResponder.html) message.
     fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>>;
@@ -950,6 +955,10 @@ impl Signaling for InitiatorSignaling {
         // TODO (#15): Implement
 
         Ok(vec![])
+    }
+
+    fn handle_new_initiator(&mut self, _msg: NewInitiator) -> SignalingResult<Vec<HandleAction>> {
+        Err(SignalingError::Protocol("Received 'new-responder' message as initiator".into()))
     }
 
     fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
@@ -1402,6 +1411,29 @@ impl Signaling for ResponderSignaling {
                 "We're a responder, but the `initiator_connected` field in the server-auth message is not set".into()
             )),
         }
+        Ok(actions)
+    }
+
+    fn handle_new_initiator(&mut self, _msg: NewInitiator) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received new-initiator from server");
+
+        let mut actions: Vec<HandleAction> = vec![];
+
+        // A responder who receives a 'new-initiator' message MUST proceed by
+        // deleting all currently cached information about and for the previous
+        // initiator (such as cookies and the sequence numbers)...
+        self.initiator = InitiatorContext::new(self.initiator.permanent_key);
+
+        // ...and continue by sending a 'token' or 'key' client-to-client
+        // message described in the Client-to-Client Messages section.
+        if let Some(ref token) = self.common().auth_token {
+            actions.push(self.send_token(&token)?);
+        } else {
+            debug!("No auth token set");
+        }
+        actions.push(self.send_key()?);
+        self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
+
         Ok(actions)
     }
 

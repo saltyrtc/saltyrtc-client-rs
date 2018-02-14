@@ -8,7 +8,7 @@ use super::*;
 struct TestContext<S: Signaling> {
     /// Our permanent keypair.
     pub our_ks: KeyPair,
-    /// The server permanent keypair.
+    /// The server session keypair.
     pub server_ks: KeyPair,
     /// Our cookie towards the server.
     pub our_cookie: Cookie,
@@ -40,11 +40,11 @@ impl TestContext<InitiatorSignaling> {
         signaling.server_mut().session_key = Some(server_ks.public_key().clone());
         signaling.common_mut().set_signaling_state(signaling_state).expect("Could not set signaling state");
         TestContext {
-            our_ks: our_ks,
-            server_ks: server_ks,
-            our_cookie: our_cookie,
-            server_cookie: server_cookie,
-            signaling: signaling,
+            our_ks,
+            server_ks,
+            our_cookie,
+            server_cookie,
+            signaling,
         }
     }
 }
@@ -79,11 +79,11 @@ impl TestContext<ResponderSignaling> {
         signaling.server_mut().session_key = Some(server_ks.public_key().clone());
         signaling.common_mut().set_signaling_state(signaling_state).expect("Could not set signaling state");
         TestContext {
-            our_ks: our_ks,
-            server_ks: server_ks,
-            our_cookie: our_cookie,
-            server_cookie: server_cookie,
-            signaling: signaling,
+            our_ks,
+            server_ks,
+            our_cookie,
+            server_cookie,
+            signaling,
         }
     }
 }
@@ -682,9 +682,6 @@ mod auth {
         ctx.signaling.responders.insert(Address(4), make_responder(4, ResponderHandshakeState::New));
         ctx.signaling.responders.insert(Address(7), make_responder(7, ResponderHandshakeState::KeySent));
 
-        // Set a server session key
-        ctx.signaling.server_mut().session_key = Some(PublicKey::random());
-
         (ctx, responder)
     }
 
@@ -700,9 +697,6 @@ mod auth {
         // Create new initiator context
         ctx.signaling.initiator.set_handshake_state(InitiatorHandshakeState::AuthSent);
         ctx.signaling.initiator.session_key = Some(PublicKey::random());
-
-        // Set a server session key
-        ctx.signaling.server_mut().session_key = Some(PublicKey::random());
 
         ctx
     }
@@ -1036,4 +1030,70 @@ mod auth {
         assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::Task);
         assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::AuthReceived);
     }
+}
+
+mod new_initiator {
+    use super::*;
+
+    /// An initiator should reject `NewInitiator` messages.
+    #[test]
+    fn handle_as_initiator() {
+        let mut ctx = TestContext::initiator(
+            ClientIdentity::Initiator,
+            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+        );
+
+        // Encrypt message
+        let msg = Message::NewInitiator(NewInitiator);
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
+            .build(ctx.server_cookie.clone(),
+                   &ctx.server_ks,
+                   ctx.our_ks.public_key());
+
+        // Handle message
+        let err = ctx.signaling.handle_message(bbox).unwrap_err();
+        let msg = "Received \'new-responder\' message as initiator".into();
+        assert_eq!(err, SignalingError::Protocol(msg))
+    }
+
+    /// A responder should properly handle `NewInitiator` messages.
+    #[test]
+    fn handle_as_responder() {
+        let mut ctx = TestContext::responder(
+            ClientIdentity::Responder(7),
+            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            None,
+            None,
+        );
+
+        // Encrypt message
+        let msg = Message::NewInitiator(NewInitiator);
+        let bbox = TestMsgBuilder::new(msg).from(0).to(7)
+            .build(ctx.server_cookie.clone(),
+                   &ctx.server_ks,
+                   ctx.our_ks.public_key());
+
+        // Old initiator context
+        let old_cookie_pair = ctx.signaling.initiator.cookie_pair().clone();
+        assert!(ctx.signaling.initiator.csn_pair.borrow().theirs.is_none());
+        ctx.signaling.initiator.csn_pair.borrow_mut().theirs = Some(CombinedSequenceSnapshot::new(0, 0));
+        ctx.signaling.initiator.set_handshake_state(InitiatorHandshakeState::AuthSent);
+
+        // Handle message
+        let actions = ctx.signaling.handle_message(bbox).unwrap();
+
+        // A responder who receives a 'new-initiator' message MUST proceed by deleting
+        // all currently cached information about and for the previous initiator
+        // (such as cookies and the sequence numbers)...
+        let new_cookie_pair = ctx.signaling.initiator.cookie_pair().clone();
+        assert_ne!(old_cookie_pair, new_cookie_pair);
+        assert!(ctx.signaling.initiator.csn_pair.borrow().theirs.is_none());
+        assert_ne!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::AuthSent);
+
+        // ...and continue by sending a 'token' or 'key' client-to-client message
+        // described in the Client-to-Client Messages section.
+        assert_eq!(actions.len(), 1);
+        assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::KeySent);
+    }
+
 }
