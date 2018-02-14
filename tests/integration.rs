@@ -154,7 +154,7 @@ fn connection_error_refused() {
 fn connection_error_no_host() {
     init_logging();
     let result = connect_to(
-        "1.1.1.1",
+        "192.0.2.100", // RFC 5737 documentation subnet
         8765,
         Some(get_tls_connector())
     );
