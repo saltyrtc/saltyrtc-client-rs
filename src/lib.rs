@@ -494,13 +494,6 @@ pub fn do_handshake(
     timeout: Option<Duration>,
 ) -> BoxedFuture<WsClient, SaltyError> {
 
-    let role = salty
-        .deref()
-        .try_borrow()
-        .map(|s| s.role().to_string())
-        .unwrap_or_else(|_| "Unknown".to_string());
-    info!("Connected to server as {}", role);
-
     // Main loop
     let main_loop = future::loop_fn(client, move |client| {
 
