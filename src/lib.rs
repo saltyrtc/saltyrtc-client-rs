@@ -26,6 +26,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate tokio_core;
+extern crate tokio_timer;
 extern crate websocket;
 
 /// Re-exports of dependencies that are in the public API.
@@ -65,6 +66,7 @@ use native_tls::TlsConnector;
 use rmpv::Value;
 use tokio_core::reactor::Handle;
 use tokio_core::net::TcpStream;
+use tokio_timer::Timer;
 use websocket::WebSocketError;
 use websocket::client::ClientBuilder;
 use websocket::client::async::{Client, TlsStream};
@@ -489,6 +491,7 @@ fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> Sal
 pub fn do_handshake(
     client: WsClient,
     salty: Rc<RefCell<SaltyClient>>,
+    timeout: Option<Duration>,
 ) -> BoxedFuture<WsClient, SaltyError> {
 
     let role = salty
@@ -580,7 +583,13 @@ pub fn do_handshake(
             })
     });
 
-    boxed!(main_loop)
+    let timeout_duration = match timeout {
+        Some(duration) => duration,
+        None => return boxed!(main_loop)
+    };
+
+    let timer = Timer::default();
+    boxed!(timer.timeout(main_loop, timeout_duration))
 }
 
 pub fn task_loop(

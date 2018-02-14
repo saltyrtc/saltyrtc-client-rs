@@ -6,6 +6,7 @@
 use std::convert::From;
 
 use rmp_serde::decode::Error as SerdeDecodeError;
+use tokio_timer::TimeoutError;
 
 
 /// Re-exported [`Error`](../../failure/struct.Error.html) type from the
@@ -36,6 +37,10 @@ pub enum SaltyError {
     /// the implementation.
     #[fail(display = "An unexpected error occurred: {}. This indicates a bug and should be reported!", _0)]
     Crash(String),
+
+    /// A future timed out.
+    #[fail(display = "Future timed out")]
+    Timeout,
 }
 
 impl From<SignalingError> for SaltyError {
@@ -47,6 +52,12 @@ impl From<SignalingError> for SaltyError {
             SignalingError::NoSharedTask => SaltyError::Crash("No shared task found (TODO #5)".into()),
             other => SaltyError::Crash(format!("Signaling error (TODO #5): {}", other)),
         }
+    }
+}
+
+impl<F> From<TimeoutError<F>> for SaltyError {
+    fn from(_: TimeoutError<F>) -> Self {
+        SaltyError::Timeout
     }
 }
 

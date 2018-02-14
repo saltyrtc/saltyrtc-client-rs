@@ -218,7 +218,7 @@ fn main() {
     // Do handshake
     let handshake_future = connect_future
         .map(|client| { println!("Connected to server"); client })
-        .and_then(|client| saltyrtc_client::do_handshake(client, salty_rc.clone()))
+        .and_then(|client| saltyrtc_client::do_handshake(client, salty_rc.clone(), None))
         .map(|client| { println!("Handshake done"); client });
 
     // Run future in reactor to process handshake

@@ -30,6 +30,7 @@ use log4rs::encode::writer::simple::SimpleWriter;
 use saltyrtc_client::{SaltyClient, CloseCode, WsClient};
 use saltyrtc_client::crypto::KeyPair;
 use saltyrtc_client::errors::SaltyError;
+use saltyrtc_client::dep::futures::Future;
 use saltyrtc_client::dep::native_tls::{Certificate, TlsConnector, Protocol};
 use saltyrtc_client::dep::futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use saltyrtc_client::dep::futures::sync::oneshot::Sender as OneshotSender;
@@ -117,13 +118,16 @@ fn connect_to(host: &str, port: u16, tls_connector: Option<TlsConnector>) -> Res
     let handle = core.handle();
 
     // Connect
+    let timeout = Duration::from_millis(1000);
     let future = saltyrtc_client::connect(
-        host,
-        port,
-        tls_connector,
-        &handle,
-        salty,
-    ).unwrap();
+            host,
+            port,
+            tls_connector,
+            &handle,
+            salty.clone(),
+        )
+        .unwrap()
+        .and_then(|client| saltyrtc_client::do_handshake(client, salty, Some(timeout)));
 
     // Run future to completion
     core.run(future)
@@ -177,6 +181,24 @@ fn connection_error_tls_error() {
                 "Could not connect to server: WebSocketError: TLS failure: The OpenSSL library reported an error"
             )),
             other => panic!("Connection should have failed with Network error, but failed with {:?}", other),
+        },
+    };
+}
+
+/// A connection should time out.
+#[test]
+fn connection_timeout() {
+    init_logging();
+    let result = connect_to(
+        "localhost",
+        8765,
+        Some(get_tls_connector())
+    );
+    match result {
+        Ok(_) => panic!("Connection should have failed but did not!"),
+        Err(e) => match e {
+            SaltyError::Timeout => { /* yep! */ },
+            other => panic!("Connection should have failed with Timeout error, but failed with {:?}", other),
         },
     };
 }

@@ -19,6 +19,7 @@ rust_sodium = { version = "0.7.0", features = ["serde"] }
 serde = "1.0"
 serde_derive = "1.0"
 tokio-core = "0.1.9"
+tokio-timer = "0.1"
 websocket = "0.20.2"
 
 [dev-dependencies]
