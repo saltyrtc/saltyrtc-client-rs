@@ -5,6 +5,7 @@ jobs:
       - image: saltyrtc/circleci-image-rs:master
     steps:
       - checkout
+
       # Load cargo target from cache if possible.
       # Multiple caches are used to increase the chance of a cache hit.
       - restore_cache:
@@ -16,6 +17,19 @@ jobs:
       - run:
           name: Show versions
           command: rustc --version && cargo --version
+
+      # Certificates
+      - run:
+          name: Generate certificates
+          command: /saltyrtc/certs/generate-cert.sh
+      - run:
+          name: Copy certificate
+          command: cp /saltyrtc/certs/saltyrtc.der .
+
+      # Start processes
+      - run:
+          name: Start SaltyRTC server
+          command: nohup saltyrtc-server-launcher > server.pid
 
       # Build and test main crate
       - run:
@@ -42,6 +56,12 @@ jobs:
           name: Audit (Rust FFI)
           command: cd ffi && cargo audit
 
+      # Show server log
+      - run:
+          name: Print server log
+          command: cat /saltyrtc/serverlog.txt
+
+      # Save cache
       - save_cache:
           key: v1-cargo-cache-{{ arch }}-{{ .Branch }}
           paths:
