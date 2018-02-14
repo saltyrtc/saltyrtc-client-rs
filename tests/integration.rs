@@ -149,22 +149,6 @@ fn connection_error_refused() {
     };
 }
 
-/// Connections to an invalid host should fail with a NetworkError.
-#[test]
-fn connection_error_no_host() {
-    init_logging();
-    let result = connect_to(
-        "192.0.2.100", // RFC 5737 documentation subnet
-        8765,
-        Some(get_tls_connector())
-    );
-    let errmsg = "Could not connect to server: WebSocketError: I/O failure: No route to host (os error 113)".into();
-    match result {
-        Ok(_) => panic!("Connection should have failed but did not!"),
-        Err(e) => assert_eq!(e, SaltyError::Network(errmsg)),
-    };
-}
-
 /// The TLS cert is made for "localhost", so connections to "127.0.0.1" should fail.
 #[test]
 fn connection_error_tls_error() {
