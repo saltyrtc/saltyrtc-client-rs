@@ -17,8 +17,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use failure::Error;
-use saltyrtc_client::{SaltyClient, CloseCode};
+use saltyrtc_client::{SaltyClient, CloseCode, WsClient};
 use saltyrtc_client::crypto::KeyPair;
+use saltyrtc_client::errors::SaltyError;
 use saltyrtc_client::dep::native_tls::{Certificate, TlsConnector, Protocol};
 use saltyrtc_client::dep::futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use saltyrtc_client::dep::futures::sync::oneshot::Sender as OneshotSender;
@@ -54,9 +55,7 @@ fn get_tls_connector() -> TlsConnector {
 }
 
 
-/// Connection timeout to a server should be configurable.
-#[test]
-fn connection_error() {
+fn connect_to(host: &str, port: u16, tls_connector: Option<TlsConnector>) -> Result<WsClient, SaltyError> {
     // Initialize SaltyRTC
     let keypair = KeyPair::new();
     let task = DummyTask::new(1);
@@ -74,17 +73,64 @@ fn connection_error() {
 
     // Connect
     let future = saltyrtc_client::connect(
-        "localhost",
-        8765,
-        Some(get_tls_connector()),
+        host,
+        port,
+        tls_connector,
         &handle,
         salty,
     ).unwrap();
 
     // Run future to completion
-    core.run(future).unwrap();
+    core.run(future)
+}
 
-    // TODO: Actually test the testcase
+/// Connections to a port without a listening service should fail with a NetworkError.
+#[test]
+fn connection_error_refused() {
+    let result = connect_to(
+        "localhost",
+        15431,
+        Some(get_tls_connector())
+    );
+    let errmsg = "Could not connect to server: WebSocketError: I/O failure: Connection refused (os error 111)".into();
+    match result {
+        Ok(_) => panic!("Connection should have failed but did not!"),
+        Err(e) => assert_eq!(e, SaltyError::Network(errmsg)),
+    };
+}
+
+/// Connections to an invalid host should fail with a NetworkError.
+#[test]
+fn connection_error_no_host() {
+    let result = connect_to(
+        "1.1.1.1",
+        8765,
+        Some(get_tls_connector())
+    );
+    let errmsg = "Could not connect to server: WebSocketError: I/O failure: No route to host (os error 113)".into();
+    match result {
+        Ok(_) => panic!("Connection should have failed but did not!"),
+        Err(e) => assert_eq!(e, SaltyError::Network(errmsg)),
+    };
+}
+
+/// The TLS cert is made for "localhost", so connections to "127.0.0.1" should fail.
+#[test]
+fn connection_error_tls_error() {
+    let result = connect_to(
+        "127.0.0.1",
+        8765,
+        Some(get_tls_connector())
+    );
+    match result {
+        Ok(_) => panic!("Connection should have failed but did not!"),
+        Err(e) => match e {
+            SaltyError::Network(msg) => assert!(msg.starts_with(
+                "Could not connect to server: WebSocketError: TLS failure: The OpenSSL library reported an error"
+            )),
+            other => panic!("Connection should have failed with Network error, but failed with {:?}", other),
+        },
+    };
 }
 
 
