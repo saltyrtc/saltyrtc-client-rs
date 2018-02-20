@@ -279,7 +279,7 @@ pub enum CloseCode {
 }
 
 impl CloseCode {
-    fn as_number(&self) -> u16 {
+    pub fn as_number(&self) -> u16 {
         use CloseCode::*;
         match *self {
             WsGoingAway => 1001,
@@ -295,7 +295,7 @@ impl CloseCode {
         }
     }
 
-    fn from_number(code: u16) -> Option<CloseCode> {
+    pub fn from_number(code: u16) -> Option<CloseCode> {
         use CloseCode::*;
         match code {
             1001 => Some(WsGoingAway),
