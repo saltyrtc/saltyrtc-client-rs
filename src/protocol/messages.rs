@@ -47,6 +47,8 @@ pub(crate) enum Message {
     DropResponder(DropResponder),
     #[serde(rename = "send-error")]
     SendError(SendError),
+    #[serde(rename = "disconnected")]
+    Disconnected(Disconnected),
 
     // Client to client messages
     #[serde(rename = "token")]
@@ -82,6 +84,7 @@ impl Message {
             Message::NewResponder(_) => "new-responder",
             Message::DropResponder(_) => "drop-responder",
             Message::SendError(_) => "send-error",
+            Message::Disconnected(_) => "disconnected",
 
             // Client to client messages
             Message::Token(_) => "token",
@@ -268,6 +271,19 @@ impl DropResponder {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub(crate) struct SendError {
     pub(crate) id: SendErrorId,
+}
+
+
+/// Sent by the server if an authenticated peer disconnects.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub(crate) struct Disconnected {
+    pub(crate) id: Address,
+}
+
+impl Disconnected {
+    pub(crate) fn new(id: Address) -> Self {
+        Self { id }
+    }
 }
 
 

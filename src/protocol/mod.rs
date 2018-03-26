@@ -35,11 +35,11 @@ use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderConte
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
     Message, ServerHello, ServerAuth, ClientHello, ClientAuth,
-    NewInitiator, NewResponder, DropResponder, DropReason,
+    NewInitiator, NewResponder, DropResponder, DropReason, Disconnected,
     SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder, Close,
 };
 pub(crate) use self::nonce::{Nonce};
-pub use self::types::{Role};
+pub use self::types::{Role, Event};
 pub(crate) use self::types::{HandleAction};
 use self::types::{Identity, ClientIdentity, Address};
 use self::state::{
@@ -506,10 +506,12 @@ pub(crate) trait Signaling {
                 unimplemented!("TODO (#36): Handling DropResponder messages not yet implemented"),
             (ServerHandshakeState::Done, Message::SendError(msg)) =>
                 self.handle_send_error(msg),
+            (ServerHandshakeState::Done, Message::Disconnected(msg)) =>
+                self.handle_disconnected(msg),
 
             // Any undefined state transition results in an error
             (s, message) => Err(SignalingError::InvalidStateTransition(
-                format!("Got {} message from server in {:?} state", message.get_type(), s)
+                format!("Got '{}' message from server in {:?} state", message.get_type(), s)
             )),
         }
     }
@@ -659,6 +661,8 @@ pub(crate) trait Signaling {
         return Err(SignalingError::SendError);
     }
 
+    /// Handle an incoming [`Disconnected`](messages/struct.Disconnected.html) message.
+    fn handle_disconnected(&mut self, msg: Disconnected) -> SignalingResult<Vec<HandleAction>>;
 
     // Helper methods
 
@@ -1023,10 +1027,12 @@ impl Signaling for InitiatorSignaling {
         Ok(vec![])
     }
 
+    /// Handle an incoming [`NewInitiator`](messages/struct.Initiator.html) message.
     fn handle_new_initiator(&mut self, _msg: NewInitiator) -> SignalingResult<Vec<HandleAction>> {
         Err(SignalingError::Protocol("Received 'new-responder' message as initiator".into()))
     }
 
+    /// Handle an incoming [`NewResponder`](messages/struct.NewResponder.html) message.
     fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received new-responder ({}) from server", msg.id);
 
@@ -1042,6 +1048,21 @@ impl Signaling for InitiatorSignaling {
         self.process_new_responder(msg.id)?;
 
         Ok(vec![])
+    }
+
+    /// Handle an incoming [`Disconnected`](messages/struct.Disconnected.html) message.
+    fn handle_disconnected(&mut self, msg: Disconnected) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received disconnected from server");
+
+        // An initiator who receives a 'disconnected' message SHALL validate
+        // that the id field contains a valid responder address (0x02..0xff).
+        if !msg.id.is_responder() {
+            return Err(SignalingError::Protocol(
+                "Received 'disconnected' message with non-responder id".into()
+            ));
+        }
+
+        Ok(vec![HandleAction::Event(Event::Disconnected(msg.id.0))])
     }
 }
 
@@ -1521,6 +1542,21 @@ impl Signaling for ResponderSignaling {
 
     fn handle_new_responder(&mut self, _msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
         Err(SignalingError::Protocol("Received 'new-responder' message as responder".into()))
+    }
+
+    /// Handle an incoming [`Disconnected`](messages/struct.Disconnected.html) message.
+    fn handle_disconnected(&mut self, msg: Disconnected) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received disconnected from server");
+
+        // A responder who receives a 'disconnected' message SHALL validate
+        // that the id field contains a valid initiator address (0x01).
+        if !msg.id.is_initiator() {
+            return Err(SignalingError::Protocol(
+                "Received 'disconnected' message with non-initiator id".into()
+            ));
+        }
+
+        Ok(vec![HandleAction::Event(Event::Disconnected(msg.id.0))])
     }
 }
 

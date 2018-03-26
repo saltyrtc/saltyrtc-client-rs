@@ -208,6 +208,14 @@ impl<'de> Deserialize<'de> for Address {
 }
 
 
+/// Events that may happen during connection.
+#[derive(Debug, PartialEq)]
+pub enum Event {
+    /// An authenticated peer disconnected from the server.
+    Disconnected(u8),
+}
+
+
 /// An enum returned when an incoming message is handled.
 ///
 /// It can contain different actions that should be done to finish handling the
@@ -218,6 +226,8 @@ pub(crate) enum HandleAction {
     Reply(ByteBox),
     /// The server and peer handshake are done.
     HandshakeDone,
+    /// An event happened.
+    Event(Event),
     /// A task message was received and decoded.
     TaskMessage(TaskMessage),
 }

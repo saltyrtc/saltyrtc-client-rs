@@ -89,7 +89,7 @@ use boxes::{ByteBox};
 use crypto_types::{KeyPair, PublicKey, AuthToken};
 use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
 use helpers::libsodium_init;
-use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
+use protocol::{HandleAction, Event, Signaling, InitiatorSignaling, ResponderSignaling};
 use tasks::{Tasks, TaskMessage, BoxedTask};
 
 
@@ -577,6 +577,9 @@ pub fn do_handshake(
                         HandleAction::TaskMessage(_) => return boxed!(future::err(
                             SaltyError::Crash("Received task message during handshake".into())
                         )),
+                        HandleAction::Event(_) => return boxed!(future::err(
+                            SaltyError::Crash("Received event during handshake".into())
+                        )),
                     }
                 }
 
@@ -620,7 +623,11 @@ pub fn do_handshake(
 pub fn task_loop(
     client: WsClient,
     salty: Rc<RefCell<SaltyClient>>,
-) -> Result<(Arc<Mutex<BoxedTask>>, BoxedFuture<(), SaltyError>), SaltyError> {
+) -> Result<(
+    Arc<Mutex<BoxedTask>>,
+    BoxedFuture<(), SaltyError>,
+    mpsc::UnboundedReceiver<Event>,
+), SaltyError> {
     let task_name = salty
         .deref()
         .try_borrow()
@@ -643,8 +650,9 @@ pub fn task_loop(
     let (raw_outgoing_tx, raw_outgoing_rx) = mpsc::unbounded::<OwnedMessage>();
     let (incoming_tx, incoming_rx) = mpsc::unbounded::<TaskMessage>();
     let (disconnect_tx, disconnect_rx) = oneshot::channel::<Option<CloseCode>>();
+    let (event_tx, event_rx) = mpsc::unbounded::<Event>();
 
-    // Stream future for processing incoming websocket messages
+    // Stream future for processing incoming WebSocket messages
     let reader = ws_stream
 
         // Map errors to our custom error type
@@ -671,7 +679,7 @@ pub fn task_loop(
                 let raw_outgoing_tx = raw_outgoing_tx.clone();
                 match msg {
                     WsMessageDecoded::ByteBox(bbox) => {
-                        trace!("Got binary websocket msg: {:?}", bbox);
+                        trace!("Got binary WebSocket msg: {:?}", bbox);
 
                         // Handle message bytes
                         let handle_actions = match salty.deref().try_borrow_mut() {
@@ -699,6 +707,15 @@ pub fn task_loop(
 
                                     // Forward message to user
                                     in_messages.push(msg);
+                                },
+                                HandleAction::Event(e) => {
+                                    // Notify the user about event
+                                    match event_tx.unbounded_send(e) {
+                                        Ok(_) => {},
+                                        Err(_) => return boxed!(future::err(Err(
+                                            SaltyError::Crash("Could not send event through channel".into())
+                                        ))),
+                                    }
                                 },
                                 HandleAction::HandshakeDone => return boxed!(future::err(Err(
                                     SaltyError::Crash("Got HandleAction::HandshakeDone in task loop".into())
@@ -906,6 +923,6 @@ pub fn task_loop(
         .map_err(|e| SaltyError::Crash(format!("Could not lock task mutex: {}", e)))?
         .start(outgoing_tx, incoming_rx, disconnect_tx);
 
-    // Return reference to task and the task loop future
-    Ok((task, task_loop))
+    // Return reference to task, the task loop future and the event receiver
+    Ok((task, task_loop, event_rx))
 }

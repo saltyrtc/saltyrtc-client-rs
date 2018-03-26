@@ -290,7 +290,7 @@ fn main() {
     };
 
     // Set up task loop
-    let (task, task_loop) = saltyrtc_client::task_loop(client, salty_rc.clone())
+    let (task, task_loop, _event_rx) = saltyrtc_client::task_loop(client, salty_rc.clone())
         .unwrap_or_else(|e| {
             println!("{}", e);
             process::exit(1);

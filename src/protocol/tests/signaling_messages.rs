@@ -427,6 +427,7 @@ mod client_auth {
             HandleAction::Reply(bbox) => bbox,
             HandleAction::HandshakeDone => panic!("Unexpected HandshakeDone"),
             HandleAction::TaskMessage(_) => panic!("Unexpected TaskMessage"),
+            HandleAction::Event(_) => panic!("Unexpected Event"),
         };
 
         let decrypted = OpenBox::<Message>::decrypt(
@@ -1145,4 +1146,96 @@ mod new_responder {
         assert_eq!(actions.len(), 1); // Drop responder
     }
 
+}
+
+mod disconnected {
+    use super::*;
+
+    /// During server auth, 'disconnected' messages are invalid.
+    #[test]
+    fn disconnected_during_server_auth() {
+        let mut ctx = TestContext::initiator(
+            ClientIdentity::Initiator, None,
+            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
+        );
+
+        // Encrypt message
+        let msg = Message::Disconnected(Disconnected::new(ClientIdentity::Responder(3).into()));
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
+            .build(ctx.server_cookie.clone(),
+                   &ctx.server_ks,
+                   ctx.our_ks.public_key());
+
+        // Handle message
+        let err = ctx.signaling.handle_message(bbox).unwrap_err();
+        let msg = "Got \'disconnected\' message from server in ClientInfoSent state".into();
+        assert_eq!(err, SignalingError::InvalidStateTransition(msg))
+    }
+
+    /// An initiator who receives a 'disconnected' message SHALL validate
+    /// that the id field contains a valid responder address (0x02..0xff).
+    #[test]
+    fn disconnected_initiator_invalid_id() {
+        let mut ctx = TestContext::initiator(
+            ClientIdentity::Initiator, None,
+            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+        );
+
+        // Encrypt message
+        let msg = Message::Disconnected(Disconnected::new(ClientIdentity::Initiator.into()));
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
+            .build(ctx.server_cookie.clone(),
+                   &ctx.server_ks,
+                   ctx.our_ks.public_key());
+
+        // Handle message
+        let err = ctx.signaling.handle_message(bbox).unwrap_err();
+        let msg = "Received \'disconnected\' message with non-responder id".into();
+        assert_eq!(err, SignalingError::Protocol(msg))
+    }
+
+    /// A responder who receives a 'disconnected' message SHALL validate
+    /// that the id field contains a valid initiator address (0x01).
+    #[test]
+    fn disconnected_responder_invalid_id() {
+        let mut ctx = TestContext::responder(
+            ClientIdentity::Responder(3),
+            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            None, None,
+        );
+
+        // Encrypt message
+        let msg = Message::Disconnected(Disconnected::new(ClientIdentity::Responder(7).into()));
+        let bbox = TestMsgBuilder::new(msg).from(0).to(3)
+            .build(ctx.server_cookie.clone(),
+                   &ctx.server_ks,
+                   ctx.our_ks.public_key());
+
+        // Handle message
+        let err = ctx.signaling.handle_message(bbox).unwrap_err();
+        let msg = "Received \'disconnected\' message with non-initiator id".into();
+        assert_eq!(err, SignalingError::Protocol(msg))
+    }
+
+    /// A receiving client MUST notify the user application about the incoming
+    /// 'disconnected' message, along with the id field.
+    #[test]
+    fn disconnected_notify_user() {
+        let mut ctx = TestContext::initiator(
+            ClientIdentity::Initiator, None,
+            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+        );
+
+        // Encrypt message
+        let msg = Message::Disconnected(Disconnected::new(ClientIdentity::Responder(7).into()));
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
+            .build(ctx.server_cookie.clone(),
+                   &ctx.server_ks,
+                   ctx.our_ks.public_key());
+
+        // Handle message
+        let actions = ctx.signaling.handle_message(bbox).unwrap();
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0], HandleAction::Event(Event::Disconnected(7)));
+    }
 }
