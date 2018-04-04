@@ -360,12 +360,13 @@ pub fn connect(
     };
 
     // Initialize WebSocket client
+    let server = format!("{}:{}", host, port);
     let future = ClientBuilder::from_url(&ws_url)
         .add_protocol(SUBPROTOCOL)
         .async_connect_secure(tls_config, handle)
-        .map_err(|e: WebSocketError| SaltyError::Network(match e.cause() {
-            Some(cause) => format!("Could not connect to server: {}: {}", e, cause),
-            None => format!("Could not connect to server: {}", e),
+        .map_err(move |e: WebSocketError| SaltyError::Network(match e.cause() {
+            Some(cause) => format!("Could not connect to server ({}): {}: {}", server, e, cause),
+            None => format!("Could not connect to server ({}): {}", server, e),
         }))
         .and_then(|(client, headers)| {
             // Verify that the correct subprotocol was chosen

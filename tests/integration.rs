@@ -142,7 +142,7 @@ fn connection_error_refused() {
         15431,
         Some(get_tls_connector())
     );
-    let errmsg = "Could not connect to server: WebSocketError: I/O failure: Connection refused (os error 111)".into();
+    let errmsg = "Could not connect to server (localhost:15431): WebSocketError: I/O failure: Connection refused (os error 111)".into();
     match result {
         Ok(_) => panic!("Connection should have failed but did not!"),
         Err(e) => assert_eq!(e, SaltyError::Network(errmsg)),
@@ -162,7 +162,7 @@ fn connection_error_tls_error() {
         Ok(_) => panic!("Connection should have failed but did not!"),
         Err(e) => match e {
             SaltyError::Network(msg) => assert!(msg.starts_with(
-                "Could not connect to server: WebSocketError: TLS failure: The OpenSSL library reported an error"
+                "Could not connect to server (127.0.0.1:8765): WebSocketError: TLS failure: The OpenSSL library reported an error"
             )),
             other => panic!("Connection should have failed with Network error, but failed with {:?}", other),
         },
