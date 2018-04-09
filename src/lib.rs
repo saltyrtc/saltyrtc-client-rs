@@ -114,7 +114,8 @@ macro_rules! boxed {
 }
 
 
-/// The builder used to create a [`SaltyClient`](struct.SaltyClient.html) instance.
+/// The builder instance returned by
+/// [`SaltyClient::build(…)`](struct.SaltyClient.html#method.build).
 pub struct SaltyClientBuilder {
     permanent_key: KeyPair,
     tasks: Vec<BoxedTask>,
@@ -123,7 +124,7 @@ pub struct SaltyClientBuilder {
 
 impl SaltyClientBuilder {
     /// Instantiate a new builder.
-    pub fn new(permanent_key: KeyPair) -> Self {
+    pub(crate) fn new(permanent_key: KeyPair) -> Self {
         SaltyClientBuilder {
             permanent_key,
             tasks: vec![],
@@ -226,7 +227,7 @@ pub struct SaltyClient {
 
 impl SaltyClient {
 
-    /// Instantiate a new builder.
+    /// Instantiate a new [`SaltyClientBuilder`](struct.SaltyClientBuilder.html) instance.
     pub fn build(permanent_key: KeyPair) -> SaltyClientBuilder {
         SaltyClientBuilder::new(permanent_key)
     }
