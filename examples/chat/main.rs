@@ -183,7 +183,7 @@ fn main() {
             let salty = SaltyClient::build(keypair)
                 .add_task(Box::new(task))
                 .with_ping_interval(Some(ping_interval))
-                .responder(initiator_pubkey, Some(auth_token))
+                .responder(initiator_pubkey, auth_token)
                 .expect("Could not create SaltyClient instance");
             (salty, auth_token_hex)
         },

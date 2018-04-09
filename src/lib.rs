@@ -166,13 +166,41 @@ impl SaltyClientBuilder {
         })
     }
 
+    /// Create a new SaltyRTC initiator with a trusted peer public key.
+    pub fn initiator_trusted(self, responder_trusted_pubkey: PublicKey) -> Result<SaltyClient, BuilderError> {
+        let tasks = Tasks::from_vec(self.tasks).map_err(|_| BuilderError::MissingTask)?;
+        let signaling = InitiatorSignaling::new(
+            self.permanent_key,
+            tasks,
+            self.ping_interval,
+        );
+        Ok(SaltyClient {
+            signaling: Box::new(signaling),
+        })
+    }
+
     /// Create a new SaltyRTC responder.
-    pub fn responder(self, initiator_pubkey: PublicKey, auth_token: Option<AuthToken>) -> Result<SaltyClient, BuilderError> {
+    pub fn responder(self, initiator_pubkey: PublicKey, auth_token: AuthToken) -> Result<SaltyClient, BuilderError> {
         let tasks = Tasks::from_vec(self.tasks).map_err(|_| BuilderError::MissingTask)?;
         let signaling = ResponderSignaling::new(
             self.permanent_key,
             initiator_pubkey,
-            auth_token,
+            Some(auth_token),
+            tasks,
+            self.ping_interval,
+        );
+        Ok(SaltyClient {
+            signaling: Box::new(signaling),
+        })
+    }
+
+    /// Create a new SaltyRTC responder with a trusted peer public key.
+    pub fn responder_trusted(self, initiator_trusted_pubkey: PublicKey) -> Result<SaltyClient, BuilderError> {
+        let tasks = Tasks::from_vec(self.tasks).map_err(|_| BuilderError::MissingTask)?;
+        let signaling = ResponderSignaling::new(
+            self.permanent_key,
+            initiator_trusted_pubkey,
+            None,
             tasks,
             self.ping_interval,
         );
