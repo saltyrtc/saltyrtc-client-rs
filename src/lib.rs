@@ -81,7 +81,7 @@ pub use protocol::{Role};
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
     pub use crypto_types::{KeyPair, PublicKey, PrivateKey, AuthToken};
-    pub use crypto_types::public_key_from_hex_str;
+    pub use crypto_types::{public_key_from_hex_str, private_key_from_hex_str};
 }
 
 // Internal imports
