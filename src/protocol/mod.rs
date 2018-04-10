@@ -1225,19 +1225,7 @@ impl InitiatorSignaling {
         if !self.responders.is_empty() {
             info!("Dropping {} other responders", self.responders.len());
             for addr in self.responders.keys() {
-                let drop = DropResponder::with_reason(addr.clone(), DropReason::DroppedByInitiator).into_message();
-                let drop_nonce = Nonce::new(
-                    self.server().cookie_pair.ours.clone(),
-                    self.common.identity.into(),
-                    self.server().identity().into(),
-                    self.server().csn_pair().borrow_mut().ours.increment()?,
-                );
-                let obox = OpenBox::<Message>::new(drop, drop_nonce);
-                let bbox = obox.encrypt(
-                    &self.common().permanent_keypair,
-                    self.server().session_key()
-                        .ok_or(SignalingError::Crash("Server session key not set".into()))?
-                );
+                let bbox = self.drop_responder(addr, DropReason::DroppedByInitiator)?;
                 debug!("<-- Enqueuing drop-responder to {}", self.server().identity());
                 actions.push(HandleAction::Reply(bbox));
             }
@@ -1286,6 +1274,26 @@ impl InitiatorSignaling {
 
         self.responder = Some(responder);
         Ok(actions)
+    }
+
+    fn drop_responder(&self, addr: &Address, reason: DropReason) -> SignalingResult<ByteBox> {
+        let drop = DropResponder::with_reason(
+            addr.clone(),
+            reason,
+        ).into_message();
+        let drop_nonce = Nonce::new(
+            self.server().cookie_pair.ours.clone(),
+            self.common.identity.into(),
+            self.server().identity().into(),
+            self.server().csn_pair().borrow_mut().ours.increment()?,
+        );
+        let obox = OpenBox::<Message>::new(drop, drop_nonce);
+        let bbox = obox.encrypt(
+            &self.common().permanent_keypair,
+            self.server().session_key()
+                .ok_or(SignalingError::Crash("Server session key not set".into()))?
+        );
+        Ok(bbox)
     }
 }
 
