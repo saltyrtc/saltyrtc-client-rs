@@ -60,8 +60,8 @@ randomly generated and printed:
 
     To connect with a peer:
     cargo run --example chat -- responder \
-        -p f637d7fff53defe8db111b17b2c445f7888a83c13dc40d7ff8449f700910f01f \
-        -a 0e94b54a49e4ec7f4398ec9bec5d4359cca810f7eca31704e6c0afadd54a7818
+        --path f637d7fff53defe8db111b17b2c445f7888a83c13dc40d7ff8449f700910f01f \
+        --auth-token 0e94b54a49e4ec7f4398ec9bec5d4359cca810f7eca31704e6c0afadd54a7818
     ******************************
 
     INFO:saltyrtc_client: Connected to server as Initiator

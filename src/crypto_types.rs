@@ -28,12 +28,24 @@ pub type PrivateKey = box_::SecretKey;
 /// Re-exported from the [`rust_sodium`](../rust_sodium/index.html) crate.
 pub type SecretKey = secretbox::Key;
 
-/// Create a [`PublicKey`](../type.PublicKey.html) instance from hex bytes.
+
+/// Create a [`PublicKey`](../type.PublicKey.html) instance from case
+/// insensitive hex bytes.
 pub fn public_key_from_hex_str(hex_str: &str) -> SaltyResult<PublicKey> {
     let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
         .map_err(|_| SaltyError::Decode("Could not decode public key hex string".to_string()))?;
     PublicKey::from_slice(&bytes)
         .ok_or(SaltyError::Decode("Invalid public key hex string".to_string()))
+}
+
+/// Create a [`PrivateKey`](../type.PrivateKey.html) instance from case
+/// insensitive hex bytes.
+#[allow(dead_code)]
+pub fn private_key_from_hex_str(hex_str: &str) -> SaltyResult<PrivateKey> {
+    let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
+        .map_err(|_| SaltyError::Decode("Could not decode private key hex string".to_string()))?;
+    PrivateKey::from_slice(&bytes)
+        .ok_or(SaltyError::Decode("Invalid private key hex string".to_string()))
 }
 
 
@@ -101,13 +113,23 @@ impl KeyPair {
 
     /// Return the public key as hex-encoded string.
     pub fn public_key_hex(&self) -> String {
-        HEXLOWER.encode(self.public_key.as_ref())
+        HEXLOWER.encode(&self.public_key.0)
     }
 
     /// Return a reference to the private key.
-    #[allow(dead_code)]
-    pub(crate) fn private_key(&self) -> &PrivateKey {
+    ///
+    /// Warning: Be careful with this! The only reason to access the private
+    /// key is probably to be able to restore it when working with trusted keys.
+    pub fn private_key(&self) -> &PrivateKey {
         &self.private_key
+    }
+
+    /// Return the private key as hex-encoded string.
+    ///
+    /// Warning: Be careful with this! The only reason to access the private
+    /// key is probably to be able to restore it when working with trusted keys.
+    pub fn private_key_hex(&self) -> String {
+        HEXLOWER.encode(&self.private_key.0)
     }
 
     /// Encrypt data for the specified public key with the private key.

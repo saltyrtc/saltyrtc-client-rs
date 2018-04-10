@@ -79,9 +79,13 @@ pub(crate) trait Signaling {
         self.common().role
     }
 
-    /// Return the auth token.
+    /// Return the auth token (if set).
     fn auth_token(&self) -> Option<&AuthToken> {
-        self.common().auth_token.as_ref()
+        if let AuthProvider::Token(ref token) = self.common().auth_provider {
+            Some(token)
+        } else {
+            None
+        }
     }
 
     /// Return the server handshake state.
@@ -281,7 +285,19 @@ pub(crate) trait Signaling {
         let obox: OpenBox<Message> = if bbox.nonce.source().is_server() {
             self.decode_server_message(bbox)?
         } else {
-            self.decode_peer_message(bbox)?
+            let source_address = bbox.nonce.source();
+            match self.decode_peer_message(bbox) {
+                Ok(obox) => obox,
+                Err(SignalingError::InitiatorCouldNotDecrypt) => {
+                    let drop_responder = self.send_drop_responder(
+                        source_address,
+                        DropReason::InitiatorCouldNotDecrypt,
+                    )?;
+                    debug!("<-- Enqueuing drop-responder to {}", self.server().identity());
+                    return Ok(vec![drop_responder]);
+                },
+                Err(e) => return Err(e),
+            }
         };
 
         // Handle message depending on state
@@ -643,8 +659,50 @@ pub(crate) trait Signaling {
         return Err(SignalingError::SendError);
     }
 
+
+    // Helper methods
+
+    /// Encode and return a DropResponder message.
+    fn send_drop_responder(&self, addr: Address, reason: DropReason) -> SignalingResult<HandleAction> {
+        // Sanity check
+        if self.role() != Role::Initiator {
+            // Note: We need to define this method here instead of in the
+            // `InitiatorSignaling` impl because the `handle_handshake_message`
+            // method on the `Signaling` trait needs to be able to call it.
+            return Err(SignalingError::Crash(
+                "Non-initiator should never need to encode a DropResponder message".into()
+            ));
+        }
+
+        // Create message and nonce
+        let drop = DropResponder::with_reason(addr, reason).into_message();
+        let drop_nonce = Nonce::new(
+            self.server().cookie_pair.ours.clone(),
+            self.common().identity.into(),
+            self.server().identity().into(),
+            self.server().csn_pair().borrow_mut().ours.increment()?,
+        );
+
+        // Encrypt message
+        let obox = OpenBox::<Message>::new(drop, drop_nonce);
+        let bbox = obox.encrypt(
+            &self.common().permanent_keypair,
+            self.server().session_key()
+                .ok_or(SignalingError::Crash("Server session key not set".into()))?
+        );
+
+        Ok(HandleAction::Reply(bbox))
+    }
 }
 
+
+/// A peer can be authenticated either through a one-time auth token, or
+/// through a trusted peer public key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AuthProvider {
+    Token(AuthToken),
+    TrustedKey(PublicKey)
+}
 
 /// Common functionality and state for all signaling types.
 pub(crate) struct Common {
@@ -654,8 +712,9 @@ pub(crate) struct Common {
     /// Our permanent keypair.
     pub(crate) permanent_keypair: KeyPair,
 
-    /// An optional auth token.
-    pub(crate) auth_token: Option<AuthToken>,
+    /// Either an auth token (for untrusted sessions) or a trusted peer public
+    /// key (for trusted sessions).
+    pub(crate) auth_provider: AuthProvider,
 
     /// The assigned role.
     pub(crate) role: Role,
@@ -853,15 +912,29 @@ impl Signaling for InitiatorSignaling {
         match responder.handshake_state() {
             ResponderHandshakeState::New => {
                 // Expect token message, encrypted with authentication token.
-                match self.common.auth_token {
-                    Some(ref token) => OpenBox::decrypt_token(bbox, token),
-                    None => Err(SignalingError::Crash("Auth token not set".into())),
+                debug!("Expect token message");
+                match self.common.auth_provider {
+                    AuthProvider::Token(ref token) => OpenBox::decrypt_token(bbox, token),
+                    AuthProvider::TrustedKey(_) => Err(SignalingError::Crash(
+                        "Handshake state is \"New\" even though a trusted key is available".into()
+                    )),
                 }
             },
             ResponderHandshakeState::TokenReceived => {
                 // Expect key message, encrypted with our public permanent key
                 // and responder private permanent key
-                OpenBox::<Message>::decrypt(bbox, &self.common.permanent_keypair, responder_permanent_key(&responder)?)
+                debug!("Expect key message");
+                OpenBox::<Message>::decrypt(
+                    bbox,
+                    &self.common.permanent_keypair,
+                    responder_permanent_key(&responder)?
+                ).map_err(|e| match e {
+                    SignalingError::Decode(_) => {
+                        warn!("Could not decrypt key message");
+                        SignalingError::InitiatorCouldNotDecrypt
+                    },
+                    e => e,
+                })
             },
             ResponderHandshakeState::KeySent => {
                 // Expect auth message, encrypted with our public session key
@@ -905,9 +978,9 @@ impl Signaling for InitiatorSignaling {
     }
 
     fn handle_server_auth_impl(&mut self, msg: &ServerAuth) -> SignalingResult<Vec<HandleAction>> {
-        // In case the client is the initiator, it SHALL check
-        // that the responders field is set and contains an
-        // Array of responder identities.
+        // In case the client is the initiator, it SHALL check that the
+        // responders field is set and contains an Array of responder
+        // identities.
         if msg.initiator_connected.is_some() {
             return Err(SignalingError::InvalidMessage(
                 "We're the initiator, but the `initiator_connected` field in the server-auth message is set".into()
@@ -920,9 +993,8 @@ impl Signaling for InitiatorSignaling {
             )),
         };
 
-        // The responder identities MUST be validated and SHALL
-        // neither contain addresses outside the range
-        // 0x02..0xff
+        // The responder identities MUST be validated and SHALL neither contain
+        // addresses outside the range 0x02..0xff
         let responders_set: HashSet<Address> = responders.iter().cloned().collect();
         if responders_set.contains(&Address(0x00)) || responders_set.contains(&Address(0x01)) {
             return Err(SignalingError::InvalidMessage(
@@ -930,29 +1002,23 @@ impl Signaling for InitiatorSignaling {
             ));
         }
 
-        // ...nor SHALL an address be repeated in the
-        // Array.
+        // ...nor SHALL an address be repeated in the Array.
         if responders.len() != responders_set.len() {
             return Err(SignalingError::InvalidMessage(
                 "`responders` field in server-auth message may not contain duplicates".into()
             ));
         }
 
-        // An empty Array SHALL be considered valid. However,
-        // Nil SHALL NOT be considered a valid value of that
-        // field.
+        // An empty Array SHALL be considered valid. However, Nil SHALL NOT be
+        // considered a valid value of that field.
         // -> Already covered by Rust's type system.
 
-        // It SHOULD store the responder's identities in its
-        // internal list of responders.
+        // It SHOULD store the responder's identities in its internal list of
+        // responders. Additionally, the initiator MUST keep its path clean by
+        // following the procedure described in the Path Cleaning section.
         for address in responders_set {
-            self.responders.insert(address, ResponderContext::new(address));
+            self.process_new_responder(address)?;
         }
-
-        // Additionally, the initiator MUST keep its path clean
-        // by following the procedure described in the Path
-        // Cleaning section.
-        // TODO (#15): Implement
 
         Ok(vec![])
     }
@@ -972,29 +1038,17 @@ impl Signaling for InitiatorSignaling {
             ));
         }
 
-        // It SHOULD store the responder's identity in its internal list of responders.
-        // If a responder with the same id already exists, all currently cached
-        // information about and for the previous responder (such as cookies
-        // and the sequence number) MUST be deleted first.
-        if self.responders.contains_key(&msg.id) {
-            warn!("Overwriting responder context for address {:?}", msg.id);
-        } else {
-            info!("Registering new responder with address {:?}", msg.id);
-        }
-        self.responders.insert(msg.id, ResponderContext::new(msg.id));
-
-        // Furthermore, the initiator MUST keep its path clean by following the
-        // procedure described in the Path Cleaning section.
-        // TODO (#15): Implement
+        // Process responder
+        self.process_new_responder(msg.id)?;
 
         Ok(vec![])
     }
-
 }
 
 impl InitiatorSignaling {
     pub(crate) fn new(permanent_keypair: KeyPair,
                       tasks: Tasks,
+                      responder_trusted_pubkey: Option<PublicKey>,
                       ping_interval: Option<Duration>) -> Self {
         InitiatorSignaling {
             common: Common {
@@ -1002,7 +1056,10 @@ impl InitiatorSignaling {
                 role: Role::Initiator,
                 identity: ClientIdentity::Unknown,
                 permanent_keypair: permanent_keypair,
-                auth_token: Some(AuthToken::new()),
+                auth_provider: match responder_trusted_pubkey {
+                    Some(key) => AuthProvider::TrustedKey(key),
+                    None => AuthProvider::Token(AuthToken::new()),
+                },
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
@@ -1176,21 +1233,9 @@ impl InitiatorSignaling {
         if !self.responders.is_empty() {
             info!("Dropping {} other responders", self.responders.len());
             for addr in self.responders.keys() {
-                let drop = DropResponder::with_reason(addr.clone(), DropReason::DroppedByInitiator).into_message();
-                let drop_nonce = Nonce::new(
-                    self.server().cookie_pair.ours.clone(),
-                    self.common.identity.into(),
-                    self.server().identity().into(),
-                    self.server().csn_pair().borrow_mut().ours.increment()?,
-                );
-                let obox = OpenBox::<Message>::new(drop, drop_nonce);
-                let bbox = obox.encrypt(
-                    &self.common().permanent_keypair,
-                    self.server().session_key()
-                        .ok_or(SignalingError::Crash("Server session key not set".into()))?
-                );
+                let drop_responder = self.send_drop_responder(*addr, DropReason::DroppedByInitiator)?;
                 debug!("<-- Enqueuing drop-responder to {}", self.server().identity());
-                actions.push(HandleAction::Reply(bbox));
+                actions.push(drop_responder);
             }
 
             // Remove responders
@@ -1237,6 +1282,43 @@ impl InitiatorSignaling {
 
         self.responder = Some(responder);
         Ok(actions)
+    }
+
+    fn process_new_responder(&mut self, address: Address) -> SignalingResult<()> {
+        // If a responder with the same id already exists,
+        // all currently cached information about and for the previous responder
+        // (such as cookies and the sequence number) MUST be deleted first.
+        if self.responders.contains_key(&address) {
+            warn!("Overwriting responder context for address {:?}", address);
+            self.responders.remove(&address);
+        } else {
+            info!("Registering new responder with address {:?}", address);
+        }
+
+        // Create responder context
+        let mut responder = ResponderContext::new(address);
+
+        // If we trust the responder…
+        if let AuthProvider::TrustedKey(key) = self.common.auth_provider {
+            // …set the public permanent key
+            if responder.permanent_key.is_some() { // Sanity check
+                return Err(SignalingError::Crash("Responder already has a permanent key set!".into()));
+            }
+            responder.permanent_key = Some(key);
+
+            // …don't expect a token message
+            responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
+        }
+
+        // The initiator SHOULD store the responder's identity in its internal
+        // list of responders.
+        self.responders.insert(address, responder);
+
+        // Furthermore, the initiator MUST keep its path clean by following the
+        // procedure described in the Path Cleaning section.
+        // TODO (#15): Implement
+
+        Ok(())
     }
 }
 
@@ -1396,10 +1478,10 @@ impl Signaling for ResponderSignaling {
         let mut actions: Vec<HandleAction> = vec![];
         match msg.initiator_connected {
             Some(true) => {
-                if let Some(ref token) = self.common().auth_token {
+                if let AuthProvider::Token(ref token) = self.common().auth_provider {
                     actions.push(self.send_token(&token)?);
                 } else {
-                    debug!("No auth token set");
+                    debug!("Trusted key available, skipping token message");
                 }
                 actions.push(self.send_key()?);
                 self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
@@ -1426,10 +1508,10 @@ impl Signaling for ResponderSignaling {
 
         // ...and continue by sending a 'token' or 'key' client-to-client
         // message described in the Client-to-Client Messages section.
-        if let Some(ref token) = self.common().auth_token {
+        if let AuthProvider::Token(ref token) = self.common().auth_provider {
             actions.push(self.send_token(&token)?);
         } else {
-            debug!("No auth token set");
+            debug!("Trusted key available, skipping token message");
         }
         actions.push(self.send_key()?);
         self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
@@ -1454,7 +1536,10 @@ impl ResponderSignaling {
                 role: Role::Responder,
                 identity: ClientIdentity::Unknown,
                 permanent_keypair: permanent_keypair,
-                auth_token: auth_token,
+                auth_provider: match auth_token {
+                    Some(token) => AuthProvider::Token(token),
+                    None => AuthProvider::TrustedKey(initiator_pubkey),
+                },
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
