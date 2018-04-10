@@ -10,7 +10,7 @@ use super::*;
 #[test]
 fn first_message_wrong_destination() {
     let ks = KeyPair::new();
-    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None);
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None, None);
 
     let msg = ServerHello::random().into_message();
     let cs = CombinedSequenceSnapshot::random();
@@ -34,7 +34,7 @@ fn first_message_wrong_destination() {
 #[test]
 fn wrong_source_initiator() {
     let ks = KeyPair::new();
-    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None);
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None, None);
 
     let make_msg = |src: u8, dest: u8| {
         let msg = ServerHello::random().into_message();
@@ -111,7 +111,7 @@ fn wrong_source_responder() {
 #[test]
 fn first_message_bad_overflow_number() {
     let ks = KeyPair::new();
-    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None);
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None, None);
 
     let msg = ServerHello::random().into_message();
     let cs = CombinedSequenceSnapshot::new(1, 1234);
@@ -132,7 +132,7 @@ fn _test_sequence_number(first: CombinedSequenceSnapshot,
                          second: CombinedSequenceSnapshot)
                          -> SignalingResult<Vec<HandleAction>> {
     let ks = KeyPair::new();
-    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None);
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None, None);
 
     // Process ServerHello
     let msg = ServerHello::random().into_message();
@@ -191,7 +191,7 @@ fn sequence_number_reset() {
 #[test]
 fn cookie_differs_from_own() {
     let ks = KeyPair::new();
-    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None);
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None, None);
 
     let msg = ServerHello::random().into_message();
     let cookie = s.server().cookie_pair.ours.clone();

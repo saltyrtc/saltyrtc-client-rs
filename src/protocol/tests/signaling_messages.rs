@@ -21,6 +21,7 @@ struct TestContext<S: Signaling> {
 impl TestContext<InitiatorSignaling> {
     fn initiator(
             identity: ClientIdentity,
+            peer_trusted_pubkey: Option<PublicKey>,
             signaling_state: SignalingState,
             server_handshake_state: ServerHandshakeState,
     ) -> TestContext<InitiatorSignaling> {
@@ -30,7 +31,7 @@ impl TestContext<InitiatorSignaling> {
         let server_cookie = Cookie::random();
         let ks = KeyPair::from_private_key(our_ks.private_key().clone());
         let tasks = Tasks::new(Box::new(DummyTask::new(42)));
-        let mut signaling = InitiatorSignaling::new(ks, tasks, None);
+        let mut signaling = InitiatorSignaling::new(ks, tasks, peer_trusted_pubkey, None);
         signaling.common_mut().identity = identity;
         signaling.server_mut().set_handshake_state(server_handshake_state);
         signaling.server_mut().cookie_pair = CookiePair {
@@ -171,7 +172,7 @@ mod server_auth {
     fn your_cookie() {
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent
         );
 
@@ -189,7 +190,7 @@ mod server_auth {
     fn initiator_wrong_fields() {
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
         );
 
@@ -207,7 +208,7 @@ mod server_auth {
     fn initiator_missing_fields() {
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
         );
 
@@ -230,7 +231,7 @@ mod server_auth {
     fn initiator_duplicate_fields() {
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
         );
 
@@ -248,7 +249,7 @@ mod server_auth {
     fn initiator_invalid_fields() {
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
         );
 
@@ -268,7 +269,7 @@ mod server_auth {
     fn initiator_stored_responder() {
         // Initialize signaling class
         let ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
         );
 
@@ -398,7 +399,12 @@ mod client_auth {
 
     fn _test_ping_interval(interval: Option<Duration>) -> ClientAuth {
         let kp = KeyPair::new();
-        let mut s = InitiatorSignaling::new(kp, Tasks::new(Box::new(DummyTask::new(123))), interval);
+        let mut s = InitiatorSignaling::new(
+            kp,
+            Tasks::new(Box::new(DummyTask::new(123))),
+            None,
+            interval,
+        );
 
         // Create and encode ServerHello message
         let server_pubkey = PublicKey::random();
@@ -469,7 +475,7 @@ mod token {
     #[test]
     fn token_initiator_validate_public_key() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::PeerHandshake, ServerHandshakeState::Done,
         );
 
@@ -523,7 +529,7 @@ mod token {
     #[test]
     fn token_initiator_set_public_key() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::PeerHandshake, ServerHandshakeState::Done,
         );
 
@@ -576,7 +582,7 @@ mod key {
     #[test]
     fn key_initiator_success() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::PeerHandshake, ServerHandshakeState::Done,
         );
 
@@ -661,7 +667,7 @@ mod auth {
     /// Prepare context and responder for auth message validation tests.
     fn _auth_msg_prepare_initiator() -> (TestContext<InitiatorSignaling>, ResponderContext) {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::PeerHandshake, ServerHandshakeState::Done,
         );
 
@@ -818,7 +824,7 @@ mod auth {
         let msg: Message = Auth {
             your_cookie: ctx.signaling.initiator.cookie_pair.ours.clone(),
             task: None,
-            tasks: Some(vec!["asdf".into()]),
+            tasks: Some(vec!["asjk".into()]),
             data: HashMap::new(),
         }.into_message();
 
@@ -1039,7 +1045,7 @@ mod new_initiator {
     #[test]
     fn handle_as_initiator() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator,
+            ClientIdentity::Initiator, None,
             SignalingState::PeerHandshake, ServerHandshakeState::Done,
         );
 
@@ -1094,6 +1100,49 @@ mod new_initiator {
         // described in the Client-to-Client Messages section.
         assert_eq!(actions.len(), 1);
         assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::KeySent);
+    }
+}
+
+mod new_responder {
+    use super::*;
+
+    /// When a trusted key is available, the client should not expect a token
+    /// message.
+    #[test]
+    fn expect_no_token() {
+        let peer_trusted_pk = PublicKey::random();
+        let mut ctx = TestContext::initiator(
+            ClientIdentity::Initiator, Some(peer_trusted_pk.clone()),
+            SignalingState::PeerHandshake, ServerHandshakeState::Done
+        );
+
+        // Encrypt new-responder message
+        let address = Address::from(7);
+        let msg = Message::NewResponder(NewResponder { id: address.clone() });
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
+            .build(ctx.server_cookie.clone(),
+                   &ctx.server_ks,
+                   ctx.our_ks.public_key());
+
+        // Handle message
+        let _actions = ctx.signaling.handle_message(bbox).unwrap();
+        assert!(ctx.signaling.responder.is_none());
+
+        // Encrypt token message
+        let bbox = {
+            let responder_cookie = Cookie::random();
+            let responder: &mut ResponderContext = ctx.signaling.responders.get_mut(&address).unwrap();
+            responder.cookie_pair_mut().theirs = Some(responder_cookie.clone());
+            let msg = Message::Token(Token { key: peer_trusted_pk });
+            TestMsgBuilder::new(msg).from(7).to(1)
+                .build(responder_cookie,
+                       &responder.keypair().expect("No responder keypair"),
+                       ctx.our_ks.public_key())
+        }; // Waiting for NLL
+
+        // Handle message
+        let actions = ctx.signaling.handle_message(bbox).unwrap();
+        // TODO: Expect DropResponder
     }
 
 }

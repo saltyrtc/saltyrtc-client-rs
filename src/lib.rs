@@ -160,6 +160,7 @@ impl SaltyClientBuilder {
         let signaling = InitiatorSignaling::new(
             self.permanent_key,
             tasks,
+            None,
             self.ping_interval,
         );
         Ok(SaltyClient {
@@ -173,6 +174,7 @@ impl SaltyClientBuilder {
         let signaling = InitiatorSignaling::new(
             self.permanent_key,
             tasks,
+            Some(responder_trusted_pubkey),
             self.ping_interval,
         );
         Ok(SaltyClient {

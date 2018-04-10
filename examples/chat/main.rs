@@ -63,6 +63,7 @@ macro_rules! boxed {
 
 fn main() {
     const ARG_PATH: &'static str = "path";
+    const ARG_RESPONDER_KEY: &'static str = "responder_key";
     const ARG_AUTHTOKEN: &'static str = "authtoken";
     const ARG_PING_INTERVAL: &'static str = "ping_interval";
 
@@ -80,6 +81,12 @@ fn main() {
         .about("Test client for SaltyRTC.")
         .subcommand(SubCommand::with_name("initiator")
             .about("Start chat as initiator")
+            .arg(Arg::with_name(ARG_RESPONDER_KEY)
+                .short("k")
+                .takes_value(true)
+                .value_name("KEY")
+                .required(false)
+                .help("The trusted responder key (hex encoded)"))
             .arg(arg_ping_interval.clone()))
         .subcommand(SubCommand::with_name("responder")
             .about("Start chat as responder")
@@ -95,7 +102,7 @@ fn main() {
                 .alias("authtoken")
                 .takes_value(true)
                 .value_name("AUTHTOKEN")
-                .required(true)
+                .required(false)
                 .help("The auth token (hex encoded)"))
             .arg(arg_ping_interval));
 
@@ -148,10 +155,11 @@ fn main() {
 
     // Create new public permanent keypair
     let keypair = KeyPair::new();
+    let own_pubkey_hex = keypair.public_key_hex();
 
     // Determine websocket path
     let path: String = match role {
-        Role::Initiator => keypair.public_key_hex(),
+        Role::Initiator => own_pubkey_hex.clone(),
         Role::Responder => args.value_of(ARG_PATH).expect("Path not supplied").to_lowercase(),
     };
 
@@ -167,39 +175,63 @@ fn main() {
     let (salty, auth_token_hex) = match role {
         Role::Initiator => {
             let task = ChatTask::new("initiat0r", core.remote(), incoming_tx);
-            let salty = SaltyClient::build(keypair)
+            let builder = SaltyClient::build(keypair)
                 .add_task(Box::new(task))
-                .with_ping_interval(Some(ping_interval))
-                .initiator()
-                .expect("Could not create SaltyClient instance");
-            let auth_token_hex = HEXLOWER.encode(salty.auth_token().unwrap().secret_key_bytes());
+                .with_ping_interval(Some(ping_interval));
+            let salty = match args.value_of(ARG_RESPONDER_KEY) {
+                Some(trusted_key) => builder.initiator_trusted(
+                    public_key_from_hex_str(trusted_key).unwrap()
+                ),
+                None => builder.initiator(),
+            }.expect("Could not create SaltyClient instance");
+            let auth_token_hex = salty.auth_token().map(|t| HEXLOWER.encode(t.secret_key_bytes()));
             (salty, auth_token_hex)
         },
         Role::Responder => {
             let task = ChatTask::new("r3spond3r", core.remote(), incoming_tx);
-            let auth_token_hex = args.value_of(ARG_AUTHTOKEN).expect("Auth token not supplied").to_string();
-            let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
             let initiator_pubkey = public_key_from_hex_str(&path).unwrap();
-            let salty = SaltyClient::build(keypair)
+            let builder = SaltyClient::build(keypair)
                 .add_task(Box::new(task))
-                .with_ping_interval(Some(ping_interval))
-                .responder(initiator_pubkey, auth_token)
-                .expect("Could not create SaltyClient instance");
+                .with_ping_interval(Some(ping_interval));
+            let auth_token_hex = args.value_of(ARG_AUTHTOKEN).map(|t| t.to_lowercase());
+            let salty = match auth_token_hex {
+                Some(ref auth_token_hex) => {
+                    let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
+                    builder.responder(initiator_pubkey, auth_token)
+                },
+                None => {
+                    builder.responder_trusted(initiator_pubkey)
+                }
+            }.expect("Could not create SaltyClient instance");
             (salty, auth_token_hex)
         },
     };
 
+    let is_trusted = match (role, &auth_token_hex) {
+        (Role::Initiator, &Some(_)) => false,
+        (Role::Initiator, &None) => true,
+        (Role::Responder, &Some(_)) => false,
+        (Role::Responder, &None) => true,
+    };
+
     println!("\n\x1B[32m******************************");
-    println!("Connecting as {}", role);
+    println!("Connecting as {} ({})", role, if is_trusted { "trusted" } else { "not trusted" });
     println!();
+    println!("Own permanent pubkey: {}", &own_pubkey_hex);
     println!("Signaling path: {}", path);
-    println!("Auth token: {}", auth_token_hex);
+    if let Some(ref auth_token) = auth_token_hex {
+        println!("Auth token: {}", auth_token);
+    } else {
+        println!("Using trusted key");
+    }
     println!();
     println!("To connect with a peer:");
-    match role {
-        Role::Initiator => println!("cargo run --example chat -- responder \\\n    -p {} \\\n    -a {}", path, auth_token_hex),
-        Role::Responder => println!("cargo run --example chat -- initiator"),
-    }
+    match (role, auth_token_hex) {
+        (Role::Initiator, Some(ath)) => println!("cargo run --example chat -- responder \\\n    -p {} \\\n    -a {}", path, ath),
+        (Role::Initiator, None) => println!("cargo run --example chat -- responder \\\n    -p {}", path),
+        (Role::Responder, Some(_)) => println!("cargo run --example chat -- initiator"),
+        (Role::Responder, None) => println!("cargo run --example chat -- initiator \\\n    -k {}", &own_pubkey_hex),
+    };
     println!("******************************\x1B[0m\n");
 
     // Wrap SaltyClient in a Rc<RefCell<>>

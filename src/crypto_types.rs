@@ -28,7 +28,8 @@ pub type PrivateKey = box_::SecretKey;
 /// Re-exported from the [`rust_sodium`](../rust_sodium/index.html) crate.
 pub type SecretKey = secretbox::Key;
 
-/// Create a [`PublicKey`](../type.PublicKey.html) instance from hex bytes.
+/// Create a [`PublicKey`](../type.PublicKey.html) instance from case
+/// insensitive hex bytes.
 pub fn public_key_from_hex_str(hex_str: &str) -> SaltyResult<PublicKey> {
     let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
         .map_err(|_| SaltyError::Decode("Could not decode public key hex string".to_string()))?;

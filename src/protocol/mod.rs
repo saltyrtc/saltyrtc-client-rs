@@ -79,9 +79,13 @@ pub(crate) trait Signaling {
         self.common().role
     }
 
-    /// Return the auth token.
+    /// Return the auth token (if set).
     fn auth_token(&self) -> Option<&AuthToken> {
-        self.common().auth_token.as_ref()
+        if let AuthProvider::Token(ref token) = self.common().auth_provider {
+            Some(token)
+        } else {
+            None
+        }
     }
 
     /// Return the server handshake state.
@@ -281,7 +285,15 @@ pub(crate) trait Signaling {
         let obox: OpenBox<Message> = if bbox.nonce.source().is_server() {
             self.decode_server_message(bbox)?
         } else {
-            self.decode_peer_message(bbox)?
+            match self.decode_peer_message(bbox) {
+                Ok(obox) => obox,
+                Err(SignalingError::InitiatorCouldNotDecrypt) => {
+                    // TODO: Drop responder
+                    //this.dropResponder(responder, CloseCode.INITIATOR_COULD_NOT_DECRYPT);
+                    return Ok(vec![]);
+                },
+                Err(e) => return Err(e),
+            }
         };
 
         // Handle message depending on state
@@ -646,6 +658,14 @@ pub(crate) trait Signaling {
 }
 
 
+/// A peer can be authenticated either through a one-time auth token, or
+/// through a trusted peer public key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AuthProvider {
+    Token(AuthToken),
+    TrustedKey(PublicKey)
+}
+
 /// Common functionality and state for all signaling types.
 pub(crate) struct Common {
     /// The signaling state.
@@ -654,8 +674,9 @@ pub(crate) struct Common {
     /// Our permanent keypair.
     pub(crate) permanent_keypair: KeyPair,
 
-    /// An optional auth token.
-    pub(crate) auth_token: Option<AuthToken>,
+    /// Either an auth token (for untrusted sessions) or a trusted peer public
+    /// key (for trusted sessions).
+    pub(crate) auth_provider: AuthProvider,
 
     /// The assigned role.
     pub(crate) role: Role,
@@ -853,15 +874,27 @@ impl Signaling for InitiatorSignaling {
         match responder.handshake_state() {
             ResponderHandshakeState::New => {
                 // Expect token message, encrypted with authentication token.
-                match self.common.auth_token {
-                    Some(ref token) => OpenBox::decrypt_token(bbox, token),
-                    None => Err(SignalingError::Crash("Auth token not set".into())),
+                match self.common.auth_provider {
+                    AuthProvider::Token(ref token) => OpenBox::decrypt_token(bbox, token),
+                    AuthProvider::TrustedKey(_) => Err(SignalingError::Crash(
+                        "Handshake state is \"New\" even though a trusted key is available".into()
+                    )),
                 }
             },
             ResponderHandshakeState::TokenReceived => {
                 // Expect key message, encrypted with our public permanent key
                 // and responder private permanent key
-                OpenBox::<Message>::decrypt(bbox, &self.common.permanent_keypair, responder_permanent_key(&responder)?)
+                OpenBox::<Message>::decrypt(
+                    bbox,
+                    &self.common.permanent_keypair,
+                    responder_permanent_key(&responder)?
+                ).map_err(|e| match e {
+                    SignalingError::Decode(_) => {
+                        warn!("Could not decrypt token message");
+                        SignalingError::InitiatorCouldNotDecrypt
+                    },
+                    e => e,
+                })
             },
             ResponderHandshakeState::KeySent => {
                 // Expect auth message, encrypted with our public session key
@@ -972,16 +1005,28 @@ impl Signaling for InitiatorSignaling {
             ));
         }
 
-        // It SHOULD store the responder's identity in its internal list of responders.
-        // If a responder with the same id already exists, all currently cached
-        // information about and for the previous responder (such as cookies
-        // and the sequence number) MUST be deleted first.
+        // Create responder context
+        let mut responder = ResponderContext::new(msg.id);
+
+        // If we trust the responder…
+        if let AuthProvider::TrustedKey(key) = self.common.auth_provider {
+            // …don't expect a token message
+            responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
+
+            // …set the public permanent key
+            responder.permanent_key = Some(key);
+        }
+
+        // The initiator SHOULD store the responder's identity in its internal
+        // list of responders. If a responder with the same id already exists,
+        // all currently cached information about and for the previous responder
+        // (such as cookies and the sequence number) MUST be deleted first.
         if self.responders.contains_key(&msg.id) {
             warn!("Overwriting responder context for address {:?}", msg.id);
         } else {
             info!("Registering new responder with address {:?}", msg.id);
         }
-        self.responders.insert(msg.id, ResponderContext::new(msg.id));
+        self.responders.insert(msg.id, responder);
 
         // Furthermore, the initiator MUST keep its path clean by following the
         // procedure described in the Path Cleaning section.
@@ -995,6 +1040,7 @@ impl Signaling for InitiatorSignaling {
 impl InitiatorSignaling {
     pub(crate) fn new(permanent_keypair: KeyPair,
                       tasks: Tasks,
+                      responder_trusted_pubkey: Option<PublicKey>,
                       ping_interval: Option<Duration>) -> Self {
         InitiatorSignaling {
             common: Common {
@@ -1002,7 +1048,10 @@ impl InitiatorSignaling {
                 role: Role::Initiator,
                 identity: ClientIdentity::Unknown,
                 permanent_keypair: permanent_keypair,
-                auth_token: Some(AuthToken::new()),
+                auth_provider: match responder_trusted_pubkey {
+                    Some(key) => AuthProvider::TrustedKey(key),
+                    None => AuthProvider::Token(AuthToken::new()),
+                },
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
@@ -1396,10 +1445,10 @@ impl Signaling for ResponderSignaling {
         let mut actions: Vec<HandleAction> = vec![];
         match msg.initiator_connected {
             Some(true) => {
-                if let Some(ref token) = self.common().auth_token {
+                if let AuthProvider::Token(ref token) = self.common().auth_provider {
                     actions.push(self.send_token(&token)?);
                 } else {
-                    debug!("No auth token set");
+                    debug!("Trusted key available, skipping token message");
                 }
                 actions.push(self.send_key()?);
                 self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
@@ -1426,10 +1475,10 @@ impl Signaling for ResponderSignaling {
 
         // ...and continue by sending a 'token' or 'key' client-to-client
         // message described in the Client-to-Client Messages section.
-        if let Some(ref token) = self.common().auth_token {
+        if let AuthProvider::Token(ref token) = self.common().auth_provider {
             actions.push(self.send_token(&token)?);
         } else {
-            debug!("No auth token set");
+            debug!("Trusted key available, skipping token message");
         }
         actions.push(self.send_key()?);
         self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
@@ -1454,7 +1503,10 @@ impl ResponderSignaling {
                 role: Role::Responder,
                 identity: ClientIdentity::Unknown,
                 permanent_keypair: permanent_keypair,
-                auth_token: auth_token,
+                auth_provider: match auth_token {
+                    Some(token) => AuthProvider::Token(token),
+                    None => AuthProvider::TrustedKey(initiator_pubkey),
+                },
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
