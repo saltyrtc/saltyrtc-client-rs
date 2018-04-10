@@ -1142,7 +1142,7 @@ mod new_responder {
 
         // Handle message
         let actions = ctx.signaling.handle_message(bbox).unwrap();
-        // TODO: Expect DropResponder
+        assert_eq!(actions.len(), 1); // Drop responder
     }
 
 }

@@ -285,12 +285,16 @@ pub(crate) trait Signaling {
         let obox: OpenBox<Message> = if bbox.nonce.source().is_server() {
             self.decode_server_message(bbox)?
         } else {
+            let source_address = bbox.nonce.source();
             match self.decode_peer_message(bbox) {
                 Ok(obox) => obox,
                 Err(SignalingError::InitiatorCouldNotDecrypt) => {
-                    // TODO: Drop responder
-                    //this.dropResponder(responder, CloseCode.INITIATOR_COULD_NOT_DECRYPT);
-                    return Ok(vec![]);
+                    let drop_responder = self.send_drop_responder(
+                        source_address,
+                        DropReason::InitiatorCouldNotDecrypt,
+                    )?;
+                    debug!("<-- Enqueuing drop-responder to {}", self.server().identity());
+                    return Ok(vec![drop_responder]);
                 },
                 Err(e) => return Err(e),
             }
@@ -655,6 +659,40 @@ pub(crate) trait Signaling {
         return Err(SignalingError::SendError);
     }
 
+
+    // Helper methods
+
+    /// Encode and return a DropResponder message.
+    fn send_drop_responder(&self, addr: Address, reason: DropReason) -> SignalingResult<HandleAction> {
+        // Sanity check
+        if self.role() != Role::Initiator {
+            // Note: We need to define this method here instead of in the
+            // `InitiatorSignaling` impl because the `handle_handshake_message`
+            // method on the `Signaling` trait needs to be able to call it.
+            return Err(SignalingError::Crash(
+                "Non-initiator should never need to encode a DropResponder message".into()
+            ));
+        }
+
+        // Create message and nonce
+        let drop = DropResponder::with_reason(addr, reason).into_message();
+        let drop_nonce = Nonce::new(
+            self.server().cookie_pair.ours.clone(),
+            self.common().identity.into(),
+            self.server().identity().into(),
+            self.server().csn_pair().borrow_mut().ours.increment()?,
+        );
+
+        // Encrypt message
+        let obox = OpenBox::<Message>::new(drop, drop_nonce);
+        let bbox = obox.encrypt(
+            &self.common().permanent_keypair,
+            self.server().session_key()
+                .ok_or(SignalingError::Crash("Server session key not set".into()))?
+        );
+
+        Ok(HandleAction::Reply(bbox))
+    }
 }
 
 
@@ -1225,9 +1263,9 @@ impl InitiatorSignaling {
         if !self.responders.is_empty() {
             info!("Dropping {} other responders", self.responders.len());
             for addr in self.responders.keys() {
-                let bbox = self.drop_responder(addr, DropReason::DroppedByInitiator)?;
+                let drop_responder = self.send_drop_responder(*addr, DropReason::DroppedByInitiator)?;
                 debug!("<-- Enqueuing drop-responder to {}", self.server().identity());
-                actions.push(HandleAction::Reply(bbox));
+                actions.push(drop_responder);
             }
 
             // Remove responders
@@ -1274,26 +1312,6 @@ impl InitiatorSignaling {
 
         self.responder = Some(responder);
         Ok(actions)
-    }
-
-    fn drop_responder(&self, addr: &Address, reason: DropReason) -> SignalingResult<ByteBox> {
-        let drop = DropResponder::with_reason(
-            addr.clone(),
-            reason,
-        ).into_message();
-        let drop_nonce = Nonce::new(
-            self.server().cookie_pair.ours.clone(),
-            self.common.identity.into(),
-            self.server().identity().into(),
-            self.server().csn_pair().borrow_mut().ours.increment()?,
-        );
-        let obox = OpenBox::<Message>::new(drop, drop_nonce);
-        let bbox = obox.encrypt(
-            &self.common().permanent_keypair,
-            self.server().session_key()
-                .ok_or(SignalingError::Crash("Server session key not set".into()))?
-        );
-        Ok(bbox)
     }
 }
 
