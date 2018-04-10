@@ -912,6 +912,7 @@ impl Signaling for InitiatorSignaling {
         match responder.handshake_state() {
             ResponderHandshakeState::New => {
                 // Expect token message, encrypted with authentication token.
+                debug!("Expect token message");
                 match self.common.auth_provider {
                     AuthProvider::Token(ref token) => OpenBox::decrypt_token(bbox, token),
                     AuthProvider::TrustedKey(_) => Err(SignalingError::Crash(
@@ -922,13 +923,14 @@ impl Signaling for InitiatorSignaling {
             ResponderHandshakeState::TokenReceived => {
                 // Expect key message, encrypted with our public permanent key
                 // and responder private permanent key
+                debug!("Expect key message");
                 OpenBox::<Message>::decrypt(
                     bbox,
                     &self.common.permanent_keypair,
                     responder_permanent_key(&responder)?
                 ).map_err(|e| match e {
                     SignalingError::Decode(_) => {
-                        warn!("Could not decrypt token message");
+                        warn!("Could not decrypt key message");
                         SignalingError::InitiatorCouldNotDecrypt
                     },
                     e => e,
@@ -976,9 +978,9 @@ impl Signaling for InitiatorSignaling {
     }
 
     fn handle_server_auth_impl(&mut self, msg: &ServerAuth) -> SignalingResult<Vec<HandleAction>> {
-        // In case the client is the initiator, it SHALL check
-        // that the responders field is set and contains an
-        // Array of responder identities.
+        // In case the client is the initiator, it SHALL check that the
+        // responders field is set and contains an Array of responder
+        // identities.
         if msg.initiator_connected.is_some() {
             return Err(SignalingError::InvalidMessage(
                 "We're the initiator, but the `initiator_connected` field in the server-auth message is set".into()
@@ -991,9 +993,8 @@ impl Signaling for InitiatorSignaling {
             )),
         };
 
-        // The responder identities MUST be validated and SHALL
-        // neither contain addresses outside the range
-        // 0x02..0xff
+        // The responder identities MUST be validated and SHALL neither contain
+        // addresses outside the range 0x02..0xff
         let responders_set: HashSet<Address> = responders.iter().cloned().collect();
         if responders_set.contains(&Address(0x00)) || responders_set.contains(&Address(0x01)) {
             return Err(SignalingError::InvalidMessage(
@@ -1001,29 +1002,23 @@ impl Signaling for InitiatorSignaling {
             ));
         }
 
-        // ...nor SHALL an address be repeated in the
-        // Array.
+        // ...nor SHALL an address be repeated in the Array.
         if responders.len() != responders_set.len() {
             return Err(SignalingError::InvalidMessage(
                 "`responders` field in server-auth message may not contain duplicates".into()
             ));
         }
 
-        // An empty Array SHALL be considered valid. However,
-        // Nil SHALL NOT be considered a valid value of that
-        // field.
+        // An empty Array SHALL be considered valid. However, Nil SHALL NOT be
+        // considered a valid value of that field.
         // -> Already covered by Rust's type system.
 
-        // It SHOULD store the responder's identities in its
-        // internal list of responders.
+        // It SHOULD store the responder's identities in its internal list of
+        // responders. Additionally, the initiator MUST keep its path clean by
+        // following the procedure described in the Path Cleaning section.
         for address in responders_set {
-            self.responders.insert(address, ResponderContext::new(address));
+            self.process_new_responder(address)?;
         }
-
-        // Additionally, the initiator MUST keep its path clean
-        // by following the procedure described in the Path
-        // Cleaning section.
-        // TODO (#15): Implement
 
         Ok(vec![])
     }
@@ -1043,36 +1038,11 @@ impl Signaling for InitiatorSignaling {
             ));
         }
 
-        // Create responder context
-        let mut responder = ResponderContext::new(msg.id);
-
-        // If we trust the responder…
-        if let AuthProvider::TrustedKey(key) = self.common.auth_provider {
-            // …don't expect a token message
-            responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
-
-            // …set the public permanent key
-            responder.permanent_key = Some(key);
-        }
-
-        // The initiator SHOULD store the responder's identity in its internal
-        // list of responders. If a responder with the same id already exists,
-        // all currently cached information about and for the previous responder
-        // (such as cookies and the sequence number) MUST be deleted first.
-        if self.responders.contains_key(&msg.id) {
-            warn!("Overwriting responder context for address {:?}", msg.id);
-        } else {
-            info!("Registering new responder with address {:?}", msg.id);
-        }
-        self.responders.insert(msg.id, responder);
-
-        // Furthermore, the initiator MUST keep its path clean by following the
-        // procedure described in the Path Cleaning section.
-        // TODO (#15): Implement
+        // Process responder
+        self.process_new_responder(msg.id)?;
 
         Ok(vec![])
     }
-
 }
 
 impl InitiatorSignaling {
@@ -1312,6 +1282,43 @@ impl InitiatorSignaling {
 
         self.responder = Some(responder);
         Ok(actions)
+    }
+
+    fn process_new_responder(&mut self, address: Address) -> SignalingResult<()> {
+        // If a responder with the same id already exists,
+        // all currently cached information about and for the previous responder
+        // (such as cookies and the sequence number) MUST be deleted first.
+        if self.responders.contains_key(&address) {
+            warn!("Overwriting responder context for address {:?}", address);
+            self.responders.remove(&address);
+        } else {
+            info!("Registering new responder with address {:?}", address);
+        }
+
+        // Create responder context
+        let mut responder = ResponderContext::new(address);
+
+        // If we trust the responder…
+        if let AuthProvider::TrustedKey(key) = self.common.auth_provider {
+            // …set the public permanent key
+            if responder.permanent_key.is_some() { // Sanity check
+                return Err(SignalingError::Crash("Responder already has a permanent key set!".into()));
+            }
+            responder.permanent_key = Some(key);
+
+            // …don't expect a token message
+            responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
+        }
+
+        // The initiator SHOULD store the responder's identity in its internal
+        // list of responders.
+        self.responders.insert(address, responder);
+
+        // Furthermore, the initiator MUST keep its path clean by following the
+        // procedure described in the Path Cleaning section.
+        // TODO (#15): Implement
+
+        Ok(())
     }
 }
 

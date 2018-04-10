@@ -116,8 +116,8 @@ pub(crate) enum SignalingError {
     #[fail(display = "Task initialization failed: {}", _0)]
     TaskInitialization(String),
 
-    /// Initiator could not decrypt token message.
-    #[fail(display = "Initiator could not decrypt token message")]
+    /// Initiator could not decrypt key message.
+    #[fail(display = "Initiator could not decrypt key message")]
     InitiatorCouldNotDecrypt,
 
     /// An unexpected error. This should never happen and indicates a bug in

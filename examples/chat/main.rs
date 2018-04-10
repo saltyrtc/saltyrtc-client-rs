@@ -40,7 +40,7 @@ use log4rs::config::{Appender, Config, Logger, Root};
 use log4rs::filter::threshold::ThresholdFilter;
 use native_tls::{TlsConnector, Certificate, Protocol};
 use saltyrtc_client::{SaltyClient, Role, WsClient, BoxedFuture, CloseCode};
-use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str};
+use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str, private_key_from_hex_str};
 use saltyrtc_client::errors::SaltyError;
 use saltyrtc_client::tasks::Task;
 use tokio_core::reactor::Core;
@@ -64,6 +64,7 @@ macro_rules! boxed {
 fn main() {
     const ARG_PATH: &'static str = "path";
     const ARG_RESPONDER_KEY: &'static str = "responder_key";
+    const ARG_PRIVATE_KEY: &'static str = "private_key";
     const ARG_AUTHTOKEN: &'static str = "authtoken";
     const ARG_PING_INTERVAL: &'static str = "ping_interval";
 
@@ -81,29 +82,53 @@ fn main() {
         .about("Test client for SaltyRTC.")
         .subcommand(SubCommand::with_name("initiator")
             .about("Start chat as initiator")
-            .arg(Arg::with_name(ARG_RESPONDER_KEY)
-                .short("k")
+            .arg(arg_ping_interval.clone()))
+        .subcommand(SubCommand::with_name("initiator_trusted")
+            .about("Start chat as initiator with a trusted responder key")
+            .arg(Arg::with_name(ARG_PRIVATE_KEY)
+                .long("private-key")
                 .takes_value(true)
-                .value_name("KEY")
-                .required(false)
-                .help("The trusted responder key (hex encoded)"))
+                .value_name("PRIVATE_KEY")
+                .required(true)
+                .help("The own private key (hex encoded)"))
+            .arg(Arg::with_name(ARG_RESPONDER_KEY)
+                .long("responder-key")
+                .takes_value(true)
+                .value_name("RESPONDER_KEY")
+                .required(true)
+                .help("The trusted responder public key (hex encoded)"))
             .arg(arg_ping_interval.clone()))
         .subcommand(SubCommand::with_name("responder")
             .about("Start chat as responder")
             .arg(Arg::with_name(ARG_PATH)
-                .short("p")
+                .long("path")
                 .takes_value(true)
                 .value_name("PATH")
                 .required(true)
                 .help("The websocket path (hex encoded public key of the initiator)"))
             .arg(Arg::with_name(ARG_AUTHTOKEN)
-                .short("a")
+                .long("auth-token")
                 .alias("token")
                 .alias("authtoken")
                 .takes_value(true)
                 .value_name("AUTHTOKEN")
-                .required(false)
+                .required(true)
                 .help("The auth token (hex encoded)"))
+            .arg(arg_ping_interval.clone()))
+        .subcommand(SubCommand::with_name("responder_trusted")
+            .about("Start chat as responder with a trusted initiator key")
+            .arg(Arg::with_name(ARG_PATH)
+                .long("path")
+                .takes_value(true)
+                .value_name("PATH")
+                .required(true)
+                .help("The websocket path (hex encoded public key of the initiator)"))
+            .arg(Arg::with_name(ARG_PRIVATE_KEY)
+                .long("private-key")
+                .takes_value(true)
+                .value_name("PRIVATE_KEY")
+                .required(true)
+                .help("The own private key (hex encoded)"))
             .arg(arg_ping_interval));
 
     // Parse arguments
@@ -115,9 +140,11 @@ fn main() {
     let args = &subcommand.matches;
 
     // Determine role
-    let role = match &*subcommand.name {
-        "initiator" => Role::Initiator,
-        "responder" => Role::Responder,
+    let (role, is_trusted) = match &*subcommand.name {
+        "initiator" => (Role::Initiator, false),
+        "initiator_trusted" => (Role::Initiator, true),
+        "responder" => (Role::Responder, false),
+        "responder_trusted" => (Role::Responder, true),
         other => {
             println!("Invalid subcommand: {}", other);
             process::exit(1);
@@ -153,9 +180,16 @@ fn main() {
     let tls_connector = tls_builder.build()
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e));
 
-    // Create new public permanent keypair
-    let keypair = KeyPair::new();
+    // Create or restore public permanent keypair
+    let keypair = if is_trusted {
+        let private_key_hex = args.value_of(ARG_PRIVATE_KEY).unwrap();
+        let private_key = private_key_from_hex_str(private_key_hex).unwrap();
+        KeyPair::from_private_key(private_key)
+    } else {
+        KeyPair::new()
+    };
     let own_pubkey_hex = keypair.public_key_hex();
+    let own_privkey_hex = keypair.private_key_hex();
 
     // Determine websocket path
     let path: String = match role {
@@ -178,11 +212,11 @@ fn main() {
             let builder = SaltyClient::build(keypair)
                 .add_task(Box::new(task))
                 .with_ping_interval(Some(ping_interval));
-            let salty = match args.value_of(ARG_RESPONDER_KEY) {
-                Some(trusted_key) => builder.initiator_trusted(
-                    public_key_from_hex_str(trusted_key).unwrap()
-                ),
-                None => builder.initiator(),
+            let salty = if is_trusted {
+                let trusted_key = args.value_of(ARG_RESPONDER_KEY).unwrap();
+                builder.initiator_trusted(public_key_from_hex_str(trusted_key).unwrap())
+            } else {
+                builder.initiator()
             }.expect("Could not create SaltyClient instance");
             let auth_token_hex = salty.auth_token().map(|t| HEXLOWER.encode(t.secret_key_bytes()));
             (salty, auth_token_hex)
@@ -193,44 +227,34 @@ fn main() {
             let builder = SaltyClient::build(keypair)
                 .add_task(Box::new(task))
                 .with_ping_interval(Some(ping_interval));
-            let auth_token_hex = args.value_of(ARG_AUTHTOKEN).map(|t| t.to_lowercase());
-            let salty = match auth_token_hex {
-                Some(ref auth_token_hex) => {
-                    let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
-                    builder.responder(initiator_pubkey, auth_token)
-                },
-                None => {
-                    builder.responder_trusted(initiator_pubkey)
-                }
-            }.expect("Could not create SaltyClient instance");
-            (salty, auth_token_hex)
+            if is_trusted {
+                (builder.responder_trusted(initiator_pubkey).unwrap(), None)
+            } else {
+                let auth_token_hex = args.value_of(ARG_AUTHTOKEN).unwrap().to_string();
+                let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
+                (builder.responder(initiator_pubkey, auth_token).unwrap(), Some(auth_token_hex))
+            }
         },
-    };
-
-    let is_trusted = match (role, &auth_token_hex) {
-        (Role::Initiator, &Some(_)) => false,
-        (Role::Initiator, &None) => true,
-        (Role::Responder, &Some(_)) => false,
-        (Role::Responder, &None) => true,
     };
 
     println!("\n\x1B[32m******************************");
     println!("Connecting as {} ({})", role, if is_trusted { "trusted" } else { "not trusted" });
     println!();
-    println!("Own permanent pubkey: {}", &own_pubkey_hex);
-    println!("Signaling path: {}", path);
+    println!("   Own permanent public key: {}", &own_pubkey_hex);
+    println!("  Own permanent private key: {}", &own_privkey_hex);
+    println!("             Signaling path: {}", path);
     if let Some(ref auth_token) = auth_token_hex {
-        println!("Auth token: {}", auth_token);
+        println!("                 Auth token: {}", auth_token);
     } else {
         println!("Using trusted key");
     }
     println!();
     println!("To connect with a peer:");
     match (role, auth_token_hex) {
-        (Role::Initiator, Some(ath)) => println!("cargo run --example chat -- responder \\\n    -p {} \\\n    -a {}", path, ath),
-        (Role::Initiator, None) => println!("cargo run --example chat -- responder \\\n    -p {}", path),
+        (Role::Initiator, Some(ath)) => println!("cargo run --example chat -- responder \\\n    --path {} \\\n    --auth-token {}", path, ath),
+        (Role::Initiator, None) => println!("cargo run --example chat -- responder_trusted \\\n    --path {} \\\n    --private-key XXX", path),
         (Role::Responder, Some(_)) => println!("cargo run --example chat -- initiator"),
-        (Role::Responder, None) => println!("cargo run --example chat -- initiator \\\n    -k {}", &own_pubkey_hex),
+        (Role::Responder, None) => println!("cargo run --example chat -- initiator_trusted \\\n    --responder-key {} \\\n    --private-key XXX", &own_pubkey_hex),
     };
     println!("******************************\x1B[0m\n");
 
