@@ -76,7 +76,7 @@ use websocket::header::WebSocketProtocol;
 use websocket::message::{OwnedMessage, CloseData};
 
 // Re-exports
-pub use protocol::{Role};
+pub use protocol::{Role, Event};
 
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
@@ -89,7 +89,7 @@ use boxes::{ByteBox};
 use crypto_types::{KeyPair, PublicKey, AuthToken};
 use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
 use helpers::libsodium_init;
-use protocol::{HandleAction, Event, Signaling, InitiatorSignaling, ResponderSignaling};
+use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
 use tasks::{Tasks, TaskMessage, BoxedTask};
 
 
