@@ -824,28 +824,35 @@ impl Signaling for InitiatorSignaling {
     }
 
     fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut PeerContext> {
-        if self.common().signaling_state() == SignalingState::Task {
-            // If we've already selected a peer, return it if it matches the address.
-            let peer = self.responder.as_mut().map(|p| p as &mut PeerContext);
-            let valid = match peer {
-                Some(ref p) => {
-                    let peer_addr: Address = p.identity().into();
-                    peer_addr == addr
-                },
-                None => false,
-            };
-            if valid {
-                peer
-            } else {
-                None
-            }
-        } else {
-            // Otherwise look in the list of known responders.
-            let identity: Identity = addr.into();
-            match identity {
-                Identity::Server => Some(&mut self.common.server as &mut PeerContext),
-                Identity::Initiator => None,
-                Identity::Responder(_) => self.responders.get_mut(&addr).map(|r| r as &mut PeerContext),
+        let identity: Identity = addr.into();
+        match identity {
+            // Server can always send us messages
+            Identity::Server => Some(&mut self.common.server as &mut PeerContext),
+
+            // We're the initiator, this doesn't make any sense
+            Identity::Initiator => None,
+
+            // Return correct responder instance
+            Identity::Responder(_) => {
+                if self.common().signaling_state() == SignalingState::Task {
+                    // If we've already selected a peer, return it if it matches the address.
+                    let peer = self.responder.as_mut().map(|p| p as &mut PeerContext);
+                    let valid = match peer {
+                        Some(ref p) => {
+                            let peer_addr: Address = p.identity().into();
+                            peer_addr == addr
+                        },
+                        None => false,
+                    };
+                    if valid {
+                        peer
+                    } else {
+                        None
+                    }
+                } else {
+                    // Otherwise look in the list of known responders.
+                    self.responders.get_mut(&addr).map(|r| r as &mut PeerContext)
+                }
             }
         }
     }

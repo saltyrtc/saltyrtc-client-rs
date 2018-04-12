@@ -1240,4 +1240,26 @@ mod disconnected {
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0], HandleAction::Event(Event::Disconnected(7)));
     }
+
+    /// A disconnected message should be processed by the initiator, even in
+    /// task signaling state. (Regression test)
+    #[test]
+    fn disconnected_in_task_signaling_state() {
+        let mut ctx = TestContext::initiator(
+            ClientIdentity::Initiator, None,
+            SignalingState::Task, ServerHandshakeState::Done,
+        );
+
+        // Encrypt message
+        let msg = Message::Disconnected(Disconnected::new(ClientIdentity::Responder(7).into()));
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
+            .build(ctx.server_cookie.clone(),
+                   &ctx.server_ks,
+                   ctx.our_ks.public_key());
+
+        // Handle message
+        let actions = ctx.signaling.handle_message(bbox).unwrap();
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0], HandleAction::Event(Event::Disconnected(7)));
+    }
 }
