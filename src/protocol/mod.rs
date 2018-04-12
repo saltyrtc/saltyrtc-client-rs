@@ -785,6 +785,14 @@ impl Common {
         self.signaling_state = state;
         Ok(())
     }
+
+    /// Set the current signaling state.
+    #[cfg(test)]
+    fn set_signaling_state_forced(&mut self, state: SignalingState) -> SignalingResult<()> {
+        trace!("Setting signaling state to {:?} for tests", state);
+        self.signaling_state = state;
+        Ok(())
+    }
 }
 
 
