@@ -35,11 +35,11 @@ use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderConte
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
     Message, ServerHello, ServerAuth, ClientHello, ClientAuth,
-    NewInitiator, NewResponder, DropResponder, DropReason,
+    NewInitiator, NewResponder, DropResponder, DropReason, Disconnected,
     SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder, Close,
 };
 pub(crate) use self::nonce::{Nonce};
-pub use self::types::{Role};
+pub use self::types::{Role, Event};
 pub(crate) use self::types::{HandleAction};
 use self::types::{Identity, ClientIdentity, Address};
 use self::state::{
@@ -270,21 +270,31 @@ pub(crate) trait Signaling {
                 return Err(SignalingError::Crash(reason)),
         };
 
-        match self.common().signaling_state() {
-            SignalingState::ServerHandshake => self.handle_handshake_message(bbox),
-            SignalingState::PeerHandshake => self.handle_handshake_message(bbox),
-            SignalingState::Task => self.handle_task_message(bbox),
+        if bbox.nonce.source().is_server() {
+            let obox: OpenBox<Message> = self.decode_server_message(bbox)?;
+            self.handle_server_message(obox)
+        } else {
+            match self.common().signaling_state() {
+                SignalingState::ServerHandshake => self.handle_handshake_peer_message(bbox),
+                SignalingState::PeerHandshake => self.handle_handshake_peer_message(bbox),
+                SignalingState::Task => self.handle_task_peer_message(bbox),
+            }
         }
     }
 
-    /// Handle an incoming handshake message.
-    fn handle_handshake_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
-        trace!("handle_handshake_message");
+    /// Handle an incoming handshake message from a peer.
+    fn handle_handshake_peer_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+        trace!("handle_handshake_peer_message");
 
-        // Decode message depending on source
-        let obox: OpenBox<Message> = if bbox.nonce.source().is_server() {
-            self.decode_server_message(bbox)?
-        } else {
+        // Sanity check
+        if bbox.nonce.source().is_server() {
+            return Err(SignalingError::Crash(
+                "Message in handle_handshake_peer_message is from server!".into()
+            ));
+        }
+
+        // Decode message
+        let obox: OpenBox<Message> = {
             let source_address = bbox.nonce.source();
             match self.decode_peer_message(bbox) {
                 Ok(obox) => obox,
@@ -304,7 +314,7 @@ pub(crate) trait Signaling {
         match self.common().signaling_state() {
             // Server handshake
             SignalingState::ServerHandshake =>
-                self.handle_server_message(obox),
+                return Err(SignalingError::Crash("Illegal signaling state: ServerHandshake".into())),
 
             // Peer handshake
             SignalingState::PeerHandshake if obox.nonce.source().is_server() =>
@@ -318,9 +328,16 @@ pub(crate) trait Signaling {
         }
     }
 
-    /// Handle an incoming task message.
-    fn handle_task_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
-        trace!("handle_task_message");
+    /// Handle an incoming task message from a peer.
+    fn handle_task_peer_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+        trace!("handle_task_peer_message");
+
+        // Sanity check
+        if bbox.nonce.source().is_server() {
+            return Err(SignalingError::Crash(
+                "Message in handle_task_peer_message is from server!".into()
+            ));
+        }
 
         // Decode message
         let obox: OpenBox<Value> = self.decode_task_message(bbox)?;
@@ -506,10 +523,12 @@ pub(crate) trait Signaling {
                 unimplemented!("TODO (#36): Handling DropResponder messages not yet implemented"),
             (ServerHandshakeState::Done, Message::SendError(msg)) =>
                 self.handle_send_error(msg),
+            (ServerHandshakeState::Done, Message::Disconnected(msg)) =>
+                self.handle_disconnected(msg),
 
             // Any undefined state transition results in an error
             (s, message) => Err(SignalingError::InvalidStateTransition(
-                format!("Got {} message from server in {:?} state", message.get_type(), s)
+                format!("Got '{}' message from server in {:?} state", message.get_type(), s)
             )),
         }
     }
@@ -659,16 +678,19 @@ pub(crate) trait Signaling {
         return Err(SignalingError::SendError);
     }
 
+    /// Handle an incoming [`Disconnected`](messages/struct.Disconnected.html) message.
+    fn handle_disconnected(&mut self, msg: Disconnected) -> SignalingResult<Vec<HandleAction>>;
 
     // Helper methods
 
     /// Encode and return a DropResponder message.
     fn send_drop_responder(&self, addr: Address, reason: DropReason) -> SignalingResult<HandleAction> {
+        // Note: We need to define this method here instead of in the
+        // `InitiatorSignaling` impl because the `handle_handshake_peer_message`
+        // method on the `Signaling` trait needs to be able to call it.
+
         // Sanity check
         if self.role() != Role::Initiator {
-            // Note: We need to define this method here instead of in the
-            // `InitiatorSignaling` impl because the `handle_handshake_message`
-            // method on the `Signaling` trait needs to be able to call it.
             return Err(SignalingError::Crash(
                 "Non-initiator should never need to encode a DropResponder message".into()
             ));
@@ -763,6 +785,14 @@ impl Common {
         self.signaling_state = state;
         Ok(())
     }
+
+    /// Set the current signaling state.
+    #[cfg(test)]
+    fn set_signaling_state_forced(&mut self, state: SignalingState) -> SignalingResult<()> {
+        trace!("Setting signaling state to {:?} for tests", state);
+        self.signaling_state = state;
+        Ok(())
+    }
 }
 
 
@@ -794,28 +824,35 @@ impl Signaling for InitiatorSignaling {
     }
 
     fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut PeerContext> {
-        if self.common().signaling_state() == SignalingState::Task {
-            // If we've already selected a peer, return it if it matches the address.
-            let peer = self.responder.as_mut().map(|p| p as &mut PeerContext);
-            let valid = match peer {
-                Some(ref p) => {
-                    let peer_addr: Address = p.identity().into();
-                    peer_addr == addr
-                },
-                None => false,
-            };
-            if valid {
-                peer
-            } else {
-                None
-            }
-        } else {
-            // Otherwise look in the list of known responders.
-            let identity: Identity = addr.into();
-            match identity {
-                Identity::Server => Some(&mut self.common.server as &mut PeerContext),
-                Identity::Initiator => None,
-                Identity::Responder(_) => self.responders.get_mut(&addr).map(|r| r as &mut PeerContext),
+        let identity: Identity = addr.into();
+        match identity {
+            // Server can always send us messages
+            Identity::Server => Some(&mut self.common.server as &mut PeerContext),
+
+            // We're the initiator, this doesn't make any sense
+            Identity::Initiator => None,
+
+            // Return correct responder instance
+            Identity::Responder(_) => {
+                if self.common().signaling_state() == SignalingState::Task {
+                    // If we've already selected a peer, return it if it matches the address.
+                    let peer = self.responder.as_mut().map(|p| p as &mut PeerContext);
+                    let valid = match peer {
+                        Some(ref p) => {
+                            let peer_addr: Address = p.identity().into();
+                            peer_addr == addr
+                        },
+                        None => false,
+                    };
+                    if valid {
+                        peer
+                    } else {
+                        None
+                    }
+                } else {
+                    // Otherwise look in the list of known responders.
+                    self.responders.get_mut(&addr).map(|r| r as &mut PeerContext)
+                }
             }
         }
     }
@@ -1023,10 +1060,12 @@ impl Signaling for InitiatorSignaling {
         Ok(vec![])
     }
 
+    /// Handle an incoming [`NewInitiator`](messages/struct.Initiator.html) message.
     fn handle_new_initiator(&mut self, _msg: NewInitiator) -> SignalingResult<Vec<HandleAction>> {
         Err(SignalingError::Protocol("Received 'new-responder' message as initiator".into()))
     }
 
+    /// Handle an incoming [`NewResponder`](messages/struct.NewResponder.html) message.
     fn handle_new_responder(&mut self, msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received new-responder ({}) from server", msg.id);
 
@@ -1042,6 +1081,21 @@ impl Signaling for InitiatorSignaling {
         self.process_new_responder(msg.id)?;
 
         Ok(vec![])
+    }
+
+    /// Handle an incoming [`Disconnected`](messages/struct.Disconnected.html) message.
+    fn handle_disconnected(&mut self, msg: Disconnected) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received disconnected from server");
+
+        // An initiator who receives a 'disconnected' message SHALL validate
+        // that the id field contains a valid responder address (0x02..0xff).
+        if !msg.id.is_responder() {
+            return Err(SignalingError::Protocol(
+                "Received 'disconnected' message with non-responder id".into()
+            ));
+        }
+
+        Ok(vec![HandleAction::Event(Event::Disconnected(msg.id.0))])
     }
 }
 
@@ -1521,6 +1575,21 @@ impl Signaling for ResponderSignaling {
 
     fn handle_new_responder(&mut self, _msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
         Err(SignalingError::Protocol("Received 'new-responder' message as responder".into()))
+    }
+
+    /// Handle an incoming [`Disconnected`](messages/struct.Disconnected.html) message.
+    fn handle_disconnected(&mut self, msg: Disconnected) -> SignalingResult<Vec<HandleAction>> {
+        debug!("--> Received disconnected from server");
+
+        // A responder who receives a 'disconnected' message SHALL validate
+        // that the id field contains a valid initiator address (0x01).
+        if !msg.id.is_initiator() {
+            return Err(SignalingError::Protocol(
+                "Received 'disconnected' message with non-initiator id".into()
+            ));
+        }
+
+        Ok(vec![HandleAction::Event(Event::Disconnected(msg.id.0))])
     }
 }
 
