@@ -1,3 +1,13 @@
+# saltyrtc-client FFI bindings
+
+This crate contains some FFI bindings for the saltyrtc-client library.
+
+Note: Due to a [Rust bug](https://github.com/rust-lang/rust/issues/36342), C
+bindings cannot be re-exported. This means that the saltyrtc-client FFI
+bindings are currently a bit useless as a separate crate. Instead, every task
+implementation needs to write its own bindings. The bindings in this crate can
+be copy-pasted if desired.
+
 ## Testing
 
 ### Rust tests
