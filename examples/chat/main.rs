@@ -39,7 +39,7 @@ use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Config, Logger, Root};
 use log4rs::filter::threshold::ThresholdFilter;
 use native_tls::{TlsConnector, Certificate, Protocol};
-use saltyrtc_client::{SaltyClient, Role, WsClient, BoxedFuture, CloseCode};
+use saltyrtc_client::{SaltyClient, Role, WsClient, CloseCode, Event};
 use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str, private_key_from_hex_str};
 use saltyrtc_client::errors::SaltyError;
 use saltyrtc_client::tasks::Task;
@@ -51,14 +51,6 @@ use chat_task::{ChatTask, ChatMessage};
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const VIEW_TEXT_ID: &'static str = "text";
 const VIEW_INPUT_ID: &'static str = "input";
-
-
-/// Wrap future in a box with type erasure.
-macro_rules! boxed {
-    ($future:expr) => {{
-        Box::new($future) as BoxedFuture<_, _>
-    }}
-}
 
 
 fn main() {
@@ -290,7 +282,7 @@ fn main() {
     };
 
     // Set up task loop
-    let (task, task_loop, _event_rx) = saltyrtc_client::task_loop(client, salty_rc.clone())
+    let (task, task_loop, event_rx) = saltyrtc_client::task_loop(client, salty_rc.clone())
         .unwrap_or_else(|e| {
             println!("{}", e);
             process::exit(1);
@@ -392,7 +384,7 @@ fn main() {
                 match parts.next().unwrap() {
                     "/help" => {
                         log_line!("*** Available commands: /help /nick /quit");
-                        boxed!(future::ok(()))
+                        future::ok(())
                     }
                     "/quit" => {
                         log_line!("*** Exiting");
@@ -405,38 +397,38 @@ fn main() {
                         // Disconnect
                         chat_task.close(CloseCode::WsGoingAway);
 
-                        boxed!(future::err(Ok(())))
+                        future::err(Ok(()))
                     }
                     "/nick" => {
                         match parts.next() {
                             Some(nick) => {
                                 log_line!("*** Changing nickname to {}", nick);
                                 match chat_task.change_nick(&nick) {
-                                    Ok(_) => boxed!(future::ok(())),
+                                    Ok(_) => future::ok(()),
                                     Err(e) => {
                                         log_line!("*** Error: {}", e);
-                                        boxed!(future::err(Err(())))
+                                        future::err(Err(()))
                                     }
                                 }
                             }
                             None => {
                                 log_line!("*** Usage: /nick <new-nickname>");
-                                boxed!(future::ok(()))
+                                future::ok(())
                             }
                         }
                     }
                     other => {
                         log_line!("*** Unknown command: {}", other);
-                        boxed!(future::ok(()))
+                        future::ok(())
                     }
                 }
             } else {
                 log_line!("{}> {}", chat_task.our_name, msg);
                 match chat_task.send_msg(&msg) {
-                    Ok(_) => boxed!(future::ok(())),
+                    Ok(_) => future::ok(()),
                     Err(e) => {
                         log_line!("*** Error: {}", e);
-                        boxed!(future::err(Err(())))
+                        future::err(Err(()))
                     }
                 }
             }
@@ -484,12 +476,39 @@ fn main() {
             Err(_) => future::err(SaltyError::Crash("Something went wrong in message receive loop".into())),
         });
 
+    // Event receive loop
+    //
+    // The closure passed to `for_each` must return:
+    //
+    // * `future::ok(())` to continue listening for events
+    // * `future::err(Ok(()))` to stop the loop without an error
+    // * `future::err(Err(_))` to stop the loop with an error
+    let event_loop = event_rx
+        .map_err(|_| Err(()))
+        .for_each({
+            |event: Event| match event {
+                Event::Disconnected(addr) => {
+                        log_line!("*** Peer with address {} disconnected", addr);
+                        log_line!("*** Use Ctrl+C to exit");
+                        future::err(Ok(()))
+                },
+            }
+        })
+        .or_else(|res| match res {
+            Ok(_) => future::ok(debug!("† Event loop future done")),
+            Err(_) => future::err(SaltyError::Crash("Something went wrong in event loop".into())),
+        });
+
     // Main future
     let main_loop = task_loop
         .join(
             send_loop
                 .select(receive_loop)
-                .map_err(|(e, ..)| e)
+                    .map_err(|(e, ..)| e)
+                    .map(|(x, ..)| x)
+                .select(event_loop)
+                    .map_err(|(e, ..)| e)
+                    .map(|(x, ..)| x)
         );
 
     // Run future in reactor
