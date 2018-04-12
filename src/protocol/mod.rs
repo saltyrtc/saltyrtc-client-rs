@@ -270,21 +270,31 @@ pub(crate) trait Signaling {
                 return Err(SignalingError::Crash(reason)),
         };
 
-        match self.common().signaling_state() {
-            SignalingState::ServerHandshake => self.handle_handshake_message(bbox),
-            SignalingState::PeerHandshake => self.handle_handshake_message(bbox),
-            SignalingState::Task => self.handle_task_message(bbox),
+        if bbox.nonce.source().is_server() {
+            let obox: OpenBox<Message> = self.decode_server_message(bbox)?;
+            self.handle_server_message(obox)
+        } else {
+            match self.common().signaling_state() {
+                SignalingState::ServerHandshake => self.handle_handshake_peer_message(bbox),
+                SignalingState::PeerHandshake => self.handle_handshake_peer_message(bbox),
+                SignalingState::Task => self.handle_task_peer_message(bbox),
+            }
         }
     }
 
-    /// Handle an incoming handshake message.
-    fn handle_handshake_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
-        trace!("handle_handshake_message");
+    /// Handle an incoming handshake message from a peer.
+    fn handle_handshake_peer_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+        trace!("handle_handshake_peer_message");
 
-        // Decode message depending on source
-        let obox: OpenBox<Message> = if bbox.nonce.source().is_server() {
-            self.decode_server_message(bbox)?
-        } else {
+        // Sanity check
+        if bbox.nonce.source().is_server() {
+            return Err(SignalingError::Crash(
+                "Message in handle_handshake_peer_message is from server!".into()
+            ));
+        }
+
+        // Decode message
+        let obox: OpenBox<Message> = {
             let source_address = bbox.nonce.source();
             match self.decode_peer_message(bbox) {
                 Ok(obox) => obox,
@@ -304,7 +314,7 @@ pub(crate) trait Signaling {
         match self.common().signaling_state() {
             // Server handshake
             SignalingState::ServerHandshake =>
-                self.handle_server_message(obox),
+                return Err(SignalingError::Crash("Illegal signaling state: ServerHandshake".into())),
 
             // Peer handshake
             SignalingState::PeerHandshake if obox.nonce.source().is_server() =>
@@ -318,9 +328,16 @@ pub(crate) trait Signaling {
         }
     }
 
-    /// Handle an incoming task message.
-    fn handle_task_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
-        trace!("handle_task_message");
+    /// Handle an incoming task message from a peer.
+    fn handle_task_peer_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+        trace!("handle_task_peer_message");
+
+        // Sanity check
+        if bbox.nonce.source().is_server() {
+            return Err(SignalingError::Crash(
+                "Message in handle_task_peer_message is from server!".into()
+            ));
+        }
 
         // Decode message
         let obox: OpenBox<Value> = self.decode_task_message(bbox)?;
@@ -668,11 +685,12 @@ pub(crate) trait Signaling {
 
     /// Encode and return a DropResponder message.
     fn send_drop_responder(&self, addr: Address, reason: DropReason) -> SignalingResult<HandleAction> {
+        // Note: We need to define this method here instead of in the
+        // `InitiatorSignaling` impl because the `handle_handshake_peer_message`
+        // method on the `Signaling` trait needs to be able to call it.
+
         // Sanity check
         if self.role() != Role::Initiator {
-            // Note: We need to define this method here instead of in the
-            // `InitiatorSignaling` impl because the `handle_handshake_message`
-            // method on the `Signaling` trait needs to be able to call it.
             return Err(SignalingError::Crash(
                 "Non-initiator should never need to encode a DropResponder message".into()
             ));
