@@ -94,7 +94,7 @@ use tasks::{Tasks, TaskMessage, BoxedTask};
 
 
 // Constants
-const SUBPROTOCOL: &'static str = "v1.saltyrtc.org";
+const SUBPROTOCOL: &str = "v1.saltyrtc.org";
 #[cfg(feature = "msgpack-debugging")]
 const DEFAULT_MSGPACK_DEBUG_URL: &'static str = "https://msgpack.dbrgn.ch/#base64=";
 
@@ -585,9 +585,10 @@ pub fn do_handshake(
 
                 macro_rules! loop_action {
                     ($client:expr) => {
-                        match handshake_done {
-                            false => Loop::Continue($client),
-                            true => Loop::Break($client),
+                        if handshake_done {
+                            Loop::Break($client)
+                        } else {
+                            Loop::Continue($client)
                         }
                     }
                 };
@@ -637,7 +638,7 @@ pub fn task_loop(
             Ok(t) => Some(t.name()),
             Err(_) => None,
         })
-        .unwrap_or("Unknown".into());
+        .unwrap_or_else(|| "Unknown".into());
     info!("Starting task loop for task {}", task_name);
 
     let salty = Rc::clone(&salty);
@@ -663,7 +664,7 @@ pub fn task_loop(
         .and_then(decode_ws_message)
 
         // Wrap errors in a result type
-        .map_err(|e| Err(e))
+        .map_err(Err)
 
         // Handle each incoming message.
         //
@@ -891,7 +892,7 @@ pub fn task_loop(
     // Sink future for sending messages from the raw outgoing channel through the WebSocket
     let writer = raw_outgoing_rx
 
-        .map_err(|_| SaltyError::Crash(format!("TODO receiver error")))
+        .map_err(|_| SaltyError::Crash("TODO receiver error".to_string()))
 
         // Forward all messages from the channel receiver to the sink
         .forward(
@@ -903,16 +904,16 @@ pub fn task_loop(
 
     // The task loop is finished when all futures are resolved.
     let task_loop = boxed!(
-        future::ok(info!("Starting task loop future"))
+        future::ok(())
         .and_then(|_| reader.join(transformer).join(writer).map(|_| ()))
-        .and_then(|_| future::ok(info!("† Task loop future done")))
+        .and_then(|_| { info!("† Task loop future done"); future::ok(()) })
     );
 
     // Get reference to task
     let task = match salty.try_borrow_mut() {
         Ok(salty) => salty
             .task()
-            .ok_or(SaltyError::Crash("Task not set".into()))?,
+            .ok_or_else(|| SaltyError::Crash("Task not set".into()))?,
         Err(e) => return Err(
             SaltyError::Crash(format!("Could not mutably borrow SaltyRTC instance: {}", e))
         ),

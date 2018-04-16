@@ -314,7 +314,7 @@ pub(crate) trait Signaling {
         match self.common().signaling_state() {
             // Server handshake
             SignalingState::ServerHandshake =>
-                return Err(SignalingError::Crash("Illegal signaling state: ServerHandshake".into())),
+                Err(SignalingError::Crash("Illegal signaling state: ServerHandshake".into())),
 
             // Peer handshake
             SignalingState::PeerHandshake if obox.nonce.source().is_server() =>
@@ -324,7 +324,7 @@ pub(crate) trait Signaling {
 
             // Task
             SignalingState::Task =>
-                return Err(SignalingError::Crash("Illegal signaling state: Task".into())),
+                Err(SignalingError::Crash("Illegal signaling state: Task".into())),
         }
     }
 
@@ -347,7 +347,9 @@ pub(crate) trait Signaling {
         match obox.message {
             Value::Map(pairs) => {
                 for (k, v) in pairs {
-                    let key = k.as_str().ok_or(SignalingError::InvalidMessage("Task message map contains non-hashable key".into()))?;
+                    let key = k.as_str().ok_or_else(|| SignalingError::InvalidMessage(
+                        "Task message map contains non-hashable key".into()
+                    ))?;
                     map.insert(key.into(), v);
                 }
             },
@@ -356,27 +358,28 @@ pub(crate) trait Signaling {
 
         // Check msg type
         let msg_type = map.get("type")
-            .ok_or(SignalingError::InvalidMessage("Task message does not contain type field".into()))?
+            .ok_or_else(|| SignalingError::InvalidMessage("Task message does not contain type field".into()))?
             .as_str()
-            .ok_or(SignalingError::InvalidMessage("Task message type is not a string".into()))?
+            .ok_or_else(|| SignalingError::InvalidMessage("Task message type is not a string".into()))?
             .to_owned();
 
         // Handle close messages
         if msg_type == "close" {
             let reason: CloseCode = map.get("reason")
-                .ok_or(SignalingError::InvalidMessage("Close message does not contain a reason field".into()))?
+                .ok_or_else(|| SignalingError::InvalidMessage("Close message does not contain a reason field".into()))?
                 .as_u64()
-                .ok_or(SignalingError::InvalidMessage("Close message reason is not an integer".into()))
+                .ok_or_else(|| SignalingError::InvalidMessage("Close message reason is not an integer".into()))
                 .and_then(|val: u64| {
-                    if val > ::std::u16::MAX as u64 {
+                    if val > u64::from(::std::u16::MAX) {
                         Err(SignalingError::InvalidMessage("Close message reason code is too large".into()))
                     } else {
                         Ok(val as u16)
                     }
                 })
                 .and_then(|val: u16| {
-                    CloseCode::from_number(val)
-                        .ok_or(SignalingError::InvalidMessage("Close message reason is invalid".into()))
+                    CloseCode::from_number(val).ok_or_else(|| SignalingError::InvalidMessage(
+                        "Close message reason is invalid".into()
+                    ))
                 })?;
             return Ok(vec![HandleAction::TaskMessage(TaskMessage::Close(reason))]);
         }
@@ -384,8 +387,8 @@ pub(crate) trait Signaling {
         // Pass supported task message to task
         let task_supported_types = self.common()
             .task_supported_types
-            .ok_or(SignalingError::Crash("Task supported types not set".into()))?;
-        if task_supported_types.iter().find(|t| *t == &msg_type).is_some() {
+            .ok_or_else(|| SignalingError::Crash("Task supported types not set".into()))?;
+        if task_supported_types.iter().any(|t| *t == msg_type) {
             return Ok(vec![HandleAction::TaskMessage(TaskMessage::Value(map))])
         }
 
@@ -417,12 +420,12 @@ pub(crate) trait Signaling {
     /// Decrypt a binary message after the handshake has been finished.
     fn decode_task_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Value>> {
         let peer = self.get_peer()
-            .ok_or(SignalingError::Crash("Peer not set".into()))?;
+            .ok_or_else(|| SignalingError::Crash("Peer not set".into()))?;
         let session_key = peer.session_key()
-            .ok_or(SignalingError::Crash("Peer session key not set".into()))?;
+            .ok_or_else(|| SignalingError::Crash("Peer session key not set".into()))?;
         OpenBox::<Value>::decrypt(
             bbox,
-            peer.keypair().ok_or(SignalingError::Crash("Peer session keypair not available".into()))?,
+            peer.keypair().ok_or_else(|| SignalingError::Crash("Peer session keypair not available".into()))?,
             session_key,
         )
     }
@@ -442,7 +445,7 @@ pub(crate) trait Signaling {
 
         // Get peer
         let peer = self.get_peer()
-            .ok_or(SignalingError::Crash("Peer not set".into()))?;
+            .ok_or_else(|| SignalingError::Crash("Peer not set".into()))?;
 
         // Create and encrypt message
         let nonce = Nonce::new(
@@ -457,8 +460,8 @@ pub(crate) trait Signaling {
         );
         let obox = OpenBox::<Value>::new(value, nonce);
         let bbox = obox.encrypt(
-            peer.keypair().ok_or(SignalingError::Crash("Session keypair not available".into()))?,
-            peer.session_key().ok_or(SignalingError::Crash("Peer session key not set".into()))?,
+            peer.keypair().ok_or_else(|| SignalingError::Crash("Session keypair not available".into()))?,
+            peer.session_key().ok_or_else(|| SignalingError::Crash("Peer session key not set".into()))?,
         );
 
         Ok(bbox)
@@ -476,7 +479,7 @@ pub(crate) trait Signaling {
 
         // Get peer
         let peer = self.get_peer()
-            .ok_or(SignalingError::Crash("Peer not set".into()))?;
+            .ok_or_else(|| SignalingError::Crash("Peer not set".into()))?;
 
         // Create and encrypt message
         let nonce = Nonce::new(
@@ -492,8 +495,8 @@ pub(crate) trait Signaling {
         let msg = Close::from_close_code(reason).into_message();
         let obox = OpenBox::<Message>::new(msg, nonce);
         let bbox = obox.encrypt(
-            peer.keypair().ok_or(SignalingError::Crash("Session keypair not available".into()))?,
-            peer.session_key().ok_or(SignalingError::Crash("Peer session key not set".into()))?,
+            peer.keypair().ok_or_else(|| SignalingError::Crash("Session keypair not available".into()))?,
+            peer.session_key().ok_or_else(|| SignalingError::Crash("Peer session key not set".into()))?,
         );
 
         Ok(bbox)
@@ -508,7 +511,7 @@ pub(crate) trait Signaling {
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
     fn handle_server_message(&mut self, obox: OpenBox<Message>) -> SignalingResult<Vec<HandleAction>> {
-        let old_state = self.server_handshake_state().clone();
+        let old_state = self.server_handshake_state();
         match (old_state, obox.message) {
             // Valid state transitions
             (ServerHandshakeState::New, Message::ServerHello(msg)) =>
@@ -583,7 +586,7 @@ pub(crate) trait Signaling {
         let ping_interval = self.common()
             .ping_interval
             .map(|duration| duration.as_secs())
-            .map(|secs| if secs > ::std::u32::MAX as u64 {
+            .map(|secs| if secs > u64::from(::std::u32::MAX) {
                 warn!("Ping interval is too large. Truncating it to {} seconds.", ::std::u32::MAX);
                 ::std::u32::MAX
             } else {
@@ -675,7 +678,7 @@ pub(crate) trait Signaling {
     fn handle_send_error(&mut self, msg: SendError) -> SignalingResult<Vec<HandleAction>> {
         warn!("--> Received send-error from server");
         debug!("Message that could not be relayed: {:#?}", msg.id);
-        return Err(SignalingError::SendError);
+        Err(SignalingError::SendError)
     }
 
     /// Handle an incoming [`Disconnected`](messages/struct.Disconnected.html) message.
@@ -710,7 +713,7 @@ pub(crate) trait Signaling {
         let bbox = obox.encrypt(
             &self.common().permanent_keypair,
             self.server().session_key()
-                .ok_or(SignalingError::Crash("Server session key not set".into()))?
+                .ok_or_else(|| SignalingError::Crash("Server session key not set".into()))?
         );
 
         Ok(HandleAction::Reply(bbox))
@@ -923,26 +926,30 @@ impl Signaling for InitiatorSignaling {
     fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Message>> {
         // Validate source again
         if !bbox.nonce.source().is_responder() {
-            return Err(SignalingError::Crash(format!("Received message from an initiator")));
+            return Err(SignalingError::Crash("Received message from an initiator".to_string()));
         }
 
         // Find responder
         let source = bbox.nonce.source();
         let responder = match self.responders.get(&source) {
             Some(responder) => responder,
-            None => return Err(SignalingError::Crash(format!("Did not find responder with address {}", source))),
+            None => return Err(SignalingError::Crash(
+                format!("Did not find responder with address {}", source)
+            )),
         };
 
         // Helper functions
         fn responder_permanent_key(responder: &ResponderContext) -> SignalingResult<&PublicKey> {
             responder.permanent_key.as_ref()
-                .ok_or(SignalingError::Crash(
-                    format!("Did not find public permanent key for responder {}", responder.address.0)))
+                .ok_or_else(|| SignalingError::Crash(
+                    format!("Did not find public permanent key for responder {}", responder.address.0)
+                ))
         }
         fn responder_session_key(responder: &ResponderContext) -> SignalingResult<&PublicKey> {
             responder.session_key.as_ref()
-                .ok_or(SignalingError::Crash(
-                    format!("Did not find public session key for responder {}", responder.address.0)))
+                .ok_or_else(|| SignalingError::Crash(
+                    format!("Did not find public session key for responder {}", responder.address.0)
+                ))
         }
 
         // Decrypt depending on state
@@ -994,7 +1001,7 @@ impl Signaling for InitiatorSignaling {
         let source = obox.nonce.source();
         let old_state = {
             let responder = self.responders.get(&source)
-                .ok_or(SignalingError::Crash(
+                .ok_or_else(|| SignalingError::Crash(
                     format!("Did not find responder with address {}", source)
                 ))?;
             responder.handshake_state()
@@ -1109,7 +1116,7 @@ impl InitiatorSignaling {
                 signaling_state: SignalingState::ServerHandshake,
                 role: Role::Initiator,
                 identity: ClientIdentity::Unknown,
-                permanent_keypair: permanent_keypair,
+                permanent_keypair,
                 auth_provider: match responder_trusted_pubkey {
                     Some(key) => AuthProvider::TrustedKey(key),
                     None => AuthProvider::Token(AuthToken::new()),
@@ -1118,7 +1125,7 @@ impl InitiatorSignaling {
                 tasks: Some(tasks),
                 task: None,
                 task_supported_types: None,
-                ping_interval: ping_interval,
+                ping_interval,
             },
             responders: HashMap::new(),
             responder: None,
@@ -1126,12 +1133,13 @@ impl InitiatorSignaling {
     }
 
     /// Handle an incoming [`Token`](messages/struct.Token.html) message.
+    #[cfg_attr(feature="clippy", allow(needless_pass_by_value))]
     fn handle_token(&mut self, msg: Token, source: Address) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received token from {}", Identity::from(source));
 
         // Find responder instance
         let responder = self.responders.get_mut(&source)
-            .ok_or(SignalingError::Crash(
+            .ok_or_else(|| SignalingError::Crash(
                 format!("Did not find responder with address {}", source)
             ))?;
 
@@ -1150,13 +1158,14 @@ impl InitiatorSignaling {
     }
 
     /// Handle an incoming [`Key`](messages/struct.Key.html) message.
+    #[cfg_attr(feature="clippy", allow(needless_pass_by_value))]
     fn handle_key(&mut self, msg: Key, source: Address) -> SignalingResult<Vec<HandleAction>> {
         let source_identity = Identity::from(source);
         debug!("--> Received key from {}", source_identity);
 
         // Find responder instance
         let responder = self.responders.get_mut(&source)
-            .ok_or(SignalingError::Crash(
+            .ok_or_else(|| SignalingError::Crash(
                 format!("Did not find responder with address {}", source)
             ))?;
 
@@ -1183,9 +1192,7 @@ impl InitiatorSignaling {
         responder.set_handshake_state(ResponderHandshakeState::KeyReceived);
 
         // Reply with our own key msg
-        let key: Message = Key {
-            key: responder.keypair.public_key().clone(),
-        }.into_message();
+        let key: Message = Key { key: *responder.keypair.public_key() }.into_message();
         let key_nonce = Nonce::new(
             responder.cookie_pair().ours.clone(),
             self.common.identity.into(),
@@ -1196,7 +1203,7 @@ impl InitiatorSignaling {
         let bbox = obox.encrypt(
             &self.common.permanent_keypair,
             responder.permanent_key.as_ref()
-                .ok_or(SignalingError::Crash("Responder permanent key not set".into()))?,
+                .ok_or_else(|| SignalingError::Crash("Responder permanent key not set".into()))?,
         );
 
         // State transition
@@ -1214,7 +1221,7 @@ impl InitiatorSignaling {
 
         // Find responder instance
         let mut responder = self.responders.remove(&source)
-            .ok_or(SignalingError::Crash(
+            .ok_or_else(|| SignalingError::Crash(
                 format!("Did not find responder with address {}", source)
             ))?;
 
@@ -1232,7 +1239,7 @@ impl InitiatorSignaling {
         }
         let proposed_tasks = match msg.tasks {
             None => return Err(SignalingError::InvalidMessage("The `tasks` field in the auth message is not set".into())),
-            Some(ref tasks) if tasks.len() == 0 => return Err(SignalingError::InvalidMessage("The `tasks` field in the auth message is empty".into())),
+            Some(ref tasks) if tasks.is_empty() => return Err(SignalingError::InvalidMessage("The `tasks` field in the auth message is empty".into())),
             Some(tasks) => tasks,
         };
 
@@ -1243,7 +1250,7 @@ impl InitiatorSignaling {
         if msg.data.len() != proposed_tasks.len() {
             return Err(SignalingError::InvalidMessage("The `tasks` and `data` fields in the auth message have a different number of entries".into()));
         };
-        for task in proposed_tasks.iter() {
+        for task in &proposed_tasks {
             if !msg.data.contains_key(task) {
                 return Err(SignalingError::InvalidMessage(format!("The task \"{}\" in the auth message does not have a corresponding data entry", task)));
             }
@@ -1257,7 +1264,7 @@ impl InitiatorSignaling {
         // to the responder containing the close code 3006 (No Shared Task Found) as reason
         // and raise an error event indicating that no common signalling task could be found.
         let our_tasks = mem::replace(&mut self.common_mut().tasks, None)
-            .ok_or(SignalingError::Crash("No tasks defined".into()))?;
+            .ok_or_else(|| SignalingError::Crash("No tasks defined".into()))?;
         trace!("Our tasks: {:?}", &our_tasks);
         trace!("Proposed tasks: {:?}", &proposed_tasks);
         let mut chosen_task: BoxedTask = our_tasks
@@ -1270,7 +1277,7 @@ impl InitiatorSignaling {
         // Both initiator an responder SHALL verify that the data field contains a Map
         // and SHALL look up the chosen task's data value.
         let task_data = msg.data.get(&*chosen_task.name())
-            .ok_or(SignalingError::Crash("Task data not found".into()))?;
+            .ok_or_else(|| SignalingError::Crash("Task data not found".into()))?;
 
         // The value MUST be handed over to the corresponding task
         // after processing this message is complete.
@@ -1304,7 +1311,7 @@ impl InitiatorSignaling {
 
         // Respond with auth message
         let responder_cookie = responder.cookie_pair.theirs.as_ref().cloned()
-            .ok_or(SignalingError::Crash("Responder cookie not set".into()))?;
+            .ok_or_else(|| SignalingError::Crash("Responder cookie not set".into()))?;
         let auth: Message = InitiatorAuthBuilder::new(responder_cookie)
             .set_task(chosen_task.name(), chosen_task.data())
             .build()?
@@ -1319,7 +1326,7 @@ impl InitiatorSignaling {
         let bbox = obox.encrypt(
             &responder.keypair,
             responder.session_key.as_ref()
-                .ok_or(SignalingError::Crash("Responder session key not set".into()))?,
+                .ok_or_else(|| SignalingError::Crash("Responder session key not set".into()))?,
         );
         debug!("<-- Enqueuing auth to {}", &responder.identity());
         actions.push(HandleAction::Reply(bbox));
@@ -1477,7 +1484,7 @@ impl Signaling for ResponderSignaling {
     fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Message>> {
         // Validate source again
         if !bbox.nonce.source().is_initiator() {
-            return Err(SignalingError::Crash(format!("Received message from a responder")));
+            return Err(SignalingError::Crash("Received message from a responder".to_string()));
         }
 
         // Decrypt depending on state
@@ -1491,7 +1498,7 @@ impl Signaling for ResponderSignaling {
                 // Expect an auth message, encrypted with our public session
                 // key and initiator private session key
                 let initiator_session_key = self.initiator.session_key.as_ref()
-                    .ok_or(SignalingError::Crash("Initiator session key not set".into()))?;
+                    .ok_or_else(|| SignalingError::Crash("Initiator session key not set".into()))?;
                 OpenBox::<Message>::decrypt(bbox, &self.initiator.keypair, initiator_session_key)
             },
             other => {
@@ -1604,7 +1611,7 @@ impl ResponderSignaling {
                 signaling_state: SignalingState::ServerHandshake,
                 role: Role::Responder,
                 identity: ClientIdentity::Unknown,
-                permanent_keypair: permanent_keypair,
+                permanent_keypair,
                 auth_provider: match auth_token {
                     Some(token) => AuthProvider::Token(token),
                     None => AuthProvider::TrustedKey(initiator_pubkey),
@@ -1613,7 +1620,7 @@ impl ResponderSignaling {
                 tasks: Some(tasks),
                 task: None,
                 task_supported_types: None,
-                ping_interval: ping_interval,
+                ping_interval,
             },
             initiator: InitiatorContext::new(initiator_pubkey),
         }
@@ -1669,6 +1676,7 @@ impl ResponderSignaling {
     }
 
     /// Handle an incoming [`Key`](messages/struct.Key.html) message.
+    #[cfg_attr(feature="clippy", allow(needless_pass_by_value))]
     fn handle_key(&mut self, msg: Key, nonce: &Nonce) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received key from {}", nonce.source_identity());
 
@@ -1694,7 +1702,7 @@ impl ResponderSignaling {
                 self.common()
                     .tasks
                     .as_ref()
-                    .ok_or(SignalingError::Crash("Tasks are not set".into()))?
+                    .ok_or_else(|| SignalingError::Crash("Tasks are not set".into()))?
             )
             .build()?
             .into_message();
@@ -1708,7 +1716,7 @@ impl ResponderSignaling {
         let bbox = obox.encrypt(
             &self.initiator.keypair,
             self.initiator.session_key.as_ref()
-                .ok_or(SignalingError::Crash("Initiator session key not set".into()))?,
+                .ok_or_else(|| SignalingError::Crash("Initiator session key not set".into()))?,
         );
 
         // State transition
@@ -1737,28 +1745,37 @@ impl ResponderSignaling {
         let mut chosen_task: BoxedTask = match msg.task {
             Some(task) => {
                 let our_tasks = mem::replace(&mut self.common_mut().tasks, None)
-                    .ok_or(SignalingError::Crash("No tasks defined".into()))?;
+                    .ok_or_else(|| SignalingError::Crash("No tasks defined".into()))?;
                 our_tasks
                     .into_iter()
-                    .filter(|t: &BoxedTask| t.name() == task)
-                    .next()
-                    .ok_or(SignalingError::Protocol("The `task` field in the auth message contains an unknown task".into()))?
+                    .find(|t: &BoxedTask| t.name() == task)
+                    .ok_or_else(|| SignalingError::Protocol(
+                        "The `task` field in the auth message contains an unknown task".into()
+                    ))?
             },
-            None => return Err(SignalingError::InvalidMessage("The `task` field in the auth message is not set".into())),
+            None => return Err(SignalingError::InvalidMessage(
+                "The `task` field in the auth message is not set".into()
+            )),
         };
 
         // Make sure that there is only one data entry.
         if msg.data.is_empty() {
-            return Err(SignalingError::Protocol("The `data` field in the auth message is empty".into()));
+            return Err(SignalingError::Protocol(
+                "The `data` field in the auth message is empty".into()
+            ));
         }
         if msg.data.len() > 1 {
-            return Err(SignalingError::Protocol("The `data` field in the auth message contains more than one entry".into()));
+            return Err(SignalingError::Protocol(
+                "The `data` field in the auth message contains more than one entry".into()
+            ));
         }
 
         // Both initiator an responder SHALL verify that the data field contains a Map
         // and SHALL look up the chosen task's data value.
         let task_data = msg.data.get(&*chosen_task.name())
-            .ok_or(SignalingError::Protocol("The task in the auth message does not have a corresponding data entry".into()))?;
+            .ok_or_else(|| SignalingError::Protocol(
+                "The task in the auth message does not have a corresponding data entry".into()
+            ))?;
 
         // The value MUST be handed over to the corresponding task
         // after processing this message is complete.

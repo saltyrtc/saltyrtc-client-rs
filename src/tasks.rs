@@ -115,7 +115,7 @@ impl Tasks {
     /// of supported tasks provided by the peer.
     pub(crate) fn choose_shared_task<S: AsRef<str>>(self, tasks: &[S]) -> Option<BoxedTask> {
         for task in self.0 {
-            if tasks.iter().find(|p| p.as_ref() == &*task.name()).is_some() {
+            if tasks.iter().any(|p| p.as_ref() == &*task.name()) {
                 return Some(task);
             }
         }

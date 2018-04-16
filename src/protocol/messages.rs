@@ -281,6 +281,7 @@ pub(crate) struct Disconnected {
 }
 
 impl Disconnected {
+    #[allow(dead_code)]
     pub(crate) fn new(id: Address) -> Self {
         Self { id }
     }
@@ -427,9 +428,9 @@ impl ResponderAuthBuilder {
         }
         // TODO (#10): Check for duplicate tasks!
         match self.auth.tasks {
-            Some(ref tasks) if tasks.len() == 0 => Err(
-                SignalingError::InvalidMessage("An `Auth` message must contain at least one task".to_string())
-            ),
+            Some(ref tasks) if tasks.is_empty() => Err(SignalingError::InvalidMessage(
+                "An `Auth` message must contain at least one task".to_string()
+            )),
             Some(_) => Ok(self.auth),
             None => panic!("tasks list not initialized!"),
         }

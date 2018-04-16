@@ -9,7 +9,7 @@ use errors::{SaltyResult, SaltyError};
 pub fn libsodium_init() -> SaltyResult<()> {
     let success = ::rust_sodium::init();
     if !success {
-        return Err(SaltyError::Crypto("Could not initialize libsodium".into()));
+        Err(SaltyError::Crypto("Could not initialize libsodium".into()))
     } else {
         Ok(())
     }

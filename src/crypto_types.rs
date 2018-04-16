@@ -1,5 +1,7 @@
 //! Functionality related to Libsodium key management and encryption.
 
+#![cfg_attr(feature="clippy", allow(new_without_default))]
+
 use std::cmp;
 use std::fmt;
 
@@ -35,7 +37,7 @@ pub fn public_key_from_hex_str(hex_str: &str) -> SaltyResult<PublicKey> {
     let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
         .map_err(|_| SaltyError::Decode("Could not decode public key hex string".to_string()))?;
     PublicKey::from_slice(&bytes)
-        .ok_or(SaltyError::Decode("Invalid public key hex string".to_string()))
+        .ok_or_else(|| SaltyError::Decode("Invalid public key hex string".to_string()))
 }
 
 /// Create a [`PrivateKey`](../type.PrivateKey.html) instance from case
@@ -45,7 +47,7 @@ pub fn private_key_from_hex_str(hex_str: &str) -> SaltyResult<PrivateKey> {
     let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
         .map_err(|_| SaltyError::Decode("Could not decode private key hex string".to_string()))?;
     PrivateKey::from_slice(&bytes)
-        .ok_or(SaltyError::Decode("Invalid private key hex string".to_string()))
+        .ok_or_else(|| SaltyError::Decode("Invalid private key hex string".to_string()))
 }
 
 
@@ -90,20 +92,14 @@ impl KeyPair {
             crypto_scalarmult_base(buf.as_mut_ptr(), private_key.0.as_ptr());
             box_::PublicKey(buf)
         };
-        KeyPair {
-            public_key: public_key,
-            private_key: private_key,
-        }
+        KeyPair { public_key, private_key }
     }
 
     /// Create a new key pair from an existing public and private key.
     ///
     /// The two keys are consumed and transferred into the `KeyPair`.
     pub fn from_keypair(public_key: PublicKey, private_key: PrivateKey) -> Self {
-        KeyPair {
-            public_key: public_key,
-            private_key: private_key,
-        }
+        KeyPair { public_key, private_key }
     }
 
     /// Return a reference to the public key.
@@ -178,17 +174,21 @@ impl AuthToken {
         let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
             .map_err(|e| SaltyError::Decode(format!("Could not decode auth token hex string: {}", e)))?;
         let key = SecretKey::from_slice(&bytes)
-            .ok_or(SaltyError::Decode("Invalid auth token hex string".to_string()))?;
+            .ok_or_else(|| SaltyError::Decode("Invalid auth token hex string".to_string()))?;
         Ok(AuthToken(key))
     }
 
     /// Create an `AuthToken` instance from a 32 byte slice.
     pub fn from_slice(hex_str: &[u8]) -> SaltyResult<Self> {
         if hex_str.len() != 32 {
-            return Err(SaltyError::Decode("Invalid auth token bytes: Slice must be 32 bytes long".into()));
+            return Err(SaltyError::Decode(
+                "Invalid auth token bytes: Slice must be 32 bytes long".into()
+            ));
         }
         let key = SecretKey::from_slice(hex_str)
-            .ok_or(SaltyError::Decode("Invalid auth token bytes: Could not create SecretKey".into()))?;
+            .ok_or_else(|| SaltyError::Decode(
+                "Invalid auth token bytes: Could not create SecretKey".into()
+            ))?;
         Ok(AuthToken(key))
     }
 

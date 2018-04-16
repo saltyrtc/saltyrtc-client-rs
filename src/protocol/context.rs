@@ -133,7 +133,7 @@ impl InitiatorContext {
     pub fn new(permanent_key: PublicKey) -> Self {
         InitiatorContext {
             handshake_state: InitiatorHandshakeState::New,
-            permanent_key: permanent_key,
+            permanent_key,
             session_key: None,
             keypair: KeyPair::new(),
             csn_pair: RefCell::new(CombinedSequencePair::new()),
@@ -213,7 +213,7 @@ impl ResponderContext {
     pub fn new(address: Address) -> Self {
         ResponderContext {
             handshake_state: ResponderHandshakeState::New,
-            address: address,
+            address,
             permanent_key: None,
             session_key: None,
             keypair: KeyPair::new(),

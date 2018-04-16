@@ -49,10 +49,7 @@ impl CombinedSequence {
                      + (u32::from(rand[2]) << 8)
                      +  u32::from(rand[3]);
 
-        CombinedSequence {
-            overflow: overflow,
-            sequence: sequence,
-        }
+        CombinedSequence { overflow, sequence }
     }
 
     /// Return the 48 bit combined sequence number.

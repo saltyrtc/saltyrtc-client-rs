@@ -58,7 +58,7 @@ impl Nonce {
             ]),
             source: Address(bytes[16]),
             destination: Address(bytes[17]),
-            csn: csn,
+            csn,
         })
     }
 
