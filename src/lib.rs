@@ -426,6 +426,7 @@ pub fn connect(
             client
         });
 
+    debug!("Created WS connect future");
     Ok(boxed!(future))
 }
 
