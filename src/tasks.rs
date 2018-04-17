@@ -27,6 +27,23 @@ pub type BoxedTask = Box<Task + Send>;
 ///
 /// A task defines how data is exchanged after the server- and peer-handshake
 /// have been completed.
+///
+/// ## Communication Client ↔ Task
+///
+/// The primary communication between the client and a task is through the
+/// channels passed to the `start` method:
+///
+/// - `outgoing_tx`: This is the sending end for outgoing task / application /
+///   close messages. The task should put messages that the user wants to send
+///   through the established connection into this outgoing channel sender.
+/// - `incoming_rx`: This is the receiving end for incoming task / application /
+///   close messages. The task should take messages from this incoming channel
+///   receiver and pass them to the user.
+/// - `disconnect_tx`: This oneshot channel is used to give the task a way to
+///   close the connection.
+///
+/// Depending on the task specification, application messages may be passed to
+/// the user or may be discarded.
 pub trait Task : Debug + Any {
 
     /// Initialize the task with the task data from the peer, sent in the `Auth` message.
@@ -54,8 +71,8 @@ pub trait Task : Debug + Any {
     ///
     /// This method should only be called after the handover.
     ///
-    /// Note that the data passed in to this method should *not* already be encrypted. Otherwise,
-    /// data will be encrypted twice.
+    /// Note that the data passed in to this method should *not* already be
+    /// encrypted. Otherwise, data will be encrypted twice.
     fn send_signaling_message(&self, payload: &[u8]);
 
     /// Return the task protocol name.
