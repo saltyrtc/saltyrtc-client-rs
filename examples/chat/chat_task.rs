@@ -150,6 +150,10 @@ impl Task for ChatTask {
 
                 let map: HashMap<String, Value> = match msg {
                     TaskMessage::Value(map) => map,
+                    TaskMessage::Application(_data) => {
+                        info!("Received application message from peer, ignoring");
+                        return boxed!(future::ok(()));
+                    },
                     TaskMessage::Close(reason) => {
                         // If a Close message from the peer arrives,
                         // send a ChatMessage::Disconnect to the user.

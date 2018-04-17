@@ -134,12 +134,16 @@ impl IntoIterator for Tasks {
 }
 
 
-/// A task may either send an arbitrary value, or a `Close` message.
+/// A task may either send an arbitrary value, an `Application` message or a `Close` message.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TaskMessage {
     /// Arbitrary maps can be sent over the encrypted channel,
     /// as long as they contain a `type` key.
     Value(HashMap<String, Value>),
+
+    /// Application messages allow user applications to send simple control
+    /// messages or early data without having to modify an existing task.
+    Application(Value),
 
     /// Close messages should be triggered by the task,
     /// when the user application requests to disconnect,

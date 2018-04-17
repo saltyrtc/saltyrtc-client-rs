@@ -362,6 +362,15 @@ pub(crate) trait Signaling {
             .as_str()
             .ok_or_else(|| SignalingError::InvalidMessage("Task message type is not a string".into()))?
             .to_owned();
+        debug!("Received {} message from peer", msg_type);
+
+        // Handle application messages
+        if msg_type == "application" {
+            let data: Value = map.get("data")
+                .ok_or_else(|| SignalingError::InvalidMessage("Application message does not contain a data field".into()))?
+                .to_owned();
+            return Ok(vec![HandleAction::TaskMessage(TaskMessage::Application(data))]);
+        }
 
         // Handle close messages
         if msg_type == "close" {

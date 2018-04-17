@@ -851,6 +851,26 @@ pub fn task_loop(
                                 Err(())
                             })
                     },
+                    TaskMessage::Application(data) => {
+                        let mut map = vec![];
+                        map.push((Value::String("type".into()), Value::String("application".into())));
+                        map.push((Value::String("data".into()), data));
+                        let val = Value::Map(map);
+                        salty_mut
+                            .encrypt_task_message(val)
+                            .map(|bytes| {
+                                debug!("<-- Enqueuing application message to peer");
+                                stream::iter_result::<_, OwnedMessage, Result<(), ()>>(
+                                    vec![
+                                        Ok(OwnedMessage::Binary(bytes))
+                                    ]
+                                )
+                            })
+                            .map_err(|e| {
+                                warn!("Could not encrypt task message: {}", e);
+                                Err(())
+                            })
+                    },
                     TaskMessage::Close(reason) => {
                         // Create and encrypt SaltyRTC close message,
                         // followed by a WebSocket close message
