@@ -878,7 +878,7 @@ pub fn task_loop(
                             .encrypt_close_message(reason)
                             .map(|bytes| {
                                 debug!("<-- Enqueuing SaltyRTC close message to peer");
-                                debug!("<-- Enqueuing WebRTC close message to peer");
+                                debug!("<-- Enqueuing WebSocket close message to peer");
                                 stream::iter_result::<_, OwnedMessage, Result<(), ()>>(
                                     vec![
                                         Ok(OwnedMessage::Binary(bytes)),
