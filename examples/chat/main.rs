@@ -494,10 +494,11 @@ fn main() {
         .map_err(|_| Err(()))
         .for_each({
             |event: Event| match event {
+                Event::ServerHandshakeDone(_) => { future::ok(()) },
                 Event::Disconnected(addr) => {
-                        log_line!("*** Peer with address {} disconnected", addr);
-                        log_line!("*** Use Ctrl+C to exit");
-                        future::err(Ok(()))
+                    log_line!("*** Peer with address {} disconnected", addr);
+                    log_line!("*** Use Ctrl+C to exit");
+                    future::err(Ok(()))
                 },
             }
         })

@@ -1073,7 +1073,9 @@ impl Signaling for InitiatorSignaling {
             self.process_new_responder(address)?;
         }
 
-        Ok(vec![])
+        Ok(vec![
+           HandleAction::Event(Event::ServerHandshakeDone(responders.len() > 0)),
+        ])
     }
 
     /// Handle an incoming [`NewInitiator`](messages/struct.Initiator.html) message.
@@ -1554,10 +1556,12 @@ impl Signaling for ResponderSignaling {
                     debug!("Trusted key available, skipping token message");
                 }
                 actions.push(self.send_key()?);
+                actions.push(HandleAction::Event(Event::ServerHandshakeDone(true)));
                 self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
             },
             Some(false) => {
                 debug!("No initiator connected so far");
+                actions.push(HandleAction::Event(Event::ServerHandshakeDone(false)));
             },
             None => return Err(SignalingError::InvalidMessage(
                 "We're a responder, but the `initiator_connected` field in the server-auth message is not set".into()

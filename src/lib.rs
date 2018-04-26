@@ -297,6 +297,12 @@ impl SaltyClient {
 /// Non-message events that may happen during connection.
 #[derive(Debug, PartialEq)]
 pub enum Event {
+    /// Server handshake is done.
+    ///
+    /// The boolean indicates whether a peer is already
+    /// connected + authenticated.
+    ServerHandshakeDone(bool),
+
     /// An authenticated peer disconnected from the server.
     Disconnected(u8),
 }
