@@ -29,7 +29,7 @@ pub(crate) mod types;
 
 #[cfg(test)] mod tests;
 
-use ::CloseCode;
+use ::{Event, CloseCode};
 use ::tasks::{Tasks, BoxedTask, TaskMessage};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
@@ -39,7 +39,7 @@ use self::messages::{
     SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder, Close,
 };
 pub(crate) use self::nonce::{Nonce};
-pub use self::types::{Role, Event};
+pub use self::types::Role;
 pub(crate) use self::types::{HandleAction};
 use self::types::{Identity, ClientIdentity, Address};
 use self::state::{
@@ -1073,7 +1073,9 @@ impl Signaling for InitiatorSignaling {
             self.process_new_responder(address)?;
         }
 
-        Ok(vec![])
+        Ok(vec![
+           HandleAction::Event(Event::ServerHandshakeDone(responders.len() > 0)),
+        ])
     }
 
     /// Handle an incoming [`NewInitiator`](messages/struct.Initiator.html) message.
@@ -1554,10 +1556,12 @@ impl Signaling for ResponderSignaling {
                     debug!("Trusted key available, skipping token message");
                 }
                 actions.push(self.send_key()?);
+                actions.push(HandleAction::Event(Event::ServerHandshakeDone(true)));
                 self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
             },
             Some(false) => {
                 debug!("No initiator connected so far");
+                actions.push(HandleAction::Event(Event::ServerHandshakeDone(false)));
             },
             None => return Err(SignalingError::InvalidMessage(
                 "We're a responder, but the `initiator_connected` field in the server-auth message is not set".into()

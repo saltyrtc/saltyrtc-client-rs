@@ -5,6 +5,7 @@ use std::result::Result as StdResult;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
+use ::Event;
 use ::boxes::ByteBox;
 use ::tasks::TaskMessage;
 
@@ -205,14 +206,6 @@ impl<'de> Deserialize<'de> for Address {
             where D: Deserializer<'de> {
         deserializer.deserialize_u8(AddressVisitor)
     }
-}
-
-
-/// Events that may happen during connection.
-#[derive(Debug, PartialEq)]
-pub enum Event {
-    /// An authenticated peer disconnected from the server.
-    Disconnected(u8),
 }
 
 

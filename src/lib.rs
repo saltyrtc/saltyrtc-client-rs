@@ -76,7 +76,7 @@ use websocket::header::WebSocketProtocol;
 use websocket::message::{OwnedMessage, CloseData};
 
 // Re-exports
-pub use protocol::{Role, Event};
+pub use protocol::Role;
 
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
@@ -294,6 +294,23 @@ impl SaltyClient {
 }
 
 
+/// Non-message events that may happen during connection.
+#[derive(Debug, PartialEq)]
+pub enum Event {
+    /// Server handshake is done.
+    ///
+    /// The boolean indicates whether a peer is already
+    /// connected + authenticated.
+    ServerHandshakeDone(bool),
+
+    /// Peer handshake is done.
+    PeerHandshakeDone,
+
+    /// An authenticated peer disconnected from the server.
+    Disconnected(u8),
+}
+
+
 /// Close codes used by SaltyRTC.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CloseCode {
@@ -363,6 +380,31 @@ enum WsMessageDecoded {
 }
 
 
+/// An unbounded channel sender/receiver pair.
+pub struct UnboundedChannel<T> {
+    pub tx: mpsc::UnboundedSender<T>,
+    pub rx: mpsc::UnboundedReceiver<T>,
+}
+
+impl<T> UnboundedChannel<T> {
+    /// Create a new `UnboundedChannel`.
+    pub(crate) fn new() -> Self {
+        let (tx, rx) = mpsc::unbounded::<T>();
+        UnboundedChannel { tx, rx }
+    }
+
+    /// Split this channel into sending and receiving half.
+    pub fn split(self) -> (mpsc::UnboundedSender<T>, mpsc::UnboundedReceiver<T>) {
+        (self.tx, self.rx)
+    }
+
+    /// Get a clone of the sending half of the channel.
+    pub fn clone_tx(&self) -> mpsc::UnboundedSender<T> {
+        self.tx.clone()
+    }
+}
+
+
 /// Connect to the specified SaltyRTC server.
 ///
 /// This function returns a boxed future. The future must be run in a Tokio
@@ -376,7 +418,10 @@ pub fn connect(
     tls_config: Option<TlsConnector>,
     handle: &Handle,
     salty: Rc<RefCell<SaltyClient>>,
-) -> SaltyResult<BoxedFuture<WsClient, SaltyError>> {
+) -> SaltyResult<(
+    BoxedFuture<WsClient, SaltyError>,
+    UnboundedChannel<Event>,
+)> {
     // Initialize libsodium
     libsodium_init()?;
 
@@ -425,9 +470,13 @@ pub fn connect(
             info!("Connected to server as {}", role);
             client
         });
-
     debug!("Created WS connect future");
-    Ok(boxed!(future))
+
+    // Create event channel
+    let event_channel = UnboundedChannel::new();
+    debug!("Created event channel");
+
+    Ok((boxed!(future), event_channel))
 }
 
 /// Decode a websocket `OwnedMessage` and wrap it into a `WsMessageDecoded`.
@@ -524,15 +573,16 @@ fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> Sal
 pub fn do_handshake(
     client: WsClient,
     salty: Rc<RefCell<SaltyClient>>,
+    event_tx: mpsc::UnboundedSender<Event>,
     timeout: Option<Duration>,
 ) -> BoxedFuture<WsClient, SaltyError> {
-
     // Main loop
     let main_loop = future::loop_fn(client, move |client| {
 
         let salty = Rc::clone(&salty);
 
         // Take the next incoming message
+        let event_tx = event_tx.clone();
         client.into_future()
 
             // Map errors to our custom error type
@@ -574,13 +624,25 @@ pub fn do_handshake(
                 for action in handle_actions {
                     match action {
                         HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
-                        HandleAction::HandshakeDone => handshake_done = true,
+                        HandleAction::HandshakeDone => {
+                            handshake_done = true;
+                            if let Err(_) = event_tx.unbounded_send(Event::PeerHandshakeDone) {
+                                return boxed!(future::err(
+                                    SaltyError::Crash("Could not send event through channel".into())
+                                ));
+                            }
+                        },
                         HandleAction::TaskMessage(_) => return boxed!(future::err(
                             SaltyError::Crash("Received task message during handshake".into())
                         )),
-                        HandleAction::Event(_) => return boxed!(future::err(
-                            SaltyError::Crash("Received event during handshake".into())
-                        )),
+                        HandleAction::Event(e) => {
+                            // Notify the user about event
+                            if let Err(_) = event_tx.unbounded_send(e) {
+                                return boxed!(future::err(
+                                    SaltyError::Crash("Could not send event through channel".into())
+                                ));
+                            }
+                        },
                     }
                 }
 
@@ -615,20 +677,23 @@ pub fn do_handshake(
 
     let timeout_duration = match timeout {
         Some(duration) => duration,
-        None => return boxed!(main_loop)
+        None => return boxed!(main_loop),
     };
 
     let timer = Timer::default();
     boxed!(timer.timeout(main_loop, timeout_duration))
 }
 
+/// Start the task loop.
+///
+/// Only call this function once you have finished the handshake!
 pub fn task_loop(
     client: WsClient,
     salty: Rc<RefCell<SaltyClient>>,
+    event_tx: mpsc::UnboundedSender<Event>,
 ) -> Result<(
     Arc<Mutex<BoxedTask>>,
     BoxedFuture<(), SaltyError>,
-    mpsc::UnboundedReceiver<Event>,
 ), SaltyError> {
     let task_name = salty
         .deref()
@@ -652,7 +717,6 @@ pub fn task_loop(
     let (raw_outgoing_tx, raw_outgoing_rx) = mpsc::unbounded::<OwnedMessage>();
     let (incoming_tx, incoming_rx) = mpsc::unbounded::<TaskMessage>();
     let (disconnect_tx, disconnect_rx) = oneshot::channel::<Option<CloseCode>>();
-    let (event_tx, event_rx) = mpsc::unbounded::<Event>();
 
     // Stream future for processing incoming WebSocket messages
     let reader = ws_stream
@@ -945,6 +1009,6 @@ pub fn task_loop(
         .map_err(|e| SaltyError::Crash(format!("Could not lock task mutex: {}", e)))?
         .start(outgoing_tx, incoming_rx, disconnect_tx);
 
-    // Return reference to task, the task loop future and the event receiver
-    Ok((task, task_loop, event_rx))
+    // Return reference to task and the task loop future
+    Ok((task, task_loop))
 }

@@ -254,7 +254,7 @@ fn main() {
     let salty_rc = Rc::new(RefCell::new(salty));
 
     // Connect to server
-    let connect_future = saltyrtc_client::connect(
+    let (connect_future, event_channel) = saltyrtc_client::connect(
             "localhost",
             8765,
             Some(tls_connector),
@@ -264,9 +264,15 @@ fn main() {
         .unwrap();
 
     // Do handshake
+    let event_tx = event_channel.clone_tx();
     let handshake_future = connect_future
         .map(|client| { println!("Connected to server"); client })
-        .and_then(|client| saltyrtc_client::do_handshake(client, salty_rc.clone(), None))
+        .and_then(|client| saltyrtc_client::do_handshake(
+            client,
+            salty_rc.clone(),
+            event_tx,
+            None,
+        ))
         .map(|client| { println!("Handshake done"); client });
 
     // Run future in reactor to process handshake
@@ -282,7 +288,7 @@ fn main() {
     };
 
     // Set up task loop
-    let (task, task_loop, event_rx) = saltyrtc_client::task_loop(client, salty_rc.clone())
+    let (task, task_loop) = saltyrtc_client::task_loop(client, salty_rc.clone(), event_channel.clone_tx())
         .unwrap_or_else(|e| {
             println!("{}", e);
             process::exit(1);
@@ -483,15 +489,17 @@ fn main() {
     // * `future::ok(())` to continue listening for events
     // * `future::err(Ok(()))` to stop the loop without an error
     // * `future::err(Err(_))` to stop the loop with an error
+    let (_, event_rx) = event_channel.split();
     let event_loop = event_rx
         .map_err(|_| Err(()))
         .for_each({
             |event: Event| match event {
                 Event::Disconnected(addr) => {
-                        log_line!("*** Peer with address {} disconnected", addr);
-                        log_line!("*** Use Ctrl+C to exit");
-                        future::err(Ok(()))
+                    log_line!("*** Peer with address {} disconnected", addr);
+                    log_line!("*** Use Ctrl+C to exit");
+                    future::err(Ok(()))
                 },
+                _ => future::ok(())
             }
         })
         .or_else(|res| match res {

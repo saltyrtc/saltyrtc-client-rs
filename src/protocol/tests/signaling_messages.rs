@@ -162,9 +162,8 @@ mod server_auth {
         // Handle message
         let mut s = ctx.signaling;
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
-        let actions = s.handle_message(bbox).unwrap();
+        let _actions = s.handle_message(bbox).unwrap();
         assert_eq!(s.identity(), ClientIdentity::Responder(13));
-        assert_eq!(actions, vec![]);
     }
 
     // The peer MUST check that the cookie provided in the your_cookie
@@ -283,10 +282,9 @@ mod server_auth {
         let mut s = ctx.signaling;
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
         assert_eq!(s.responders.len(), 0);
-        let actions = s.handle_message(bbox).unwrap();
+        let _actions = s.handle_message(bbox).unwrap();
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
         assert_eq!(s.responders.len(), 2);
-        assert_eq!(actions, vec![]);
     }
 
     /// The client SHALL check that the initiator_connected field contains
@@ -351,7 +349,8 @@ mod server_auth {
             None, Some(AuthToken::new()),
         );
         let actions = _server_auth_respond(ctx);
-        assert_eq!(actions.len(), 2);
+        assert_eq!(actions.len(), 3);
+        assert_eq!(actions[2], HandleAction::Event(Event::ServerHandshakeDone(true)));
     }
 
     #[test]
@@ -362,7 +361,8 @@ mod server_auth {
             None, None,
         );
         let actions = _server_auth_respond(ctx);
-        assert_eq!(actions.len(), 1);
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[1], HandleAction::Event(Event::ServerHandshakeDone(true)));
     }
 
     /// If processing the server auth message succeeds, the signaling state
@@ -390,9 +390,12 @@ mod server_auth {
         // Handle message
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
         assert_eq!(s.common().signaling_state(), SignalingState::ServerHandshake);
-        let _actions = s.handle_message(bbox).unwrap();
+        let actions = s.handle_message(bbox).unwrap();
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
         assert_eq!(s.common().signaling_state(), SignalingState::PeerHandshake);
+        assert_eq!(actions, vec![
+            HandleAction::Event(Event::ServerHandshakeDone(false)),
+        ]);
     }
 }
 
