@@ -564,6 +564,7 @@ fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> Sal
 pub fn do_handshake(
     client: WsClient,
     salty: Rc<RefCell<SaltyClient>>,
+    event_tx: mpsc::UnboundedSender<Event>,
     timeout: Option<Duration>,
 ) -> BoxedFuture<WsClient, SaltyError> {
     // Main loop
@@ -572,6 +573,7 @@ pub fn do_handshake(
         let salty = Rc::clone(&salty);
 
         // Take the next incoming message
+        let event_tx = event_tx.clone();
         client.into_future()
 
             // Map errors to our custom error type
@@ -617,9 +619,15 @@ pub fn do_handshake(
                         HandleAction::TaskMessage(_) => return boxed!(future::err(
                             SaltyError::Crash("Received task message during handshake".into())
                         )),
-                        HandleAction::Event(_) => return boxed!(future::err(
-                            SaltyError::Crash("Received event during handshake".into())
-                        )),
+                        HandleAction::Event(e) => {
+                            // Notify the user about event
+                            match event_tx.unbounded_send(e) {
+                                Ok(_) => {},
+                                Err(_) => return boxed!(future::err(
+                                    SaltyError::Crash("Could not send event through channel".into())
+                                )),
+                            }
+                        },
                     }
                 }
 

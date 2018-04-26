@@ -119,7 +119,7 @@ fn connect_to(host: &str, port: u16, tls_connector: Option<TlsConnector>) -> Res
 
     // Connect
     let timeout = Duration::from_millis(1000);
-    let (connect_future, _event_channel) = saltyrtc_client::connect(
+    let (connect_future, event_channel) = saltyrtc_client::connect(
             host,
             port,
             tls_connector,
@@ -128,7 +128,12 @@ fn connect_to(host: &str, port: u16, tls_connector: Option<TlsConnector>) -> Res
         )
         .unwrap();
     let future = connect_future
-        .and_then(|client| saltyrtc_client::do_handshake(client, salty, Some(timeout)));
+        .and_then(|client| saltyrtc_client::do_handshake(
+            client,
+            salty,
+            event_channel.clone_tx(),
+            Some(timeout),
+        ));
 
     // Run future to completion
     core.run(future)
