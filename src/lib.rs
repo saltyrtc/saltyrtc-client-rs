@@ -303,6 +303,9 @@ pub enum Event {
     /// connected + authenticated.
     ServerHandshakeDone(bool),
 
+    /// Peer handshake is done.
+    PeerHandshakeDone,
+
     /// An authenticated peer disconnected from the server.
     Disconnected(u8),
 }
@@ -621,17 +624,23 @@ pub fn do_handshake(
                 for action in handle_actions {
                     match action {
                         HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
-                        HandleAction::HandshakeDone => handshake_done = true,
+                        HandleAction::HandshakeDone => {
+                            handshake_done = true;
+                            if let Err(_) = event_tx.unbounded_send(Event::PeerHandshakeDone) {
+                                return boxed!(future::err(
+                                    SaltyError::Crash("Could not send event through channel".into())
+                                ));
+                            }
+                        },
                         HandleAction::TaskMessage(_) => return boxed!(future::err(
                             SaltyError::Crash("Received task message during handshake".into())
                         )),
                         HandleAction::Event(e) => {
                             // Notify the user about event
-                            match event_tx.unbounded_send(e) {
-                                Ok(_) => {},
-                                Err(_) => return boxed!(future::err(
+                            if let Err(_) = event_tx.unbounded_send(e) {
+                                return boxed!(future::err(
                                     SaltyError::Crash("Could not send event through channel".into())
-                                )),
+                                ));
                             }
                         },
                     }
