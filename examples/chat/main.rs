@@ -254,7 +254,7 @@ fn main() {
     let salty_rc = Rc::new(RefCell::new(salty));
 
     // Connect to server
-    let connect_future = saltyrtc_client::connect(
+    let (connect_future, event_channel) = saltyrtc_client::connect(
             "localhost",
             8765,
             Some(tls_connector),
@@ -282,7 +282,7 @@ fn main() {
     };
 
     // Set up task loop
-    let (task, task_loop, event_rx) = saltyrtc_client::task_loop(client, salty_rc.clone())
+    let (task, task_loop) = saltyrtc_client::task_loop(client, salty_rc.clone(), event_channel.clone_tx())
         .unwrap_or_else(|e| {
             println!("{}", e);
             process::exit(1);
@@ -483,6 +483,7 @@ fn main() {
     // * `future::ok(())` to continue listening for events
     // * `future::err(Ok(()))` to stop the loop without an error
     // * `future::err(Err(_))` to stop the loop with an error
+    let (_, event_rx) = event_channel.split();
     let event_loop = event_rx
         .map_err(|_| Err(()))
         .for_each({

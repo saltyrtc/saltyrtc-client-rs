@@ -119,14 +119,15 @@ fn connect_to(host: &str, port: u16, tls_connector: Option<TlsConnector>) -> Res
 
     // Connect
     let timeout = Duration::from_millis(1000);
-    let future = saltyrtc_client::connect(
+    let (connect_future, _event_channel) = saltyrtc_client::connect(
             host,
             port,
             tls_connector,
             &handle,
             salty.clone(),
         )
-        .unwrap()
+        .unwrap();
+    let future = connect_future
         .and_then(|client| saltyrtc_client::do_handshake(client, salty, Some(timeout)));
 
     // Run future to completion

@@ -29,7 +29,7 @@ pub(crate) mod types;
 
 #[cfg(test)] mod tests;
 
-use ::CloseCode;
+use ::{Event, CloseCode};
 use ::tasks::{Tasks, BoxedTask, TaskMessage};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
@@ -39,7 +39,7 @@ use self::messages::{
     SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder, Close,
 };
 pub(crate) use self::nonce::{Nonce};
-pub use self::types::{Role, Event};
+pub use self::types::Role;
 pub(crate) use self::types::{HandleAction};
 use self::types::{Identity, ClientIdentity, Address};
 use self::state::{
