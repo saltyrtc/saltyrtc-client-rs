@@ -1,9 +1,11 @@
-/// A SaltyRTC task is a protocol extension to this protocol that will be
-/// negotiated during the client-to-client authentication phase. Once a task
-/// has been negotiated and the authentication is complete, the task protocol
-/// defines further procedures, messages, etc.
-///
-/// All tasks need to implement this interface.
+//! Task related types.
+//!
+//! A SaltyRTC task is a protocol extension to this protocol that will be
+//! negotiated during the client-to-client authentication phase. Once a task
+//! has been negotiated and the authentication is complete, the task protocol
+//! defines further procedures, messages, etc.
+//!
+//! All tasks need to implement the [`Task`](trait.Task.html) trait.
 
 use std::borrow::Cow;
 use std::collections::HashMap;

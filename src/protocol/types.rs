@@ -22,10 +22,12 @@ pub enum Role {
 }
 
 impl Role {
+    /// Return true if this role is the initiator.
     pub fn is_initiator(&self) -> bool {
         *self == Role::Initiator
     }
 
+    /// Return true if this role is the responder.
     pub fn is_responder(&self) -> bool {
         *self == Role::Responder
     }

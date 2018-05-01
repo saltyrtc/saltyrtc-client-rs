@@ -1,11 +1,33 @@
 //! SaltyRTC client implementation in Rust.
 //!
-//! The implementation is asynchronous using Tokio / Futures.
+//! The implementation is asynchronous using [Tokio](https://tokio.rs/) /
+//! [Futures](https://docs.rs/futures/0.2.1/futures/).
 //!
-//! Early prototype. More docs will follow (#26).
+//! ## Usage
+//!
+//! To establish a SaltyRTC connection:
+//!
+//! 1. Create an instance of a type that implements the
+//!    [`Task`](tasks/trait.Task.html) interface.
+//! 2. Using that task instance, create a [`SaltyClient`](struct.SaltyClient.html)
+//!    instance using the [`SaltyClientBuilder`](struct.SaltyClientBuilder.html).
+//! 3. Create an instance of the Tokio reactor core.
+//! 4. Create a connect future and an event channel using the
+//!    [`connect`](fn.connect.html) function.
+//! 5. Pass the result of the connect future to the
+//!    [`do_handshake`](fn.do_handshake.html) function.
+//! 6. Pass the result of the handshake future (the WebSocket client) to the
+//!    [`task_loop`](fn.task_loop.html) function.
+//! 7. Send and receive data through the event channel returned by the
+//!    [`connect`](fn.connect.html) function. Send and receive data through the
+//!    task instance.
+//!
+//! For a real-life example, please take a look at the
+//! [chat example](https://github.com/saltyrtc/saltyrtc-client-rs/tree/master/examples/chat).
 #![recursion_limit = "1024"]
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
+#![deny(missing_docs)]
 
 extern crate byteorder;
 extern crate data_encoding;
@@ -115,7 +137,8 @@ macro_rules! boxed {
 
 
 /// The builder instance returned by
-/// [`SaltyClient::build(…)`](struct.SaltyClient.html#method.build).
+/// [`SaltyClient::build`](struct.SaltyClient.html#method.build). Use this
+/// builder to construct a [`SaltyClient`](struct.SaltyClient.html) instance.
 pub struct SaltyClientBuilder {
     permanent_key: KeyPair,
     tasks: Vec<BoxedTask>,
@@ -314,19 +337,30 @@ pub enum Event {
 /// Close codes used by SaltyRTC.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CloseCode {
+    /// Going away (WebSocket internal close code)
     WsGoingAway,
+    /// Protocol error (WebSocket internal close code)
     WsProtocolError,
+    /// Path full
     PathFull,
+    /// SaltyRTC protocol error
     ProtocolError,
+    /// Internal error
     InternalError,
+    /// Handover of the signalling channel
     Handover,
+    /// Dropped by initiator
     DroppedByInitiator,
+    /// Initiator could not decrypt
     InitiatorCouldNotDecrypt,
+    /// No shared task found
     NoSharedTask,
+    /// Invalid key
     InvalidKey,
 }
 
 impl CloseCode {
+    /// Return the numeric close code.
     pub fn as_number(&self) -> u16 {
         use CloseCode::*;
         match *self {
@@ -343,6 +377,7 @@ impl CloseCode {
         }
     }
 
+    /// Create a `CloseCode` instance from a numeric close code.
     pub fn from_number(code: u16) -> Option<CloseCode> {
         use CloseCode::*;
         match code {
@@ -382,7 +417,9 @@ enum WsMessageDecoded {
 
 /// An unbounded channel sender/receiver pair.
 pub struct UnboundedChannel<T> {
+    /// The channel sender.
     pub tx: mpsc::UnboundedSender<T>,
+    /// The channel receiver.
     pub rx: mpsc::UnboundedReceiver<T>,
 }
 
