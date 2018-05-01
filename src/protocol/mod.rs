@@ -81,7 +81,7 @@ pub(crate) trait Signaling {
 
     /// Return the auth token (if set).
     fn auth_token(&self) -> Option<&AuthToken> {
-        if let AuthProvider::Token(ref token) = self.common().auth_provider {
+        if let Some(AuthProvider::Token(ref token)) = self.common().auth_provider {
             Some(token)
         } else {
             None
@@ -748,7 +748,7 @@ pub(crate) struct Common {
 
     /// Either an auth token (for untrusted sessions) or a trusted peer public
     /// key (for trusted sessions).
-    pub(crate) auth_provider: AuthProvider,
+    pub(crate) auth_provider: Option<AuthProvider>,
 
     /// The assigned role.
     pub(crate) role: Role,
@@ -967,9 +967,12 @@ impl Signaling for InitiatorSignaling {
                 // Expect token message, encrypted with authentication token.
                 debug!("Expect token message");
                 match self.common.auth_provider {
-                    AuthProvider::Token(ref token) => OpenBox::decrypt_token(bbox, token),
-                    AuthProvider::TrustedKey(_) => Err(SignalingError::Crash(
+                    Some(AuthProvider::Token(ref token)) => OpenBox::decrypt_token(bbox, token),
+                    Some(AuthProvider::TrustedKey(_)) => Err(SignalingError::Crash(
                         "Handshake state is \"New\" even though a trusted key is available".into()
+                    )),
+                    None => Err(SignalingError::Crash(
+                        "Handshake state is \"New\" without an auth provider available".into()
                     )),
                 }
             },
@@ -1128,10 +1131,10 @@ impl InitiatorSignaling {
                 role: Role::Initiator,
                 identity: ClientIdentity::Unknown,
                 permanent_keypair,
-                auth_provider: match responder_trusted_pubkey {
+                auth_provider: Some(match responder_trusted_pubkey {
                     Some(key) => AuthProvider::TrustedKey(key),
                     None => AuthProvider::Token(AuthToken::new()),
-                },
+                }),
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
@@ -1148,22 +1151,32 @@ impl InitiatorSignaling {
     fn handle_token(&mut self, msg: Token, source: Address) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received token from {}", Identity::from(source));
 
-        // Find responder instance
-        let responder = self.responders.get_mut(&source)
-            .ok_or_else(|| SignalingError::Crash(
-                format!("Did not find responder with address {}", source)
-            ))?;
+        {
+            // Find responder instance
+            let responder = self.responders.get_mut(&source)
+                .ok_or_else(|| SignalingError::Crash(
+                    format!("Did not find responder with address {}", source)
+                ))?;
 
-        // Sanity check
-        if responder.permanent_key.is_some() {
-            return Err(SignalingError::Crash("Responder already has a permanent key set!".into()));
+            // Sanity check
+            if responder.permanent_key.is_some() {
+                return Err(SignalingError::Crash("Responder already has a permanent key set!".into()));
+            }
+
+            // Set public permanent key
+            responder.permanent_key = Some(msg.key);
+
+            // State transition
+            responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
+
+        } // Waiting for NLL
+
+        // Invalidate auth token
+        match self.common().auth_provider {
+            Some(AuthProvider::Token(_)) => {},
+            _ => return Err(SignalingError::Crash("Auth provider is not a token".into())),
         }
-
-        // Set public permanent key
-        responder.permanent_key = Some(msg.key);
-
-        // State transition
-        responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
+        self.common_mut().auth_provider = None;
 
         Ok(vec![])
     }
@@ -1371,7 +1384,7 @@ impl InitiatorSignaling {
         let mut responder = ResponderContext::new(address);
 
         // If we trust the responder…
-        if let AuthProvider::TrustedKey(key) = self.common.auth_provider {
+        if let Some(AuthProvider::TrustedKey(key)) = self.common.auth_provider {
             // …set the public permanent key
             if responder.permanent_key.is_some() { // Sanity check
                 return Err(SignalingError::Crash("Responder already has a permanent key set!".into()));
@@ -1550,10 +1563,25 @@ impl Signaling for ResponderSignaling {
         let mut actions: Vec<HandleAction> = vec![];
         match msg.initiator_connected {
             Some(true) => {
-                if let AuthProvider::Token(ref token) = self.common().auth_provider {
-                    actions.push(self.send_token(&token)?);
-                } else {
-                    debug!("Trusted key available, skipping token message");
+                let mut send_token = false;
+                match self.common().auth_provider {
+                    Some(AuthProvider::Token(_)) => {
+                        send_token = true;
+                    },
+                    Some(AuthProvider::TrustedKey(_)) => {
+                        debug!("Trusted key available, skipping token message");
+                    },
+                    None => {
+                        return Err(SignalingError::Crash("No auth provider set".into()));
+                    },
+                }
+                if send_token {
+                    let old_auth_provider = mem::replace(&mut self.common_mut().auth_provider, None);
+                    if let Some(AuthProvider::Token(token)) = old_auth_provider {
+                        actions.push(self.send_token(token)?);
+                    } else {
+                        return Err(SignalingError::Crash("Auth provider is not a token".into()));
+                    }
                 }
                 actions.push(self.send_key()?);
                 actions.push(HandleAction::Event(Event::ServerHandshakeDone(true)));
@@ -1582,10 +1610,25 @@ impl Signaling for ResponderSignaling {
 
         // ...and continue by sending a 'token' or 'key' client-to-client
         // message described in the Client-to-Client Messages section.
-        if let AuthProvider::Token(ref token) = self.common().auth_provider {
-            actions.push(self.send_token(&token)?);
-        } else {
-            debug!("Trusted key available, skipping token message");
+        let mut send_token = false;
+        match self.common().auth_provider {
+            Some(AuthProvider::Token(_)) => {
+                send_token = true;
+            },
+            Some(AuthProvider::TrustedKey(_)) => {
+                debug!("Trusted key available, skipping token message");
+            },
+            None => {
+                return Err(SignalingError::Crash("No auth provider set".into()));
+            },
+        }
+        if send_token {
+            let old_auth_provider = mem::replace(&mut self.common_mut().auth_provider, None);
+            if let Some(AuthProvider::Token(token)) = old_auth_provider {
+                actions.push(self.send_token(token)?);
+            } else {
+                return Err(SignalingError::Crash("Auth provider is not a token".into()));
+            }
         }
         actions.push(self.send_key()?);
         self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
@@ -1625,10 +1668,10 @@ impl ResponderSignaling {
                 role: Role::Responder,
                 identity: ClientIdentity::Unknown,
                 permanent_keypair,
-                auth_provider: match auth_token {
+                auth_provider: Some(match auth_token {
                     Some(token) => AuthProvider::Token(token),
                     None => AuthProvider::TrustedKey(initiator_pubkey),
-                },
+                }),
                 server: ServerContext::new(),
                 tasks: Some(tasks),
                 task: None,
@@ -1640,7 +1683,9 @@ impl ResponderSignaling {
     }
 
     /// Build a `Token` message.
-    fn send_token(&self, token: &AuthToken) -> SignalingResult<HandleAction> {
+    ///
+    /// The token is consumed to avoid accidentally reusing it.
+    fn send_token(&self, token: AuthToken) -> SignalingResult<HandleAction> {
         // The responder MUST set the public key (32 bytes) of the permanent
         // key pair in the key field of this message.
         let msg: Message = Token {
@@ -1657,10 +1702,6 @@ impl ResponderSignaling {
         // The message SHALL be NaCl secret key encrypted by the token the
         // initiator created and issued to the responder.
         let bbox = obox.encrypt_token(&token);
-
-        // TODO (#18): In case the initiator has successfully decrypted the 'token'
-        // message, the secret key MUST be invalidated immediately and SHALL
-        // NOT be used for any other message.
 
         debug!("<-- Enqueuing token to {}", self.initiator.identity());
         Ok(HandleAction::Reply(bbox))
