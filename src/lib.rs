@@ -24,6 +24,12 @@
 //!
 //! For a real-life example, please take a look at the
 //! [chat example](https://github.com/saltyrtc/saltyrtc-client-rs/tree/master/examples/chat).
+//!
+//! ## Timeouts
+//!
+//! If you want timeouts (e.g. for connecting, for the handshake, etc) combine
+//! the futures with a timeout feature (for example from
+//! [tokio-timer](https://github.com/tokio-rs/tokio-timer)).
 #![recursion_limit = "1024"]
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
