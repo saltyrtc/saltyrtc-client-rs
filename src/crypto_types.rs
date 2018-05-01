@@ -467,4 +467,35 @@ mod tests {
         let _ = res2.unwrap();
     }
 
+    /// Make sure that the AuthToken is zeroed on drop.
+    #[test]
+    fn auth_token_zero_on_drop() {
+        use std::borrow::Borrow;
+
+        // Create auth token
+        let token = Box::new(AuthToken::new());
+
+        // Copy token bytes and create a zeroed array for comparison
+        let token_bytes = (token.0).0;
+        let zero_bytes = [0; 32];
+
+        // Get and dereference pointer to token
+        let ptr = token.borrow() as *const AuthToken;
+        println!("Old data is {:?}", &token_bytes);
+        println!("Pointer address is {:?}", ptr);
+        let deref1: &AuthToken = unsafe { &*ptr };
+        println!("Deref1 data is {:?}", &(deref1.0).0);
+        assert_eq!((deref1.0).0, token_bytes);
+        assert_ne!((deref1.0).0, zero_bytes);
+
+        // Drop auth token
+        drop(token);
+
+        // Dereference pointer to token again
+        println!("Pointer address is {:?}", ptr);
+        let deref2: &AuthToken = unsafe { &*ptr };
+        println!("Deref2 data is {:?}", &(deref2.0).0);
+        assert_ne!((deref2.0).0, token_bytes);
+        assert_eq!((deref2.0).0, zero_bytes);
+    }
 }
