@@ -1,0 +1,17 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+.env
+*.log
+
+# Certificates
+*.pem
+*.crt
+*.der
+
+# Vim
+*.swp
+
+# IntelliJ
+.idea/

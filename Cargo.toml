@@ -1,0 +1,32 @@
+[package]
+name = "saltyrtc-client"
+version = "0.1.0"
+authors = ["Danilo Bargen <danilo.bargen@threema.ch>"]
+
+[dependencies]
+byteorder = "1.1"
+clippy = {version = "0.0.194", optional = true}
+data-encoding = "2.0.0-rc.2"
+failure = "0.1.1"
+futures = "0.1.0"  # Make sure to use same version as websocket
+log = "0.4.0-rc.1"
+mopa = "0.2"
+native-tls = "0.1.4"
+rmp-serde = "0.13"
+rmpv = { version = "0.4", features = ["with-serde"] }
+rust_sodium-sys = { version = "0.7.0" }
+rust_sodium = { version = "0.7.0", features = ["serde"] }
+serde = "1.0"
+serde_derive = "1.0"
+tokio-core = "0.1.9"
+tokio-timer = "0.1"
+websocket = "0.20.2"
+
+[dev-dependencies]
+clap = "2.27"
+cursive = "0.7"
+log4rs = "0.8"
+
+[features]
+default = []
+msgpack-debugging = []
