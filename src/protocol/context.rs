@@ -54,6 +54,7 @@ pub(crate) struct ServerContext {
 }
 
 impl ServerContext {
+    /// Create a new `ServerContext` instance.
     pub fn new() -> Self {
         ServerContext {
             handshake_state: ServerHandshakeState::New,

@@ -149,6 +149,7 @@ pub struct SaltyClientBuilder {
     permanent_key: KeyPair,
     tasks: Vec<BoxedTask>,
     ping_interval: Option<Duration>,
+    server_public_permanent_key: Option<PublicKey>,
 }
 
 impl SaltyClientBuilder {
@@ -158,6 +159,7 @@ impl SaltyClientBuilder {
             permanent_key,
             tasks: vec![],
             ping_interval: None,
+            server_public_permanent_key: None,
         }
     }
 
@@ -167,6 +169,13 @@ impl SaltyClientBuilder {
     /// have the highest priority during task negotation.
     pub fn add_task(mut self, task: BoxedTask) -> Self {
         self.tasks.push(task);
+        self
+    }
+
+    /// Specify the server public permanent key if you want to use server key
+    /// pinning.
+    pub fn with_server_key(mut self, server_public_permanent_key: PublicKey) -> Self {
+        self.server_public_permanent_key = Some(server_public_permanent_key);
         self
     }
 
@@ -190,6 +199,7 @@ impl SaltyClientBuilder {
             self.permanent_key,
             tasks,
             None,
+            self.server_public_permanent_key,
             self.ping_interval,
         );
         Ok(SaltyClient {
@@ -204,6 +214,7 @@ impl SaltyClientBuilder {
             self.permanent_key,
             tasks,
             Some(responder_trusted_pubkey),
+            self.server_public_permanent_key,
             self.ping_interval,
         );
         Ok(SaltyClient {
@@ -218,6 +229,7 @@ impl SaltyClientBuilder {
             self.permanent_key,
             initiator_pubkey,
             Some(auth_token),
+            self.server_public_permanent_key,
             tasks,
             self.ping_interval,
         );
@@ -233,6 +245,7 @@ impl SaltyClientBuilder {
             self.permanent_key,
             initiator_trusted_pubkey,
             None,
+            self.server_public_permanent_key,
             tasks,
             self.ping_interval,
         );

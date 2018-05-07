@@ -1124,6 +1124,7 @@ impl InitiatorSignaling {
     pub(crate) fn new(permanent_keypair: KeyPair,
                       tasks: Tasks,
                       responder_trusted_pubkey: Option<PublicKey>,
+                      server_public_permanent_key: Option<PublicKey>,
                       ping_interval: Option<Duration>) -> Self {
         InitiatorSignaling {
             common: Common {
@@ -1135,7 +1136,11 @@ impl InitiatorSignaling {
                     Some(key) => AuthProvider::TrustedKey(key),
                     None => AuthProvider::Token(AuthToken::new()),
                 }),
-                server: ServerContext::new(),
+                server: {
+                    let mut ctx = ServerContext::new();
+                    ctx.permanent_key = server_public_permanent_key;
+                    ctx
+                },
                 tasks: Some(tasks),
                 task: None,
                 task_supported_types: None,
@@ -1660,6 +1665,7 @@ impl ResponderSignaling {
     pub(crate) fn new(permanent_keypair: KeyPair,
                       initiator_pubkey: PublicKey,
                       auth_token: Option<AuthToken>,
+                      server_public_permanent_key: Option<PublicKey>,
                       tasks: Tasks,
                       ping_interval: Option<Duration>) -> Self {
         ResponderSignaling {
@@ -1672,7 +1678,11 @@ impl ResponderSignaling {
                     Some(token) => AuthProvider::Token(token),
                     None => AuthProvider::TrustedKey(initiator_pubkey),
                 }),
-                server: ServerContext::new(),
+                server: {
+                    let mut ctx = ServerContext::new();
+                    ctx.permanent_key = server_public_permanent_key;
+                    ctx
+                },
                 tasks: Some(tasks),
                 task: None,
                 task_supported_types: None,

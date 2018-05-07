@@ -31,7 +31,7 @@ impl TestContext<InitiatorSignaling> {
         let server_cookie = Cookie::random();
         let ks = KeyPair::from_private_key(our_ks.private_key().clone());
         let tasks = Tasks::new(Box::new(DummyTask::new(42)));
-        let mut signaling = InitiatorSignaling::new(ks, tasks, peer_trusted_pubkey, None);
+        let mut signaling = InitiatorSignaling::new(ks, tasks, peer_trusted_pubkey, None, None);
         signaling.common_mut().identity = identity;
         signaling.server_mut().set_handshake_state(server_handshake_state);
         signaling.server_mut().cookie_pair = CookiePair {
@@ -70,7 +70,7 @@ impl TestContext<ResponderSignaling> {
             let ks = KeyPair::from_private_key(our_ks.private_key().clone());
             let mut tasks = Tasks::new(Box::new(DummyTask::new(23)));
             tasks.add_task(Box::new(DummyTask::new(42))).unwrap();
-            ResponderSignaling::new(ks, pk, auth_token, tasks, None)
+            ResponderSignaling::new(ks, pk, auth_token, None, tasks, None)
         };
         signaling.common_mut().identity = identity;
         signaling.server_mut().set_handshake_state(server_handshake_state);
@@ -407,6 +407,7 @@ mod client_auth {
         let mut s = InitiatorSignaling::new(
             kp,
             Tasks::new(Box::new(DummyTask::new(123))),
+            None,
             None,
             interval,
         );
