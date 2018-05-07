@@ -217,7 +217,7 @@ fn cookie_did_not_change() {
 
     // Prepare 'server-hello' message
     let msg = ServerHello::random().into_message();
-    let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), CombinedSequenceSnapshot::random());
+    let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), CombinedSequenceSnapshot::new(0, 123));
     let bbox = OpenBox::<Message>::new(msg, nonce).encode();
 
     // Handle 'server-hello' message
@@ -227,7 +227,7 @@ fn cookie_did_not_change() {
 
     // Prepare 'server-auth' message, use a different cookie than before
     let msg = ServerAuth::for_initiator(s.server().cookie_pair.ours.clone(), None, vec![]).into_message();
-    let nonce = Nonce::new(Cookie::random(), Address(0), Address(1), CombinedSequenceSnapshot::random());
+    let nonce = Nonce::new(Cookie::random(), Address(0), Address(1), CombinedSequenceSnapshot::new(0, 124));
     let bbox = OpenBox::<Message>::new(msg, nonce).encrypt(
         &s.common().permanent_keypair,
         &s.server().session_key.unwrap(),
