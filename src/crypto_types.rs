@@ -4,6 +4,8 @@
 
 use std::cmp;
 use std::fmt;
+#[cfg(test)]
+use std::io::Write;
 
 use data_encoding::{HEXLOWER, HEXLOWER_PERMISSIVE};
 use rust_sodium::crypto::{box_, secretbox};
@@ -222,17 +224,50 @@ impl AuthToken {
 }
 
 
+/// The number of bytes in the [`SignedKeys`](struct.SignedKeys.html) array.
+const SIGNED_KEYS_BYTES: usize = 2 * box_::PUBLICKEYBYTES + box_::MACBYTES;
+
+
 /// A pair of not-yet-signed keys used in the [`ServerAuth`](../messages/struct.ServerAuth.html)
 /// message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsignedKeys {
-    server_session_key: PublicKey,
-    client_permanent_key: PublicKey,
+    pub server_public_session_key: PublicKey,
+    pub client_public_permanent_key: PublicKey,
 }
 
+impl UnsignedKeys {
+    pub fn new(server_public_session_key: PublicKey, client_public_permanent_key: PublicKey) -> Self {
+        Self { server_public_session_key, client_public_permanent_key }
+    }
 
-/// The number of bytes in the [`SignedKeys`](struct.SignedKeys.html) array.
-const SIGNED_KEYS_BYTES: usize = 2 * box_::PUBLICKEYBYTES + box_::MACBYTES;
+    /// Sign the server public session key and the client public permanent key.
+    ///
+    /// This is only used in testing.
+    #[cfg(test)]
+    pub(crate) fn sign(
+        self,
+        server_session_keypair: &KeyPair,
+        client_public_permanent_key: &PublicKey,
+        nonce: Nonce,
+    ) -> SignedKeys {
+        let mut bytes = [0u8; 64];
+        (&mut bytes[0..32]).write_all(&self.server_public_session_key.0).unwrap();
+        (&mut bytes[32..64]).write_all(&self.client_public_permanent_key.0).unwrap();
+        let rust_sodium_nonce: box_::Nonce = nonce.into();
+        let vec = box_::seal(
+            &bytes,
+            &rust_sodium_nonce,
+            client_public_permanent_key,
+            server_session_keypair.private_key(),
+        );
+        assert_eq!(vec.len(), SIGNED_KEYS_BYTES);
+        let mut encrypted = [0u8; SIGNED_KEYS_BYTES];
+        (&mut encrypted[..]).write_all(&vec).unwrap();
+        SignedKeys(encrypted)
+    }
+}
+
 
 /// Concatenated signed keys used in the [`ServerAuth`](../messages/struct.ServerAuth.html)
 /// message.
@@ -241,6 +276,27 @@ pub struct SignedKeys([u8; SIGNED_KEYS_BYTES]);
 impl SignedKeys {
     pub fn new(bytes: [u8; SIGNED_KEYS_BYTES]) -> Self {
         SignedKeys(bytes)
+    }
+
+    pub(crate) fn decrypt(
+        &self,
+        permanent_key: &KeyPair,
+        server_public_permanent_key: &PublicKey,
+        nonce: Nonce,
+    ) -> SignalingResult<UnsignedKeys> {
+        // Decrypt bytes
+        let rust_sodium_nonce: box_::Nonce = nonce.into();
+        let decrypted = box_::open(
+            &self.0,
+            &rust_sodium_nonce,
+            server_public_permanent_key,
+            permanent_key.private_key(),
+        ).map_err(|_| SignalingError::Crypto("Could not decrypt signed keys".to_string()))?;
+        assert_eq!(decrypted.len(), 32 * 2);
+        Ok(UnsignedKeys::new(
+           PublicKey::from_slice(&decrypted[0..32]).unwrap(),
+           PublicKey::from_slice(&decrypted[32..64]).unwrap(),
+        ))
     }
 }
 
@@ -497,5 +553,43 @@ mod tests {
         println!("Deref2 data is {:?}", &(deref2.0).0);
         assert_ne!((deref2.0).0, token_bytes);
         assert_eq!((deref2.0).0, zero_bytes);
+    }
+
+    #[test]
+    fn unsigned_keys_sign_decrypt() {
+        // Create keypairs
+        let kp_server = KeyPair::new();
+        let kp_client = KeyPair::new();
+
+        // Create nonce
+        let nonce_hex = b"fe381c4bdb8bfc2a27d2c9a6485113e7638613ffb02b3747";
+        let nonce_bytes = HEXLOWER.decode(nonce_hex).unwrap();
+        let nonce = Nonce::from_bytes(&nonce_bytes).unwrap();
+
+        // Sign keys
+        let unsigned = UnsignedKeys::new(
+            kp_server.public_key().clone(),
+            kp_client.public_key().clone(),
+        );
+        let signed = unsigned.clone().sign(
+            &kp_server,
+            kp_client.public_key(),
+            unsafe { nonce.clone() },
+        );
+
+        // Decrypt directly with libsodium
+        let decrypted = box_::open(
+            &signed.0,
+            &{ unsafe { nonce.clone() } }.into(),
+            kp_server.public_key(),
+            kp_client.private_key(),
+        ).unwrap();
+        assert_eq!(decrypted.len(), 2 * 32);
+        assert_eq!(&decrypted[0..32], &kp_server.public_key().0);
+        assert_eq!(&decrypted[32..64], &kp_client.public_key().0);
+
+        // Decrypt through the `decrypt` method
+        let unsigned2 = signed.decrypt(&kp_client, kp_server.public_key(), nonce).unwrap();
+        assert_eq!(unsigned, unsigned2);
     }
 }

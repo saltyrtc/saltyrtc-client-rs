@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use boxes::{ByteBox, OpenBox};
 use crypto::{KeyPair, AuthToken, PublicKey};
+use crypto_types::UnsignedKeys;
 use errors::{SignalingError, SignalingResult};
 use rmpv::{Value};
 
@@ -271,8 +272,24 @@ pub(crate) trait Signaling {
         };
 
         if bbox.nonce.source().is_server() {
+            // We need to clone the nonce here, in case we need it to verify
+            // the signed keys sent in the 'server-auth' message.
+            // Unfortunately at this point in time we don't know yet whether
+            // the message actually is a 'server-auth' message...
+            let nonce_unsafe_clone = unsafe { bbox.nonce.clone() };
+
+            // Decode the message from the server
             let obox: OpenBox<Message> = self.decode_server_message(bbox)?;
-            self.handle_server_message(obox)
+
+            // Only keep the nonce clone if this is a 'server-auth' message
+            let nonce_clone_opt = if obox.message.get_type() == "server-auth" {
+                Some(nonce_unsafe_clone)
+            } else {
+                None
+            };
+
+            // Process the server message
+            self.handle_server_message(obox, nonce_clone_opt)
         } else {
             match self.common().signaling_state() {
                 SignalingState::ServerHandshake => self.handle_handshake_peer_message(bbox),
@@ -318,7 +335,7 @@ pub(crate) trait Signaling {
 
             // Peer handshake
             SignalingState::PeerHandshake if obox.nonce.source().is_server() =>
-                self.handle_server_message(obox),
+                self.handle_server_message(obox, None),
             SignalingState::PeerHandshake =>
                 self.handle_peer_message(obox),
 
@@ -519,14 +536,18 @@ pub(crate) trait Signaling {
     ///
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
-    fn handle_server_message(&mut self, obox: OpenBox<Message>) -> SignalingResult<Vec<HandleAction>> {
+    ///
+    /// Note: The `nonce_clone` parameter is only set to a value if needed to
+    /// verify the signed keys inside the `server-auth` message. Otherwise it's
+    /// `None`.
+    fn handle_server_message(&mut self, obox: OpenBox<Message>, nonce_clone: Option<Nonce>) -> SignalingResult<Vec<HandleAction>> {
         let old_state = self.server_handshake_state();
         match (old_state, obox.message) {
             // Valid state transitions
             (ServerHandshakeState::New, Message::ServerHello(msg)) =>
                 self.handle_server_hello(msg),
             (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
-                self.handle_server_auth(msg),
+                self.handle_server_auth(msg, nonce_clone),
             (ServerHandshakeState::Done, Message::NewInitiator(msg)) =>
                 self.handle_new_initiator(msg),
             (ServerHandshakeState::Done, Message::NewResponder(msg)) =>
@@ -633,7 +654,7 @@ pub(crate) trait Signaling {
     }
 
     /// Handle an incoming [`ServerAuth`](messages/struct.ServerAuth.html) message.
-    fn handle_server_auth(&mut self, msg: ServerAuth) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_server_auth(&mut self, msg: ServerAuth, nonce_clone: Option<Nonce>) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received server-auth from server");
 
         // When the client receives a 'server-auth' message, it MUST
@@ -654,16 +675,42 @@ pub(crate) trait Signaling {
             self.server().identity(),
         )?;
 
-        // If the client has knowledge of the server's public permanent
-        // key, it SHALL decrypt the signed_keys field by using the
-        // message's nonce, the client's private permanent key and the
-        // server's public permanent key. The decrypted message MUST
-        // match the concatenation of the server's public session key
-        // and the client's public permanent key (in that order). If
-        // the signed_keys is present but the client does not have
-        // knowledge of the server's permanent key, it SHALL log a
-        // warning.
-        // TODO (#12): Implement
+        if let Some(server_public_permanent_key) = self.server().permanent_key() {
+            // If the client has knowledge of the server's public permanent
+            // key, it SHALL decrypt the signed_keys field by using the
+            // message's nonce, the client's private permanent key and the
+            // server's public permanent key.
+            let nonce = nonce_clone.ok_or_else(|| SignalingError::Crash(
+                "This is a server-auth message, but no nonce clone was passed in".into()
+            ))?;
+            let signed_keys = msg.signed_keys.as_ref().ok_or_else(|| SignalingError::Protocol(
+                "Server's public permanent key is known, but server did not send signed keys".into()
+            ))?;
+            let decrypted = signed_keys.decrypt(
+                &self.common().permanent_keypair,
+                server_public_permanent_key,
+                nonce,
+            )?;
+
+            // The decrypted message MUST match the concatenation of the
+            // server's public session key and the client's public permanent
+            // key (in that order).
+            let server_public_session_key = self.server().session_key()
+                .ok_or_else(|| SignalingError::Crash("Server session key not set".into()))?;
+            if &decrypted.server_public_session_key != server_public_session_key {
+                return Err(SignalingError::Protocol("Server public session key sent in `signed_keys` is not valid".into()));
+            }
+            if &decrypted.client_public_permanent_key != self.common().permanent_keypair.public_key() {
+                return Err(SignalingError::Protocol("Our public permanent key sent in `signed_keys` is not valid".into()));
+            }
+        } else {
+            // If the signed_keys is present but the client does not have
+            // knowledge of the server's permanent key, it SHALL log a
+            // warning.
+            if msg.signed_keys.is_some() {
+                warn!("Server sent signed keys, but we're not verifying them");
+            }
+        }
 
         // Moreover, the client MUST do some checks depending on its role
         let actions = self.handle_server_auth_impl(&msg)?;

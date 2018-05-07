@@ -397,6 +397,52 @@ mod server_auth {
             HandleAction::Event(Event::ServerHandshakeDone(false)),
         ]);
     }
+
+    #[test]
+    fn server_public_permanent_key_validate() {
+        // Create server public permanent key
+        let server_permanent_ks1 = KeyPair::new();
+        let server_permanent_ks2 = KeyPair::new();
+
+        // Initialize signaling class
+        let mut ctx = TestContext::initiator(
+            ClientIdentity::Initiator, None,
+            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
+        );
+        ctx.signaling.server_mut().permanent_key = Some(server_permanent_ks1.public_key().clone());
+
+        // Create nonce for ServerAuth message
+        let nonce = Nonce::new(ctx.server_cookie.clone(), Address(0), Address(1), CombinedSequenceSnapshot::random());
+
+        // Prepare signed keys
+        let unsigned_keys = UnsignedKeys::new(
+            ctx.signaling.server().session_key().unwrap().clone(),
+            ctx.our_ks.public_key().clone(),
+        );
+        let signed_keys = unsigned_keys.sign(&server_permanent_ks1, ctx.our_ks.public_key(), unsafe { nonce.clone() });
+
+        // Prepare a ServerAuth message.
+        let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), Some(signed_keys), vec![]).into_message();
+        let msg_bytes = msg.to_msgpack();
+        let encrypted = ctx.our_ks.encrypt(&msg_bytes, unsafe { nonce.clone() }, ctx.server_ks.public_key());
+        let bbox = ByteBox::new(encrypted, nonce);
+
+        // Change server permanent key (to provoke a validation error)
+        ctx.signaling.server_mut().permanent_key = Some(server_permanent_ks2.public_key().clone());
+
+        // Handle message
+        let mut s = ctx.signaling;
+        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.handle_message(bbox),
+            Err(SignalingError::Crypto("Could not decrypt signed keys".into()))
+        );
+        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+
+        // TODO: Add two additional tests:
+        // - Successful validation
+        // - Correct encryption but bad keys inside
+    }
 }
 
 mod client_auth {
