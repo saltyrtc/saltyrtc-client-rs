@@ -211,5 +211,31 @@ fn cookie_differs_from_own() {
 /// The peer MUST check that the cookie of the sender does not change.
 #[test]
 fn cookie_did_not_change() {
-    // TODO (#21): Write once ServerAuth message has been implemented
+    // Create new signaling instance
+    let ks = KeyPair::new();
+    let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None, None);
+
+    // Prepare 'server-hello' message
+    let msg = ServerHello::random().into_message();
+    let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), CombinedSequenceSnapshot::random());
+    let bbox = OpenBox::<Message>::new(msg, nonce).encode();
+
+    // Handle 'server-hello' message
+    assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
+    assert!(s.handle_message(bbox).is_ok());
+    assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+
+    // Prepare 'server-auth' message, use a different cookie than before
+    let msg = ServerAuth::for_initiator(s.server().cookie_pair.ours.clone(), None, vec![]).into_message();
+    let nonce = Nonce::new(Cookie::random(), Address(0), Address(1), CombinedSequenceSnapshot::random());
+    let bbox = OpenBox::<Message>::new(msg, nonce).encrypt(
+        &s.common().permanent_keypair,
+        &s.server().session_key.unwrap(),
+    );
+
+    // Handle 'server-auth' message
+    assert_eq!(
+        s.handle_message(bbox),
+        Err(SignalingError::InvalidNonce("Cookie from server has changed".into())),
+    );
 }
