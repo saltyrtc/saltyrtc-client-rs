@@ -426,14 +426,29 @@ impl ResponderAuthBuilder {
         if self.auth.task.is_some() {
             panic!("task may not be set");
         }
-        // TODO (#10): Check for duplicate tasks!
-        match self.auth.tasks {
-            Some(ref tasks) if tasks.is_empty() => Err(SignalingError::InvalidMessage(
-                "An `Auth` message must contain at least one task".to_string()
-            )),
-            Some(_) => Ok(self.auth),
-            None => panic!("tasks list not initialized!"),
-        }
+
+        { // Validate tasks
+            let tasks = self.auth.tasks.as_ref().expect("tasks list not initialized!");
+
+            // Ensure that tasks list is not empty
+            if tasks.is_empty() {
+                return Err(SignalingError::InvalidMessage(
+                    "An `Auth` message must contain at least one task".to_string()
+                ));
+            }
+
+            // Ensure that tasks list does not contain duplicates
+            let mut cloned = tasks.clone();
+            cloned.sort_unstable();
+            cloned.dedup();
+            if cloned.len() != tasks.len() {
+                return Err(SignalingError::InvalidMessage(
+                    "An `Auth` message may not contain duplicate tasks".to_string()
+                ));
+            }
+        } // Waiting for NLL
+
+        Ok(self.auth)
     }
 
 }

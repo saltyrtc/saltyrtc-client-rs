@@ -1042,6 +1042,40 @@ mod auth {
         assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::Task);
         assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::AuthReceived);
     }
+
+    /// Ensure that duplicate names are not allowed when constructing a responder `Auth` message.
+    #[test]
+    fn responder_auth_tasks_no_duplicates_simple() {
+        let simple = ResponderAuthBuilder::new(Cookie::random())
+            .add_task("dummy1", None)
+            .add_task("dummy1", None)
+            .build();
+        assert_eq!(
+            simple,
+            Err(SignalingError::InvalidMessage("An `Auth` message may not contain duplicate tasks".into())),
+        );
+
+        let nonconsecutive = ResponderAuthBuilder::new(Cookie::random())
+            .add_task("dummy1", None)
+            .add_task("dummy2", None)
+            .add_task("dummy1", None)
+            .build();
+        assert_eq!(
+            nonconsecutive,
+            Err(SignalingError::InvalidMessage("An `Auth` message may not contain duplicate tasks".into())),
+        );
+
+        let different_data = ResponderAuthBuilder::new(Cookie::random())
+            .add_task("dummy1", None)
+            .add_task("dummy1", Some({
+                let mut data = HashMap::new(); data.insert("a".into(), 1.into()); data
+            }))
+            .build();
+        assert_eq!(
+            different_data,
+            Err(SignalingError::InvalidMessage("An `Auth` message may not contain duplicate tasks".into())),
+        );
+    }
 }
 
 mod new_initiator {
