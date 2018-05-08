@@ -5,7 +5,7 @@ authors = ["Danilo Bargen <danilo.bargen@threema.ch>"]
 
 [dependencies]
 byteorder = "1.1"
-clippy = {version = "0.0.194", optional = true}
+clippy = {version = "0.0.197", optional = true}
 data-encoding = "2.0.0-rc.2"
 failure = "0.1.1"
 futures = "0.1.0"  # Make sure to use same version as websocket
