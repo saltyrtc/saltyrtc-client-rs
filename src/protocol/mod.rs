@@ -702,13 +702,11 @@ pub(crate) trait Signaling {
             if &decrypted.client_public_permanent_key != self.common().permanent_keypair.public_key() {
                 return Err(SignalingError::Protocol("Our public permanent key sent in `signed_keys` is not valid".into()));
             }
-        } else {
+        } else if msg.signed_keys.is_some() {
             // If the signed_keys is present but the client does not have
             // knowledge of the server's permanent key, it SHALL log a
             // warning.
-            if msg.signed_keys.is_some() {
-                warn!("Server sent signed keys, but we're not verifying them");
-            }
+            warn!("Server sent signed keys, but we're not verifying them");
         }
 
         // Moreover, the client MUST do some checks depending on its role
@@ -1123,7 +1121,7 @@ impl Signaling for InitiatorSignaling {
         }
 
         Ok(vec![
-           HandleAction::Event(Event::ServerHandshakeDone(responders.len() > 0)),
+           HandleAction::Event(Event::ServerHandshakeDone(responders.is_empty())),
         ])
     }
 

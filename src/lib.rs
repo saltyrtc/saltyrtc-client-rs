@@ -682,7 +682,7 @@ pub fn do_handshake(
                         HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
                         HandleAction::HandshakeDone => {
                             handshake_done = true;
-                            if let Err(_) = event_tx.unbounded_send(Event::PeerHandshakeDone) {
+                            if event_tx.unbounded_send(Event::PeerHandshakeDone).is_err() {
                                 return boxed!(future::err(
                                     SaltyError::Crash("Could not send event through channel".into())
                                 ));
@@ -693,7 +693,7 @@ pub fn do_handshake(
                         )),
                         HandleAction::Event(e) => {
                             // Notify the user about event
-                            if let Err(_) = event_tx.unbounded_send(e) {
+                            if event_tx.unbounded_send(e).is_err() {
                                 return boxed!(future::err(
                                     SaltyError::Crash("Could not send event through channel".into())
                                 ));
