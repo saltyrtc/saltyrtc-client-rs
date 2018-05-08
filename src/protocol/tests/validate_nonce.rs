@@ -1,6 +1,5 @@
-use ::test_helpers::TestRandom;
-use self::cookie::{Cookie};
-use self::csn::{CombinedSequenceSnapshot};
+use self::cookie::Cookie;
+use self::csn::CombinedSequenceSnapshot;
 use self::messages::*;
 
 use super::*;
