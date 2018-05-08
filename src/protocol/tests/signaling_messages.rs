@@ -1,3 +1,4 @@
+use ::crypto_types::UnsignedKeys;
 use ::test_helpers::{DummyTask, TestRandom};
 use self::cookie::{Cookie, CookiePair};
 use self::csn::{CombinedSequenceSnapshot};

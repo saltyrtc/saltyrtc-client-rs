@@ -15,7 +15,6 @@ use std::time::Duration;
 
 use boxes::{ByteBox, OpenBox};
 use crypto::{KeyPair, AuthToken, PublicKey};
-use crypto_types::UnsignedKeys;
 use errors::{SignalingError, SignalingResult};
 use rmpv::{Value};
 
@@ -631,7 +630,7 @@ pub(crate) trait Signaling {
             your_cookie: self.server().cookie_pair().theirs.clone().unwrap(),
             subprotocols: vec![::SUBPROTOCOL.into()],
             ping_interval,
-            your_key: None, // TODO (#12)
+            your_key: self.server().permanent_key().cloned(),
         }.into_message();
         let client_auth_nonce = Nonce::new(
             self.server().cookie_pair().ours.clone(),
