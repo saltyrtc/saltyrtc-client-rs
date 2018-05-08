@@ -398,11 +398,12 @@ mod server_auth {
         ]);
     }
 
-    #[test]
-    fn server_public_permanent_key_validate() {
+    // Helper function for server permanent key tests.
+    // Set `correct_content` to false for a correctly encrypted `signed_keys`
+    // field with wrong content.
+    fn _server_public_permanent_key_validate(correct_content: bool) -> (TestContext<InitiatorSignaling>, ByteBox) {
         // Create server public permanent key
         let server_permanent_ks1 = KeyPair::new();
-        let server_permanent_ks2 = KeyPair::new();
 
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
@@ -417,7 +418,11 @@ mod server_auth {
         // Prepare signed keys
         let unsigned_keys = UnsignedKeys::new(
             ctx.signaling.server().session_key().unwrap().clone(),
-            ctx.our_ks.public_key().clone(),
+            if correct_content {
+                ctx.our_ks.public_key().clone()
+            } else {
+                PublicKey::from_slice(&[1; 32]).unwrap()
+            },
         );
         let signed_keys = unsigned_keys.sign(&server_permanent_ks1, ctx.our_ks.public_key(), unsafe { nonce.clone() });
 
@@ -427,7 +432,15 @@ mod server_auth {
         let encrypted = ctx.our_ks.encrypt(&msg_bytes, unsafe { nonce.clone() }, ctx.server_ks.public_key());
         let bbox = ByteBox::new(encrypted, nonce);
 
+        (ctx, bbox)
+    }
+
+    #[test]
+    fn server_public_permanent_key_decrypt_failed() {
+        let (mut ctx, bbox) = _server_public_permanent_key_validate(true);
+
         // Change server permanent key (to provoke a validation error)
+        let server_permanent_ks2 = KeyPair::new();
         ctx.signaling.server_mut().permanent_key = Some(server_permanent_ks2.public_key().clone());
 
         // Handle message
@@ -438,10 +451,31 @@ mod server_auth {
             Err(SignalingError::Crypto("Could not decrypt signed keys".into()))
         );
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+    }
 
-        // TODO: Add two additional tests:
-        // - Successful validation
-        // - Correct encryption but bad keys inside
+    #[test]
+    fn server_public_permanent_key_compare_failed() {
+        let (ctx, bbox) = _server_public_permanent_key_validate(false);
+
+        // Handle message
+        let mut s = ctx.signaling;
+        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.handle_message(bbox),
+            Err(SignalingError::Protocol("Our public permanent key sent in `signed_keys` is not valid".into()))
+        );
+        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+    }
+
+    #[test]
+    fn server_public_permanent_key_compare_success() {
+        let (ctx, bbox) = _server_public_permanent_key_validate(true);
+
+        // Handle message
+        let mut s = ctx.signaling;
+        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert!(s.handle_message(bbox).is_ok());
+        assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
     }
 }
 
