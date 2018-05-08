@@ -33,6 +33,14 @@ pub enum SaltyError {
     #[fail(display = "Protocol error: {}", _0)]
     Protocol(String),
 
+    /// No shared task was found.
+    #[fail(display = "No shared task found")]
+    NoSharedTask,
+
+    /// A problem occured related to a task.
+    #[fail(display = "Task error: {}", _0)]
+    Task(String),
+
     /// An unexpected error. This should never happen and indicates a bug in
     /// the implementation.
     #[fail(display = "An unexpected error occurred: {}. This indicates a bug and should be reported!", _0)]
@@ -47,10 +55,17 @@ impl From<SignalingError> for SaltyError {
     fn from(e: SignalingError) -> Self {
         match e {
             SignalingError::Crash(msg) => SaltyError::Crash(format!("Signaling error: {}", msg)),
-            SignalingError::SendError => SaltyError::Network(e.to_string()),
+            SignalingError::Crypto(msg) => SaltyError::Crypto(msg),
+            SignalingError::CsnOverflow => SaltyError::Crypto(e.to_string()),
+            SignalingError::Decode(msg) => SaltyError::Decode(msg),
+            SignalingError::InitiatorCouldNotDecrypt => SaltyError::Crypto(e.to_string()),
+            SignalingError::InvalidMessage(_) => SaltyError::Protocol(e.to_string()),
+            SignalingError::InvalidNonce(_) => SaltyError::Protocol(e.to_string()),
+            SignalingError::InvalidStateTransition(_) => SaltyError::Crash(e.to_string()),
+            SignalingError::NoSharedTask => SaltyError::NoSharedTask,
             SignalingError::Protocol(msg) => SaltyError::Protocol(msg),
-            SignalingError::NoSharedTask => SaltyError::Crash("No shared task found (TODO #5)".into()),
-            other => SaltyError::Crash(format!("Signaling error (TODO #5): {}", other)),
+            SignalingError::SendError => SaltyError::Network(e.to_string()),
+            SignalingError::TaskInitialization(_) => SaltyError::Task(e.to_string()),
         }
     }
 }
