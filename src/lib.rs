@@ -323,7 +323,7 @@ impl SaltyClient {
     pub fn encrypt_close_message(&mut self, reason: CloseCode) -> SaltyResult<Vec<u8>> {
         trace!("Encrypting close message");
         self.signaling
-            .encode_close_message(reason)
+            .encode_close_message(reason, None)
             .map(|bbox: ByteBox| bbox.into_bytes())
             .map_err(|e: SignalingError| match e {
                 SignalingError::Crypto(msg) => SaltyError::Crypto(msg),
@@ -677,6 +677,7 @@ pub fn do_handshake(
                 // Extract messages that should be sent back to the server
                 let mut messages = vec![];
                 let mut handshake_done = false;
+                let mut late_error: Option<SaltyError> = None;
                 for action in handle_actions {
                     match action {
                         HandleAction::Reply(bbox) => messages.push(OwnedMessage::Binary(bbox.into_bytes())),
@@ -697,6 +698,13 @@ pub fn do_handshake(
                                 return boxed!(future::err(
                                     SaltyError::Crash("Could not send event through channel".into())
                                 ));
+                            }
+                        },
+                        HandleAction::HandshakeError(e) => {
+                            if late_error.is_some() {
+                                error!("Dropping error because another error happened previously: {}", e);
+                            } else {
+                                late_error = Some(e);
                             }
                         },
                     }
@@ -722,9 +730,12 @@ pub fn do_handshake(
                     let outbox = stream::iter_ok::<_, WebSocketError>(messages);
                     let future = send_all::new(client, outbox)
                         .map_err(move |e| SaltyError::Network(format!("Could not send message: {}", e)))
-                        .map(move |(client, _)| {
+                        .and_then(move |(client, _)| {
                             trace!("Sent all messages");
-                            loop_action!(client)
+                            match late_error {
+                                Some(e) => future::err(e),
+                                None => future::ok(loop_action!(client)),
+                            }
                         });
                     boxed!(future)
                 }
@@ -841,6 +852,9 @@ pub fn task_loop(
                                 },
                                 HandleAction::HandshakeDone => return boxed!(future::err(Err(
                                     SaltyError::Crash("Got HandleAction::HandshakeDone in task loop".into())
+                                ))),
+                                HandleAction::HandshakeError(_) => return boxed!(future::err(Err(
+                                    SaltyError::Crash("Got HandleAction::HandshakeError in task loop".into())
                                 ))),
                             }
                         }

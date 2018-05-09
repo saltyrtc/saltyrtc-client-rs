@@ -7,6 +7,7 @@ use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
 use ::Event;
 use ::boxes::ByteBox;
+use ::errors::SaltyError;
 use ::tasks::TaskMessage;
 
 
@@ -219,6 +220,10 @@ impl<'de> Deserialize<'de> for Address {
 pub(crate) enum HandleAction {
     /// Send the specified message through the websocket.
     Reply(ByteBox),
+    /// Raise an error during the handshake.
+    /// This is only needed when having to handle an error condition with a
+    /// message (e.g. the 'close' message on NoSharedTask).
+    HandshakeError(SaltyError),
     /// The server and peer handshake are done.
     HandshakeDone,
     /// An event happened.

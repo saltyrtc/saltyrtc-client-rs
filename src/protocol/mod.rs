@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use boxes::{ByteBox, OpenBox};
 use crypto::{KeyPair, AuthToken, PublicKey};
-use errors::{SignalingError, SignalingResult};
+use errors::{SignalingError, SaltyError, SignalingResult};
 use rmpv::{Value};
 
 pub(crate) mod context;
@@ -493,18 +493,29 @@ pub(crate) trait Signaling {
     }
 
     /// Encode and encrypt a close message for the chosen peer.
-    fn encode_close_message(&self, reason: CloseCode) -> SignalingResult<ByteBox> {
-        // Check state
-        let signaling_state = self.common().signaling_state();
-        if signaling_state != SignalingState::Task {
-            return Err(SignalingError::Crash(
-                format!("Called encode_close_message in state {:?}", signaling_state)
-            ));
-        }
-
+    ///
+    /// The `peer_ctx` parameter must only be provided during handshake.
+    fn encode_close_message(
+        &self,
+        reason: CloseCode,
+        peer_ctx: Option<&PeerContext>,
+    ) -> SignalingResult<ByteBox> {
         // Get peer
-        let peer = self.get_peer()
-            .ok_or_else(|| SignalingError::Crash("Peer not set".into()))?;
+        let peer = match peer_ctx {
+            Some(p) => p,
+            None => {
+                // Check state
+                let signaling_state = self.common().signaling_state();
+                if signaling_state != SignalingState::Task {
+                    return Err(SignalingError::Crash(
+                        format!("Called encode_close_message in state {:?}", signaling_state)
+                    ));
+                }
+
+                self.get_peer()
+                    .ok_or_else(|| SignalingError::Crash("Peer not set".into()))?
+            },
+        };
 
         // Create and encrypt message
         let nonce = Nonce::new(
@@ -1340,12 +1351,23 @@ impl InitiatorSignaling {
             .ok_or_else(|| SignalingError::Crash("No tasks defined".into()))?;
         trace!("Our tasks: {:?}", &our_tasks);
         trace!("Proposed tasks: {:?}", &proposed_tasks);
-        let mut chosen_task: BoxedTask = our_tasks
-            .choose_shared_task(&proposed_tasks)
-            .ok_or_else(|| {
-                // TODO (#17)
-                SignalingError::NoSharedTask
-            })?;
+        let mut chosen_task: BoxedTask = match our_tasks.choose_shared_task(&proposed_tasks) {
+            Some(task) => task,
+            None => {
+                // In case no common task could be found, the initiator SHALL
+                // send a 'close' message to the responder containing the close
+                // code 3006 (No Shared Task Found) as reason and raise an
+                // error event indicating that no common signalling task could
+                // be found.
+                let mut actions = vec![];
+                match self.encode_close_message(CloseCode::NoSharedTask, Some(&responder)) {
+                    Ok(bbox) => actions.push(HandleAction::Reply(bbox)),
+                    Err(e) => error!("Could not encode close message: {}", e),
+                };
+                actions.push(HandleAction::HandshakeError(SaltyError::NoSharedTask));
+                return Ok(actions);
+            },
+        };
 
         // Both initiator an responder SHALL verify that the data field contains a Map
         // and SHALL look up the chosen task's data value.
@@ -1592,6 +1614,7 @@ impl Signaling for ResponderSignaling {
             // Valid state transitions
             (InitiatorHandshakeState::KeySent, Message::Key(msg)) => self.handle_key(msg, &obox.nonce),
             (InitiatorHandshakeState::AuthSent, Message::Auth(msg)) => self.handle_auth(msg, obox.nonce.source()),
+            (InitiatorHandshakeState::AuthSent, Message::Close(msg)) => self.handle_peer_handshake_close(msg),
 
             // Any undefined state transition results in an error
             (s, message) => Err(SignalingError::InvalidStateTransition(
@@ -1905,6 +1928,18 @@ impl ResponderSignaling {
         info!("Peer handshake completed");
 
         Ok(vec![HandleAction::HandshakeDone])
+    }
+
+    /// Handle an incoming [`Close`](messages/struct.Close.html) message during peer handshake.
+    fn handle_peer_handshake_close(&mut self, msg: Close) -> SignalingResult<Vec<HandleAction>> {
+        let close_code = CloseCode::from_number(msg.reason)
+            .ok_or_else(|| SignalingError::InvalidMessage("Close message reason is invalid".into()))?;
+        match close_code {
+            CloseCode::NoSharedTask => Err(SignalingError::NoSharedTask),
+            _ => Err(SignalingError::Protocol(
+                format!("Received unexpected close message with code {} during peer handshake", msg.reason)
+            )),
+        }
     }
 }
 

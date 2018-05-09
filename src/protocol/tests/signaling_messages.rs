@@ -513,6 +513,7 @@ mod client_auth {
         let bytes: ByteBox = match action {
             HandleAction::Reply(bbox) => bbox,
             HandleAction::HandshakeDone => panic!("Unexpected HandshakeDone"),
+            HandleAction::HandshakeError(_) => panic!("Unexpected HandshakeError"),
             HandleAction::TaskMessage(_) => panic!("Unexpected TaskMessage"),
             HandleAction::Event(_) => panic!("Unexpected Event"),
         };
