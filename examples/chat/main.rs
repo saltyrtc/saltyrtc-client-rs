@@ -282,7 +282,7 @@ fn main() {
             client
         },
         Err(e) => {
-            println!("{}", e);
+            println!("Handshake failed: {}", e);
             process::exit(1);
         },
     };
@@ -290,7 +290,7 @@ fn main() {
     // Set up task loop
     let (task, task_loop) = saltyrtc_client::task_loop(client, salty_rc.clone(), event_channel.clone_tx())
         .unwrap_or_else(|e| {
-            println!("{}", e);
+            println!("Creating task loop failed: {}", e);
             process::exit(1);
         });
 
@@ -523,7 +523,7 @@ fn main() {
     match core.run(main_loop) {
         Ok(_) => println!("Success."),
         Err(e) => {
-            println!("{}", e);
+            println!("Main loop exited with an error: {}", e);
             process::exit(1);
         },
     };
