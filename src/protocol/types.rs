@@ -216,6 +216,7 @@ impl<'de> Deserialize<'de> for Address {
 ///
 /// It can contain different actions that should be done to finish handling the
 /// message.
+#[must_use]
 #[derive(Debug, PartialEq)]
 pub(crate) enum HandleAction {
     /// Send the specified message through the websocket.
