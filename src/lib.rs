@@ -465,8 +465,8 @@ impl<T> UnboundedChannel<T> {
 
 /// Connect to the specified SaltyRTC server.
 ///
-/// This function returns a boxed future. The future must be run in a Tokio
-/// reactor core for something to actually happen.
+/// This function returns a future. The future must be run in a Tokio reactor
+/// core for something to actually happen.
 ///
 /// The future completes once the server connection is established.
 /// It returns the async websocket client instance.
@@ -477,7 +477,7 @@ pub fn connect(
     handle: &Handle,
     salty: Rc<RefCell<SaltyClient>>,
 ) -> SaltyResult<(
-    BoxedFuture<WsClient, SaltyError>,
+    impl Future<Item=WsClient, Error=SaltyError>,
     UnboundedChannel<Event>,
 )> {
     // Initialize libsodium
@@ -534,7 +534,7 @@ pub fn connect(
     let event_channel = UnboundedChannel::new();
     debug!("Created event channel");
 
-    Ok((boxed!(future), event_channel))
+    Ok((future, event_channel))
 }
 
 /// Decode a websocket `OwnedMessage` and wrap it into a `WsMessageDecoded`.
@@ -623,8 +623,8 @@ fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> Sal
 
 /// Do the server and peer handshake.
 ///
-/// This function returns a boxed future. The future must be run in a Tokio
-/// reactor core for something to actually happen.
+/// This function returns a future. The future must be run in a Tokio reactor
+/// core for something to actually happen.
 ///
 /// The future completes once the peer handshake is done, or if an error occurs.
 /// It returns the async websocket client instance.
@@ -633,7 +633,7 @@ pub fn do_handshake(
     salty: Rc<RefCell<SaltyClient>>,
     event_tx: mpsc::UnboundedSender<Event>,
     timeout: Option<Duration>,
-) -> BoxedFuture<WsClient, SaltyError> {
+) -> impl Future<Item=WsClient, Error=SaltyError> {
     // Main loop
     let main_loop = future::loop_fn(client, move |client| {
 
@@ -762,7 +762,7 @@ pub fn task_loop(
     event_tx: mpsc::UnboundedSender<Event>,
 ) -> Result<(
     Arc<Mutex<BoxedTask>>,
-    BoxedFuture<(), SaltyError>,
+    impl Future<Item=(), Error=SaltyError>,
 ), SaltyError> {
     let task_name = salty
         .deref()
