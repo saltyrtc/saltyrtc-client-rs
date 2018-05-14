@@ -1,7 +1,7 @@
 use ::crypto_types::UnsignedKeys;
 use ::test_helpers::{DummyTask, TestRandom};
 use self::cookie::{Cookie, CookiePair};
-use self::csn::{CombinedSequenceSnapshot};
+use self::csn::{CombinedSequence, CombinedSequenceSnapshot};
 use self::messages::*;
 
 use super::*;
@@ -114,13 +114,28 @@ impl TestMsgBuilder {
         self
     }
 
-    pub fn build(self, cookie: Cookie, ks: &KeyPair, pubkey: &PublicKey) -> ByteBox {
+    pub fn build(
+        self,
+        cookie: Cookie,
+        kp: &KeyPair,
+        pubkey: &PublicKey,
+    ) -> ByteBox {
+        self.build_with_csn(cookie, kp, pubkey, CombinedSequenceSnapshot::random())
+    }
+
+    pub fn build_with_csn(
+        self,
+        cookie: Cookie,
+        kp: &KeyPair,
+        pubkey: &PublicKey,
+        csn: CombinedSequenceSnapshot,
+    ) -> ByteBox {
         let nonce = Nonce::new(cookie,
                                self.src.expect("Source not set"),
                                self.dest.expect("Destination not set"),
-                               CombinedSequenceSnapshot::random());
+                               csn);
         let obox = OpenBox::<Message>::new(self.msg, nonce);
-        obox.encrypt(ks, pubkey)
+        obox.encrypt(kp, pubkey)
     }
 
     /// Helper method to make a message coming from the server,
@@ -570,7 +585,7 @@ mod token {
 
         // Create new responder context
         let addr = Address(3);
-        let responder = ResponderContext::new(addr);
+        let responder = ResponderContext::new(addr, 0);
         ctx.signaling.responders.insert(addr, responder);
 
         // Prepare a token message
@@ -624,7 +639,7 @@ mod token {
 
         // Create new responder context
         let addr = Address(3);
-        let responder = ResponderContext::new(addr);
+        let responder = ResponderContext::new(addr, 0);
         ctx.signaling.responders.insert(addr, responder);
 
         // Generate a public permanent key for the responder
@@ -682,7 +697,7 @@ mod key {
 
         // Create new responder context
         let addr = Address(3);
-        let mut responder = ResponderContext::new(addr);
+        let mut responder = ResponderContext::new(addr, 0);
         responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
         responder.permanent_key = Some(peer_permanent_pk.clone());
 
@@ -762,12 +777,12 @@ mod auth {
 
         // Create new main responder context
         let peer_session_pk = PublicKey::random();
-        let mut responder = ResponderContext::new(Address(3));
+        let mut responder = ResponderContext::new(Address(3), 0);
         responder.set_handshake_state(ResponderHandshakeState::KeySent);
         responder.session_key = Some(peer_session_pk.clone());
 
         fn make_responder(addr: u8, state: ResponderHandshakeState) -> ResponderContext {
-            let mut r = ResponderContext::new(Address(addr));
+            let mut r = ResponderContext::new(Address(addr), 0);
             r.set_handshake_state(state);
             r.session_key = Some(PublicKey::random());
             r
@@ -1266,6 +1281,39 @@ mod new_responder {
         // Handle message
         let actions = ctx.signaling.handle_message(bbox).unwrap();
         assert_eq!(actions.len(), 1); // Drop responder
+    }
+
+    /// Path cleaning should be done when too many responders connect.
+    #[test]
+    fn path_cleaning() {
+        let mut ctx = TestContext::initiator(
+            ClientIdentity::Initiator, None,
+            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+        );
+
+        let mut csn = CombinedSequence::random();
+
+        let mut handle_message = |css: CombinedSequenceSnapshot, i: u8| {
+            let msg = Message::NewResponder(NewResponder { id: i.into() });
+            let bbox = TestMsgBuilder::new(msg).from(0).to(1)
+                .build_with_csn(
+                    ctx.server_cookie.clone(),
+                    &ctx.server_ks,
+                    ctx.our_ks.public_key(),
+                    css,
+               );
+            ctx.signaling.handle_message(bbox).unwrap()
+        };
+
+        // The first 252 responders should be registered just fine
+        for i in 0..252 { // Waiting for inclusive ranges (1.26)
+            let actions = handle_message(csn.increment().unwrap(), i + 2);
+            assert!(actions.is_empty());
+        }
+
+        // The 253rd responder should result in a drop-responder message
+        let actions = handle_message(csn.increment().unwrap(), 255);
+        assert_eq!(actions.len(), 1);
     }
 
 }

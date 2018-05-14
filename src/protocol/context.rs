@@ -191,6 +191,10 @@ pub(crate) struct ResponderContext {
     /// The responder handshake state.
     handshake_state: ResponderHandshakeState,
 
+    /// A counter used to identify the oldest responders when doing path
+    /// cleaning.
+    pub(crate) counter: u32,
+
     /// The receiver address.
     pub(crate) address: Address,
 
@@ -211,9 +215,10 @@ pub(crate) struct ResponderContext {
 }
 
 impl ResponderContext {
-    pub fn new(address: Address) -> Self {
+    pub fn new(address: Address, counter: u32) -> Self {
         ResponderContext {
             handshake_state: ResponderHandshakeState::New,
+            counter,
             address,
             permanent_key: None,
             session_key: None,

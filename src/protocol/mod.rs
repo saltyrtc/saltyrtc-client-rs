@@ -863,6 +863,25 @@ impl Common {
 }
 
 
+/// This struct is used to give each responder a unique incrementing serial.
+/// This helps identifying the oldest responder when doing path cleaning.
+pub(crate) struct ResponderCounter(u32);
+
+impl ResponderCounter {
+    /// Create a new responder counter, initialized to `0`.
+    fn new() -> Self {
+        ResponderCounter(0)
+    }
+
+    /// Get the current counter and increment it.
+    fn increment(&mut self) -> SignalingResult<u32> {
+        let old_val = self.0;
+        self.0 = self.0.checked_add(1)
+            .ok_or(SignalingError::Crash("Overflow when incrementing responder counter".into()))?;
+        Ok(old_val)
+    }
+}
+
 /// Signaling data for the initiator.
 pub(crate) struct InitiatorSignaling {
     // Common state and functionality
@@ -873,6 +892,10 @@ pub(crate) struct InitiatorSignaling {
 
     // The chosen responder
     pub(crate) responder: Option<ResponderContext>,
+
+    // The responder counter, used to give every responder
+    // an incrementing serial.
+    pub(crate) responder_counter: ResponderCounter,
 }
 
 impl Signaling for InitiatorSignaling {
@@ -1127,13 +1150,15 @@ impl Signaling for InitiatorSignaling {
         // It SHOULD store the responder's identities in its internal list of
         // responders. Additionally, the initiator MUST keep its path clean by
         // following the procedure described in the Path Cleaning section.
+        let mut actions = vec![];
         for address in responders_set {
-            self.process_new_responder(address)?;
+            if let Some(drop_responder) = self.process_new_responder(address)? {
+                actions.push(drop_responder);
+            }
         }
 
-        Ok(vec![
-           HandleAction::Event(Event::ServerHandshakeDone(responders.is_empty())),
-        ])
+        actions.push(HandleAction::Event(Event::ServerHandshakeDone(responders.is_empty())));
+        Ok(actions)
     }
 
     /// Handle an incoming [`NewInitiator`](messages/struct.Initiator.html) message.
@@ -1154,9 +1179,10 @@ impl Signaling for InitiatorSignaling {
         }
 
         // Process responder
-        self.process_new_responder(msg.id)?;
-
-        Ok(vec![])
+        match self.process_new_responder(msg.id)? {
+            Some(drop_responder) => Ok(vec![drop_responder]),
+            None => Ok(vec![]),
+        }
     }
 
     /// Handle an incoming [`Disconnected`](messages/struct.Disconnected.html) message.
@@ -1203,6 +1229,7 @@ impl InitiatorSignaling {
             },
             responders: HashMap::new(),
             responder: None,
+            responder_counter: ResponderCounter::new(),
         }
     }
 
@@ -1440,7 +1467,7 @@ impl InitiatorSignaling {
         Ok(actions)
     }
 
-    fn process_new_responder(&mut self, address: Address) -> SignalingResult<()> {
+    fn process_new_responder(&mut self, address: Address) -> SignalingResult<Option<HandleAction>> {
         // If a responder with the same id already exists,
         // all currently cached information about and for the previous responder
         // (such as cookies and the sequence number) MUST be deleted first.
@@ -1452,7 +1479,7 @@ impl InitiatorSignaling {
         }
 
         // Create responder context
-        let mut responder = ResponderContext::new(address);
+        let mut responder = ResponderContext::new(address, self.responder_counter.increment()?);
 
         // If we trust the responder…
         if let Some(AuthProvider::TrustedKey(key)) = self.common.auth_provider {
@@ -1470,11 +1497,52 @@ impl InitiatorSignaling {
         // list of responders.
         self.responders.insert(address, responder);
 
+        let mut action = None;
+
         // Furthermore, the initiator MUST keep its path clean by following the
         // procedure described in the Path Cleaning section.
-        // TODO (#15): Implement
+        // To implement this requirement, if we almost reached the responder limit,
+        // drop the oldest responder that hasn't sent any valid data so far.
+        if self.responders.len() > (254 - 2) {
+            if let Some(drop_action) = self.drop_oldest_inactive_responder()? {
+                debug!("<-- Enqueuing drop-responder to {}", self.server().identity());
+                action = Some(drop_action);
+            }
+        }
 
-        Ok(())
+        Ok(action)
+    }
+
+    /// Drop the oldest responder that hasn't sent any valid data so far.
+    /// Return a result with a 'drop-responder' handle action if a drop
+    /// candidate has been found.
+    fn drop_oldest_inactive_responder(&mut self) -> SignalingResult<Option<HandleAction>> {
+        debug!("Path almost full, dropping the oldest inactive responder.");
+
+        // Find address of drop candidate
+        let address = self.responders
+            .values()
+            .filter(|r| r.handshake_state() == ResponderHandshakeState::New)
+            .min_by_key(|r| r.counter)
+            .map(|r| r.address);
+
+        // Remove responder from internal list of responders
+        let responder: ResponderContext = match address {
+            Some(ref addr) => {
+                self.responders
+                    .remove(addr)
+                    .ok_or(SignalingError::Crash("Inactive responder not found anymore in responders list".into()))?
+            },
+            None => {
+                warn!("Did not find a valid responder candidate to drop!");
+                return Ok(None);
+            }
+        };
+
+        // Enqueue a drop-responder message
+        self
+            .send_drop_responder(responder.address, DropReason::DroppedByInitiator)
+            .map(Option::Some)
     }
 }
 
