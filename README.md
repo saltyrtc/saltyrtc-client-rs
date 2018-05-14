@@ -1,7 +1,12 @@
 # saltyrtc-client-rs
 
 [![CircleCI][circle-ci-badge]][circle-ci]
+[![Rust][rust-badge]][github]
 [![Join our chat on Gitter](https://badges.gitter.im/saltyrtc/Lobby.svg)](https://gitter.im/saltyrtc/Lobby)
+
+This library requires Rust 1.26+.
+
+[Docs](https://docs.rs/saltyrtc-client)
 
 ## Testing
 
@@ -91,3 +96,4 @@ You can find C FFI bindings in the `ffi` subdirectory of this source repository.
 <!-- Badges -->
 [circle-ci]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/develop
 [circle-ci-badge]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/develop.svg?style=shield
+[rust-badge]: https://img.shields.io/badge/rust-1.26%2B-blue.svg?maxAge=3600

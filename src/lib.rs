@@ -3,6 +3,8 @@
 //! The implementation is asynchronous using [Tokio](https://tokio.rs/) /
 //! [Futures](https://docs.rs/futures/0.2.1/futures/).
 //!
+//! This library requires Rust 1.26.
+//!
 //! ## Usage
 //!
 //! To establish a SaltyRTC connection:
