@@ -100,6 +100,9 @@ env var. This is the default URL:
 
 You can find C FFI bindings in the `ffi` subdirectory of this source repository.
 
+**Note:** The FFI bindings are currently incomplete and blocked by
+[rust-lang/rust#36342](https://github.com/rust-lang/rust/issues/36342).
+
 
 <!-- Links -->
 [saltyrtc]: https://saltyrtc.org/
