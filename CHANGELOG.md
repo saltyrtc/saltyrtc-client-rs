@@ -12,6 +12,11 @@ Possible log types:
 - `[security]` to invite users to upgrade in case of vulnerabilities.
 
 
+### v0.5.0-beta.2 (2018-05-15)
+
+- Upgrade `clippy` to 0.0.200
+- Upgrade `rust_sodium` to 0.9.0
+
 ### v0.5.0-beta.1 (2018-05-15)
 
 - First release on crates.io
