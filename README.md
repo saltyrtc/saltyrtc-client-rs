@@ -4,11 +4,20 @@
 [![Rust][rust-badge]][github]
 [![Join our chat on Gitter](https://badges.gitter.im/saltyrtc/Lobby.svg)](https://gitter.im/saltyrtc/Lobby)
 
-This library requires Rust 1.26+.
+Asynchronous [SaltyRTC][saltyrtc] client implementation for Rust 1.26+.
+
+SaltyRTC is an end-to-end encrypted signalling protocol. It offers to freely
+choose from a range of signalling tasks, such as setting up a WebRTC or ORTC
+peer-to-peer connection, or using the WebSocket based signaling server as a
+relay. SaltyRTC is completely open to new and custom signalling tasks for
+everything feasible.
 
 [Docs](https://docs.rs/saltyrtc-client)
 
 ## Testing
+
+**Note:** The tests currently expect a [SaltyRTC Server][server] instance to
+run on `localhost:6699`.
 
 ### Unit Tests
 
@@ -70,9 +79,8 @@ To see all options, use `cargo run --example chat -- initiator --help` and
 
 The chat example will log to a file called `chat.<role>.log`.
 
-**Note:** The example chat currently expects a [SaltyRTC
-Server](https://github.com/saltyrtc/saltyrtc-server-python/) instance to run on
-`localhost:6699`.
+**Note:** The tests currently expect a [SaltyRTC Server][server] instance to
+run on `localhost:6699`.
 
 
 ## Msgpack Debugging
@@ -92,6 +100,10 @@ env var. This is the default URL:
 
 You can find C FFI bindings in the `ffi` subdirectory of this source repository.
 
+
+<!-- Links -->
+[saltyrtc]: https://saltyrtc.org/
+[server]: https://github.com/saltyrtc/saltyrtc-server-python/
 
 <!-- Badges -->
 [circle-ci]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/develop

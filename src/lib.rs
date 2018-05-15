@@ -1,5 +1,11 @@
 //! SaltyRTC client implementation in Rust.
 //!
+//! SaltyRTC is an end-to-end encrypted signalling protocol. It offers to
+//! freely choose from a range of signalling tasks, such as setting up a WebRTC
+//! or ORTC peer-to-peer connection, or using the WebSocket based signaling
+//! server as a relay. SaltyRTC is completely open to new and custom signalling
+//! tasks for everything feasible.
+//!
 //! The implementation is asynchronous using [Tokio](https://tokio.rs/) /
 //! [Futures](https://docs.rs/futures/0.2.1/futures/).
 //!
