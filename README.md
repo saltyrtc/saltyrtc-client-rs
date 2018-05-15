@@ -24,7 +24,7 @@ To run fuzz tests, first install cargo-fuzz:
 
 Then run the fuzzer against a target:
 
-    cargo fuzz run <target>
+    cargo +nightly fuzz run <target>
 
 You can list all targets with `cargo fuzz list`.
 
