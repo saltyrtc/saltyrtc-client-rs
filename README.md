@@ -14,6 +14,7 @@ everything feasible.
 
 [Docs](https://docs.rs/saltyrtc-client)
 
+
 ## Testing
 
 **Note:** The tests currently expect a [SaltyRTC Server][server] instance to
@@ -43,6 +44,7 @@ To run clippy lints, compile the library with `--features clippy` on a nightly
 compiler:
 
     $ cargo +nightly build --features clippy
+
 
 ## Example Client
 
@@ -96,12 +98,36 @@ env var. This is the default URL:
     MSGPACK_DEBUG_URL='https://msgpack.dbrgn.ch/#base64='
 
 
+## Release Signatures
+
+Release commits and tags are signed with the
+[Threema signing key](https://keybase.io/threema)
+(`E7ADD9914E260E8B35DFB50665FDE935573ACDA6`).
+
+
 ## FFI
 
 You can find C FFI bindings in the `ffi` subdirectory of this source repository.
 
 **Note:** The FFI bindings are currently incomplete and blocked by
 [rust-lang/rust#36342](https://github.com/rust-lang/rust/issues/36342).
+
+
+## License
+
+Licensed under either of
+
+ * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or
+   http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or
+   http://opensource.org/licenses/MIT) at your option.
+
+
+### Contributing
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall
+be dual licensed as above, without any additional terms or conditions.
 
 
 <!-- Links -->

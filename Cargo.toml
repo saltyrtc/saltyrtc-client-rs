@@ -1,7 +1,18 @@
 [package]
 name = "saltyrtc-client"
-version = "0.1.0"
-authors = ["Danilo Bargen <danilo.bargen@threema.ch>"]
+version = "0.5.0-beta.1"
+authors = ["Danilo Bargen <mail@dbrgn.ch>"]
+documentation = "https://docs.rs/saltyrtc-client"
+repository = "https://github.com/saltyrtc/saltyrtc-client-rs"
+license = "MIT OR Apache-2.0"
+description = "Asynchronous SaltyRTC client implementation for Rust 1.26+."
+readme = "README.md"
+keywords = ["saltyrtc", "end-to-end", "e2e", "signaling"]
+categories = ["network-programming"]
+
+[badges]
+circle-ci = { repository = "saltyrtc/saltyrtc-client-rs", branch = "master" }
+maintenance = { status = "actively-developed" }
 
 [dependencies]
 byteorder = "1.1"
