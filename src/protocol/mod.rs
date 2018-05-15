@@ -877,7 +877,7 @@ impl ResponderCounter {
     fn increment(&mut self) -> SignalingResult<u32> {
         let old_val = self.0;
         self.0 = self.0.checked_add(1)
-            .ok_or(SignalingError::Crash("Overflow when incrementing responder counter".into()))?;
+            .ok_or_else(|| SignalingError::Crash("Overflow when incrementing responder counter".into()))?;
         Ok(old_val)
     }
 }
@@ -1531,7 +1531,7 @@ impl InitiatorSignaling {
             Some(ref addr) => {
                 self.responders
                     .remove(addr)
-                    .ok_or(SignalingError::Crash("Inactive responder not found anymore in responders list".into()))?
+                    .ok_or_else(|| SignalingError::Crash("Inactive responder not found anymore in responders list".into()))?
             },
             None => {
                 warn!("Did not find a valid responder candidate to drop!");
