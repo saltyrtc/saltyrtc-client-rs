@@ -401,11 +401,7 @@ pub(crate) trait Signaling {
                         Ok(val as u16)
                     }
                 })
-                .and_then(|val: u16| {
-                    CloseCode::from_number(val).ok_or_else(|| SignalingError::InvalidMessage(
-                        "Close message reason is invalid".into()
-                    ))
-                })?;
+                .map(CloseCode::from_number)?;
             return Ok(vec![HandleAction::TaskMessage(TaskMessage::Close(reason))]);
         }
 
@@ -2000,8 +1996,7 @@ impl ResponderSignaling {
 
     /// Handle an incoming [`Close`](messages/struct.Close.html) message during peer handshake.
     fn handle_peer_handshake_close(&mut self, msg: Close) -> SignalingResult<Vec<HandleAction>> {
-        let close_code = CloseCode::from_number(msg.reason)
-            .ok_or_else(|| SignalingError::InvalidMessage("Close message reason is invalid".into()))?;
+        let close_code = CloseCode::from_number(msg.reason);
         match close_code {
             CloseCode::NoSharedTask => Err(SignalingError::NoSharedTask),
             _ => Err(SignalingError::Protocol(

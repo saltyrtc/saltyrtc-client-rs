@@ -364,6 +364,8 @@ pub enum Event {
 /// Close codes used by SaltyRTC.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CloseCode {
+    /// Websocket closed successfully (WebSocket internal close code)
+    WsClosingNormal,
     /// Going away (WebSocket internal close code)
     WsGoingAway,
     /// Protocol error (WebSocket internal close code)
@@ -384,6 +386,8 @@ pub enum CloseCode {
     NoSharedTask,
     /// Invalid key
     InvalidKey,
+    /// Other close code
+    Other(u16),
 }
 
 impl CloseCode {
@@ -391,6 +395,7 @@ impl CloseCode {
     pub fn as_number(&self) -> u16 {
         use CloseCode::*;
         match *self {
+            WsClosingNormal => 1000,
             WsGoingAway => 1001,
             WsProtocolError => 1002,
             PathFull => 3000,
@@ -401,24 +406,26 @@ impl CloseCode {
             InitiatorCouldNotDecrypt => 3005,
             NoSharedTask => 3006,
             InvalidKey => 3007,
+            Other(code) => code,
         }
     }
 
     /// Create a `CloseCode` instance from a numeric close code.
-    pub fn from_number(code: u16) -> Option<CloseCode> {
+    pub fn from_number(code: u16) -> CloseCode {
         use CloseCode::*;
         match code {
-            1001 => Some(WsGoingAway),
-            1002 => Some(WsProtocolError),
-            3000 => Some(PathFull),
-            3001 => Some(ProtocolError),
-            3002 => Some(InternalError),
-            3003 => Some(Handover),
-            3004 => Some(DroppedByInitiator),
-            3005 => Some(InitiatorCouldNotDecrypt),
-            3006 => Some(NoSharedTask),
-            3007 => Some(InvalidKey),
-            _ => None,
+            1000 => WsClosingNormal,
+            1001 => WsGoingAway,
+            1002 => WsProtocolError,
+            3000 => PathFull,
+            3001 => ProtocolError,
+            3002 => InternalError,
+            3003 => Handover,
+            3004 => DroppedByInitiator,
+            3005 => InitiatorCouldNotDecrypt,
+            3006 => NoSharedTask,
+            3007 => InvalidKey,
+            code => Other(code),
         }
     }
 }
@@ -565,15 +572,10 @@ fn decode_ws_message(msg: OwnedMessage) -> SaltyResult<WsMessageDecoded> {
             match close_data {
                 Some(data) => {
                     let close_code = CloseCode::from_number(data.status_code);
-                    match close_code {
-                        Some(code) if data.reason.is_empty() =>
-                            info!("Server closed connection with close code {}", code),
-                        Some(code) =>
-                            info!("Server closed connection with close code {} ({})", code, data.reason),
-                        None if data.reason.is_empty() =>
-                            info!("Server closed connection with unknown close code {}", data.status_code),
-                        None =>
-                            info!("Server closed connection with unknown close code {} ({})", data.status_code, data.reason),
+                    if data.reason.is_empty() {
+                        info!("Server closed connection with close code {}", close_code);
+                    } else {
+                        info!("Server closed connection with close code {} ({})", close_code, data.reason);
                     }
                 },
                 None => info!("Server closed connection without close code"),
