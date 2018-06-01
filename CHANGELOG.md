@@ -12,6 +12,10 @@ Possible log types:
 - `[security]` to invite users to upgrade in case of vulnerabilities.
 
 
+### v0.5.0-beta.3 (2018-06-01)
+
+- Less strict close code validation (accept any u16)
+
 ### v0.5.0-beta.2 (2018-05-15)
 
 - Upgrade `clippy` to 0.0.200
