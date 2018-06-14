@@ -1065,11 +1065,17 @@ pub fn task_loop(
         // Ignore sink
         .map(|_| debug!("† Writer future done"));
 
-    // The task loop is finished when all futures are resolved.
+    // The task loop is finished when any of the futures is resolved.
     let task_loop = boxed!(
         future::ok(())
-        .and_then(|_| reader.join(transformer).join(writer).map(|_| ()))
-        .and_then(|_| { info!("† Task loop future done"); future::ok(()) })
+        .and_then(|_| future::select_all(vec![
+            boxed!(reader.map(|_| ())),
+            boxed!(transformer.map(|_| ())),
+            boxed!(writer.map(|_| ())),
+        ]))
+        .map(|_| ())
+        .map_err(|(e, ..)| e)
+        .then(|f| { info!("† Task loop future done"); f })
     );
 
     // Get reference to task
