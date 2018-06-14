@@ -822,8 +822,6 @@ pub fn task_loop(
                 let raw_outgoing_tx = raw_outgoing_tx.clone();
                 match msg {
                     WsMessageDecoded::ByteBox(bbox) => {
-                        trace!("Got binary WebSocket msg: {:?}", bbox);
-
                         // Handle message bytes
                         let handle_actions = match salty.deref().try_borrow_mut() {
                             Ok(mut s) => match s.handle_message(bbox) {
