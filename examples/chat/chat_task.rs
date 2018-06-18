@@ -163,7 +163,9 @@ impl Task for ChatTask {
                                 .clone()
                                 .send(ChatMessage::Disconnect(reason))
                                 .map(|_| ())
-                                .map_err(|_| ())
+                                .map_err(|e| {
+                                    error!("Sending ChatMessage::Disconnect through channel failed: {}", e);
+                                })
                         );
                     }
                 };

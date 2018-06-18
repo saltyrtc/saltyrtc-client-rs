@@ -508,22 +508,20 @@ fn main() {
         });
 
     // Main future
-    let main_loop = task_loop
-        .join(
-            send_loop
-                .select(receive_loop)
-                    .map_err(|(e, ..)| e)
-                    .map(|(x, ..)| x)
-                .select(event_loop)
-                    .map_err(|(e, ..)| e)
-                    .map(|(x, ..)| x)
-        );
+    let main_loop = future::join_all(vec![
+       Box::new(task_loop) as Box<Future<Item=_, Error=_>>,
+       Box::new(send_loop) as Box<Future<Item=_, Error=_>>,
+       Box::new(receive_loop) as Box<Future<Item=_, Error=_>>,
+       Box::new(event_loop) as Box<Future<Item=_, Error=_>>,
+    ])
+    .map(|_| ())
+    .map_err(|_| ());
 
     // Run future in reactor
     match core.run(main_loop) {
         Ok(_) => println!("Success."),
         Err(e) => {
-            println!("Main loop exited with an error: {}", e);
+            println!("Main loop exited with an error: {:?}", e);
             process::exit(1);
         },
     };
