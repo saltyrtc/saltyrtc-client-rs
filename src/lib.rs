@@ -111,6 +111,7 @@ use websocket::message::{OwnedMessage, CloseData};
 
 // Re-exports
 pub use protocol::Role;
+pub use protocol::csn::PeerSequenceNumbers;
 
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
@@ -338,6 +339,12 @@ impl SaltyClient {
                 SignalingError::Crash(msg) => SaltyError::Crash(msg),
                 other => SaltyError::Crash(format!("Unexpected signaling error: {}", other)),
             })
+    }
+
+    /// If the peer is already determined, return the current incoming and
+    /// outgoing sequence numbers.
+    pub fn current_peer_sequence_numbers(&self) -> Option<PeerSequenceNumbers> {
+        self.signaling.current_peer_sequence_numbers()
     }
 }
 

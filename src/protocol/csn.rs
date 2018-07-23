@@ -52,8 +52,8 @@ impl CombinedSequence {
         CombinedSequence { overflow, sequence }
     }
 
-    /// Return the 48 bit combined sequence number.
-    fn combined_sequence_number(&self) -> u64 {
+    /// Return a snapshot of the current 48 bit combined sequence number.
+    pub(crate) fn combined_sequence_number(&self) -> u64 {
         (u64::from(self.overflow) << 32) + u64::from(self.sequence)
     }
 
@@ -192,6 +192,17 @@ impl CombinedSequencePair {
             theirs: None,
         }
     }
+}
+
+
+/// A snapshot of the incoming and outgoing sequence numbers between the
+/// SaltyRTC client and the peer.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct PeerSequenceNumbers {
+    /// Sequence number for incoming messages.
+    pub incoming: u64,
+    /// Sequence number for outgoing messages.
+    pub outgoing: u64,
 }
 
 

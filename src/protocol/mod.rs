@@ -127,6 +127,25 @@ pub(crate) trait Signaling {
     /// Return the initiator public permanent key.
     fn initiator_pubkey(&self) -> &PublicKey;
 
+    /// If the peer is already determined, return the current incoming and
+    /// outgoing sequence numbers.
+    fn current_peer_sequence_numbers(&self) -> Option<csn::PeerSequenceNumbers> {
+        self.get_peer()
+            // Get reference to peer CSN pair
+            .map(|peer: &PeerContext| peer.csn_pair())
+            // Acquire read lock
+            .map(|csn_pair_lock| csn_pair_lock.read().expect("CSN pair rwlock is poisoned"))
+            // If both our and their CNS are available, return a snapshot.
+            // Otherwise, return None.
+            .and_then(|csn_pair| match csn_pair.theirs {
+                Some(ref theirs) => Some(csn::PeerSequenceNumbers {
+                    outgoing: csn_pair.ours.combined_sequence_number(),
+                    incoming: theirs.combined_sequence_number(),
+                }),
+                None => None,
+            })
+    }
+
     /// Validate the nonce destination.
     fn validate_nonce_destination(&mut self, nonce: &Nonce) -> Result<(), ValidationError>;
 
