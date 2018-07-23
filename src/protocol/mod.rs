@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use boxes::{ByteBox, OpenBox};
 use crypto::{KeyPair, AuthToken, PublicKey};
-use errors::{SignalingError, SaltyError, SignalingResult};
+use errors::{SignalingError, SignalingResult, SaltyError, ValidationError};
 use rmpv::{Value};
 
 pub(crate) mod context;
@@ -160,7 +160,7 @@ pub(crate) trait Signaling {
         })?;
 
         let peer_identity = peer.identity();
-        let mut csn_pair = peer.csn_pair().borrow_mut();
+        let mut csn_pair = peer.csn_pair().try_write()?;
 
         // If we already have the CSN of the peer,
         // ensure that it has been increased properly.
@@ -477,7 +477,7 @@ pub(crate) trait Signaling {
             // Dst
             peer.identity().into(),
             // Csn
-            peer.csn_pair().borrow_mut().ours.increment()?,
+            peer.csn_pair().try_write()?.ours.increment()?,
         );
         let obox = OpenBox::<Value>::new(value, nonce);
         let bbox = obox.encrypt(
@@ -522,7 +522,7 @@ pub(crate) trait Signaling {
             // Dst
             peer.identity().into(),
             // Csn
-            peer.csn_pair().borrow_mut().ours.increment()?,
+            peer.csn_pair().try_write()?.ours.increment()?,
         );
         let msg = Close::from_close_code(reason).into_message();
         let obox = OpenBox::<Message>::new(msg, nonce);
@@ -611,7 +611,7 @@ pub(crate) trait Signaling {
                 // Dst
                 self.server().identity().into(),
                 // Csn
-                self.server().csn_pair().borrow_mut().ours.increment()?,
+                self.server().csn_pair().try_write()?.ours.increment()?,
             );
             let reply = OpenBox::<Message>::new(client_hello, client_hello_nonce);
             debug!("<-- Enqueuing client-hello to server");
@@ -643,7 +643,7 @@ pub(crate) trait Signaling {
             self.server().cookie_pair().ours.clone(),
             self.identity().into(),
             self.server().identity().into(),
-            self.server().csn_pair().borrow_mut().ours.increment()?,
+            self.server().csn_pair().try_write()?.ours.increment()?,
         );
         let reply = OpenBox::<Message>::new(client_auth, client_auth_nonce);
         match self.server().session_key {
@@ -765,7 +765,7 @@ pub(crate) trait Signaling {
             self.server().cookie_pair.ours.clone(),
             self.common().identity.into(),
             self.server().identity().into(),
-            self.server().csn_pair().borrow_mut().ours.increment()?,
+            self.server().csn_pair().try_write()?.ours.increment()?,
         );
 
         // Encrypt message
@@ -1304,7 +1304,7 @@ impl InitiatorSignaling {
             responder.cookie_pair().ours.clone(),
             self.common.identity.into(),
             responder.identity().into(),
-            responder.csn_pair().borrow_mut().ours.increment()?,
+            responder.csn_pair().try_write()?.ours.increment()?,
         );
         let obox = OpenBox::<Message>::new(key, key_nonce);
         let bbox = obox.encrypt(
@@ -1438,7 +1438,7 @@ impl InitiatorSignaling {
             responder.cookie_pair().ours.clone(),
             self.common.identity.into(),
             responder.address,
-            responder.csn_pair().borrow_mut().ours.increment()?,
+            responder.csn_pair().try_write()?.ours.increment()?,
         );
         let obox = OpenBox::<Message>::new(auth, auth_nonce);
         let bbox = obox.encrypt(
@@ -1837,7 +1837,7 @@ impl ResponderSignaling {
             self.initiator.cookie_pair().ours.clone(),
             self.identity().into(),
             self.initiator.identity().into(),
-            self.initiator.csn_pair().borrow_mut().ours.increment()?,
+            self.initiator.csn_pair().try_write()?.ours.increment()?,
         );
         let obox = OpenBox::<Message>::new(msg, nonce);
 
@@ -1859,7 +1859,7 @@ impl ResponderSignaling {
             self.initiator.cookie_pair().ours.clone(),
             self.identity().into(),
             self.initiator.identity().into(),
-            self.initiator.csn_pair().borrow_mut().ours.increment()?,
+            self.initiator.csn_pair().try_write()?.ours.increment()?,
         );
         let obox = OpenBox::<Message>::new(msg, nonce);
 
@@ -1906,7 +1906,7 @@ impl ResponderSignaling {
             self.initiator.cookie_pair().ours.clone(),
             self.common().identity.into(),
             self.initiator.identity().into(),
-            self.initiator.csn_pair().borrow_mut().ours.increment()?,
+            self.initiator.csn_pair().try_write()?.ours.increment()?,
         );
         let obox = OpenBox::<Message>::new(auth, auth_nonce);
         let bbox = obox.encrypt(
@@ -2006,15 +2006,4 @@ impl ResponderSignaling {
             )),
         }
     }
-}
-
-
-/// Result of the nonce validation.
-pub(crate) enum ValidationError {
-    /// Ignore message
-    DropMsg(String),
-    /// Validation failed
-    Fail(String),
-    /// A critical error occurred
-    Crash(String),
 }
