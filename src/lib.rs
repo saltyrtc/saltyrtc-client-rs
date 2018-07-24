@@ -39,8 +39,6 @@
 //! the futures with a timeout feature (for example from
 //! [tokio-timer](https://github.com/tokio-rs/tokio-timer)).
 #![recursion_limit = "1024"]
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
 #![deny(missing_docs)]
 
 extern crate byteorder;
@@ -392,9 +390,9 @@ pub enum CloseCode {
 
 impl CloseCode {
     /// Return the numeric close code.
-    pub fn as_number(&self) -> u16 {
+    pub fn as_number(self) -> u16 {
         use CloseCode::*;
-        match *self {
+        match self {
             WsClosingNormal => 1000,
             WsGoingAway => 1001,
             WsProtocolError => 1002,
@@ -764,6 +762,7 @@ pub fn do_handshake(
 /// Start the task loop.
 ///
 /// Only call this function once you have finished the handshake!
+#[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
 pub fn task_loop(
     client: WsClient,
     salty: Rc<RefCell<SaltyClient>>,

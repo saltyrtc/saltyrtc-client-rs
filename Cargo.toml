@@ -16,7 +16,6 @@ maintenance = { status = "actively-developed" }
 
 [dependencies]
 byteorder = "1.1"
-clippy = {version = "0.0.212", optional = true}
 data-encoding = "2.0.0-rc.2"
 failure = "0.1.1"
 futures = "0.1.0"  # Make sure to use same version as websocket

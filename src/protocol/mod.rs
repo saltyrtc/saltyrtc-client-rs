@@ -1230,7 +1230,7 @@ impl InitiatorSignaling {
     }
 
     /// Handle an incoming [`Token`](messages/struct.Token.html) message.
-    #[cfg_attr(feature="clippy", allow(needless_pass_by_value))]
+    #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
     fn handle_token(&mut self, msg: Token, source: Address) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received token from {}", Identity::from(source));
 
@@ -1265,7 +1265,7 @@ impl InitiatorSignaling {
     }
 
     /// Handle an incoming [`Key`](messages/struct.Key.html) message.
-    #[cfg_attr(feature="clippy", allow(needless_pass_by_value))]
+    #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
     fn handle_key(&mut self, msg: Key, source: Address) -> SignalingResult<Vec<HandleAction>> {
         let source_identity = Identity::from(source);
         debug!("--> Received key from {}", source_identity);
@@ -1826,6 +1826,7 @@ impl ResponderSignaling {
     /// Build a `Token` message.
     ///
     /// The token is consumed to avoid accidentally reusing it.
+    #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
     fn send_token(&self, token: AuthToken) -> SignalingResult<HandleAction> {
         // The responder MUST set the public key (32 bytes) of the permanent
         // key pair in the key field of this message.
@@ -1871,7 +1872,7 @@ impl ResponderSignaling {
     }
 
     /// Handle an incoming [`Key`](messages/struct.Key.html) message.
-    #[cfg_attr(feature="clippy", allow(needless_pass_by_value))]
+    #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
     fn handle_key(&mut self, msg: Key, nonce: &Nonce) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received key from {}", nonce.source_identity());
 
@@ -1995,6 +1996,7 @@ impl ResponderSignaling {
     }
 
     /// Handle an incoming [`Close`](messages/struct.Close.html) message during peer handshake.
+    #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
     fn handle_peer_handshake_close(&mut self, msg: Close) -> SignalingResult<Vec<HandleAction>> {
         let close_code = CloseCode::from_number(msg.reason);
         match close_code {

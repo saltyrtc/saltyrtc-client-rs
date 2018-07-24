@@ -24,13 +24,13 @@ pub enum Role {
 
 impl Role {
     /// Return true if this role is the initiator.
-    pub fn is_initiator(&self) -> bool {
-        *self == Role::Initiator
+    pub fn is_initiator(self) -> bool {
+        self == Role::Initiator
     }
 
     /// Return true if this role is the responder.
-    pub fn is_responder(&self) -> bool {
-        *self == Role::Responder
+    pub fn is_responder(self) -> bool {
+        self == Role::Responder
     }
 }
 
@@ -113,22 +113,22 @@ pub(crate) struct Address(pub(crate) u8);
 
 impl Address {
     /// Return whether this address is a valid server address.
-    pub(crate) fn is_server(&self) -> bool {
+    pub(crate) fn is_server(self) -> bool {
         self.0 == 0x00
     }
 
     /// Return whether this address is a valid unknown address.
-    pub(crate) fn is_unknown(&self) -> bool {
+    pub(crate) fn is_unknown(self) -> bool {
         self.0 == 0x00
     }
 
     /// Return whether this address is the initiator address.
-    pub(crate) fn is_initiator(&self) -> bool {
+    pub(crate) fn is_initiator(self) -> bool {
         self.0 == 0x01
     }
 
     /// Return whether this address is in the responder range.
-    pub(crate) fn is_responder(&self) -> bool {
+    pub(crate) fn is_responder(self) -> bool {
         self.0 >= 0x02
     }
 }

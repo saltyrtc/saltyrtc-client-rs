@@ -40,10 +40,15 @@ You can list all targets with `cargo fuzz list`.
 
 ### Linting
 
-To run clippy lints, compile the library with `--features clippy` on a nightly
-compiler:
+To run clippy lints, first get the latest clippy version:
 
-    $ cargo +nightly build --features clippy
+    $ rustup update
+    $ rustup install nightly
+    $ rustup component add clippy-preview --toolchain=nightly
+
+Then run `clippy` through nightly cargo:
+
+    $ cargo +nightly clippy
 
 
 ## Example Client

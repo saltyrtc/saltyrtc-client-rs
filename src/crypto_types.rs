@@ -1,6 +1,6 @@
 //! Functionality related to Libsodium key management and encryption.
 
-#![cfg_attr(feature="clippy", allow(new_without_default))]
+#![cfg_attr(feature="cargo-clippy", allow(new_without_default))]
 
 use std::cmp;
 use std::fmt;
