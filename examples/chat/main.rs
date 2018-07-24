@@ -355,8 +355,8 @@ fn main() {
             let text = $line.to_string();
             tui_sender.send(Box::new(move |tui: &mut Cursive| {
                 tui.call_on_id(VIEW_TEXT_ID, |view: &mut TextView| {
-                    view.append_content(&text);
-                    view.append_content("\n");
+                    view.append(text);
+                    view.append("\n");
                 });
             })).unwrap();
         }};

@@ -16,7 +16,7 @@ maintenance = { status = "actively-developed" }
 
 [dependencies]
 byteorder = "1.1"
-clippy = {version = "0.0.200", optional = true}
+clippy = {version = "0.0.212", optional = true}
 data-encoding = "2.0.0-rc.2"
 failure = "0.1.1"
 futures = "0.1.0"  # Make sure to use same version as websocket
@@ -31,11 +31,11 @@ serde = "1.0"
 serde_derive = "1.0"
 tokio-core = "0.1.9"
 tokio-timer = "0.1"
-websocket = "0.20.2"
+websocket = "0.20"
 
 [dev-dependencies]
 clap = "2.27"
-cursive = "0.7"
+cursive = "0.8"
 log4rs = "0.8"
 
 [features]
