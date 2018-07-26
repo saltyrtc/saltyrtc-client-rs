@@ -4,6 +4,7 @@
 //! [`failure`](https://crates.io/crates/failure) crate.
 
 use std::convert::From;
+use std::sync::TryLockError;
 
 use rmp_serde::decode::Error as SerdeDecodeError;
 use tokio_timer::TimeoutError;
@@ -73,6 +74,12 @@ impl From<SignalingError> for SaltyError {
 impl<F> From<TimeoutError<F>> for SaltyError {
     fn from(_: TimeoutError<F>) -> Self {
         SaltyError::Timeout
+    }
+}
+
+impl<T> From<TryLockError<T>> for SaltyError {
+    fn from(e: TryLockError<T>) -> Self {
+        SaltyError::Crash(format!("Could not acquire lock: {}", e))
     }
 }
 
@@ -150,10 +157,34 @@ impl From<SerdeDecodeError> for SignalingError {
     }
 }
 
+impl<T> From<TryLockError<T>> for SignalingError {
+    fn from(e: TryLockError<T>) -> Self {
+        SignalingError::Crash(format!("Could not acquire lock: {}", e))
+    }
+}
+
+
 /// Errors that may be returned by the [`SaltyClientBuilder`](../struct.SaltyClientBuilder.html).
 #[derive(Fail, Debug, PartialEq)]
 pub enum BuilderError {
     /// No task has been added.
     #[fail(display = "No task specified")]
     MissingTask,
+}
+
+
+/// Result of the nonce validation.
+pub(crate) enum ValidationError {
+    /// Ignore message
+    DropMsg(String),
+    /// Validation failed
+    Fail(String),
+    /// A critical error occurred
+    Crash(String),
+}
+
+impl<T> From<TryLockError<T>> for ValidationError {
+    fn from(e: TryLockError<T>) -> Self {
+        ValidationError::Crash(format!("Could not acquire lock: {}", e))
+    }
 }

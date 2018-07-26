@@ -1219,8 +1219,8 @@ mod new_initiator {
 
         // Old initiator context
         let old_cookie_pair = ctx.signaling.initiator.cookie_pair().clone();
-        assert!(ctx.signaling.initiator.csn_pair.borrow().theirs.is_none());
-        ctx.signaling.initiator.csn_pair.borrow_mut().theirs = Some(CombinedSequenceSnapshot::new(0, 0));
+        assert!(ctx.signaling.initiator.csn_pair.read().unwrap().theirs.is_none());
+        ctx.signaling.initiator.csn_pair.write().unwrap().theirs = Some(CombinedSequenceSnapshot::new(0, 0));
         ctx.signaling.initiator.set_handshake_state(InitiatorHandshakeState::AuthSent);
 
         // Handle message
@@ -1231,7 +1231,7 @@ mod new_initiator {
         // (such as cookies and the sequence numbers)...
         let new_cookie_pair = ctx.signaling.initiator.cookie_pair().clone();
         assert_ne!(old_cookie_pair, new_cookie_pair);
-        assert!(ctx.signaling.initiator.csn_pair.borrow().theirs.is_none());
+        assert!(ctx.signaling.initiator.csn_pair.read().unwrap().theirs.is_none());
         assert_ne!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::AuthSent);
 
         // ...and continue by sending a 'token' or 'key' client-to-client message

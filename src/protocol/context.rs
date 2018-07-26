@@ -1,6 +1,6 @@
 //! The context structs hold state used in signaling.
 
-use std::cell::RefCell;
+use std::sync::RwLock;
 
 use crypto::{PublicKey, KeyPair};
 
@@ -24,8 +24,8 @@ pub(crate) trait PeerContext {
     fn keypair(&self) -> Option<&KeyPair>;
 
     /// Return our CSN pair with this peer.
-    /// The returned reference is a RefCell, providing interior mutability.
-    fn csn_pair(&self) -> &RefCell<CombinedSequencePair>;
+    /// The returned reference is inside a RwLock, providing interior mutability.
+    fn csn_pair(&self) -> &RwLock<CombinedSequencePair>;
 
     /// Return our cookie pair with this peer.
     fn cookie_pair(&self) -> &CookiePair;
@@ -35,7 +35,7 @@ pub(crate) trait PeerContext {
 }
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct ServerContext {
     /// The server handshake state.
     handshake_state: ServerHandshakeState,
@@ -47,7 +47,7 @@ pub(crate) struct ServerContext {
     pub(crate) session_key: Option<PublicKey>,
 
     /// The combined sequence number.
-    pub(crate) csn_pair: RefCell<CombinedSequencePair>,
+    pub(crate) csn_pair: RwLock<CombinedSequencePair>,
 
     /// The cookie pair between us and the server.
     pub(crate) cookie_pair: CookiePair,
@@ -60,7 +60,7 @@ impl ServerContext {
             handshake_state: ServerHandshakeState::New,
             permanent_key: None,
             session_key: None,
-            csn_pair: RefCell::new(CombinedSequencePair::new()),
+            csn_pair: RwLock::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
     }
@@ -95,7 +95,7 @@ impl PeerContext for ServerContext {
         None // There is no session keypair between the client and the server
     }
 
-    fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
+    fn csn_pair(&self) -> &RwLock<CombinedSequencePair> {
         &self.csn_pair
     }
 
@@ -109,7 +109,7 @@ impl PeerContext for ServerContext {
 }
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct InitiatorContext {
     /// The initiator handshake state.
     handshake_state: InitiatorHandshakeState,
@@ -124,7 +124,7 @@ pub(crate) struct InitiatorContext {
     pub(crate) keypair: KeyPair,
 
     /// The combined sequence number.
-    pub(crate) csn_pair: RefCell<CombinedSequencePair>,
+    pub(crate) csn_pair: RwLock<CombinedSequencePair>,
 
     /// The cookie pair between us and the initiator.
     pub(crate) cookie_pair: CookiePair,
@@ -137,7 +137,7 @@ impl InitiatorContext {
             permanent_key,
             session_key: None,
             keypair: KeyPair::new(),
-            csn_pair: RefCell::new(CombinedSequencePair::new()),
+            csn_pair: RwLock::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
     }
@@ -172,7 +172,7 @@ impl PeerContext for InitiatorContext {
         Some(&self.keypair)
     }
 
-    fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
+    fn csn_pair(&self) -> &RwLock<CombinedSequencePair> {
         &self.csn_pair
     }
 
@@ -186,7 +186,7 @@ impl PeerContext for InitiatorContext {
 }
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct ResponderContext {
     /// The responder handshake state.
     handshake_state: ResponderHandshakeState,
@@ -208,7 +208,7 @@ pub(crate) struct ResponderContext {
     pub(crate) keypair: KeyPair,
 
     /// Our combined sequence pair for this responder
-    pub(crate) csn_pair: RefCell<CombinedSequencePair>,
+    pub(crate) csn_pair: RwLock<CombinedSequencePair>,
 
     /// The cookie pair between us and the responder.
     pub(crate) cookie_pair: CookiePair,
@@ -223,7 +223,7 @@ impl ResponderContext {
             permanent_key: None,
             session_key: None,
             keypair: KeyPair::new(),
-            csn_pair: RefCell::new(CombinedSequencePair::new()),
+            csn_pair: RwLock::new(CombinedSequencePair::new()),
             cookie_pair: CookiePair::new(),
         }
     }
@@ -258,7 +258,7 @@ impl PeerContext for ResponderContext {
         Some(&self.keypair)
     }
 
-    fn csn_pair(&self) -> &RefCell<CombinedSequencePair> {
+    fn csn_pair(&self) -> &RwLock<CombinedSequencePair> {
         &self.csn_pair
     }
 
