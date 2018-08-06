@@ -98,6 +98,7 @@ use futures::sync::mpsc;
 use futures::sync::oneshot;
 use native_tls::TlsConnector;
 use rmpv::Value;
+use rust_sodium::crypto::box_;
 use tokio_core::reactor::Handle;
 use tokio_core::net::TcpStream;
 use tokio_timer::Timer;
@@ -345,6 +346,13 @@ impl SaltyClient {
     /// outgoing sequence numbers.
     pub fn current_peer_sequence_numbers(&self) -> Option<PeerSequenceNumbers> {
         self.signaling.current_peer_sequence_numbers()
+    }
+
+    /// Decrypt raw bytes using the session keys after the handshake has been finished.
+    pub fn decrypt_raw_with_session_keys(&self, data: &[u8], nonce: &[u8]) -> SaltyResult<Vec<u8>> {
+        let sodium_nonce = box_::Nonce::from_slice(nonce)
+            .ok_or(SaltyError::Crypto("Invalid nonce bytes".into()))?;
+        Ok(self.signaling.decrypt_raw_with_session_keys(data, &sodium_nonce)?)
     }
 }
 
