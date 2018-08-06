@@ -348,6 +348,13 @@ impl SaltyClient {
         self.signaling.current_peer_sequence_numbers()
     }
 
+    /// Encrypt raw bytes using the session keys after the handshake has been finished.
+    pub fn encrypt_raw_with_session_keys(&self, data: &[u8], nonce: &[u8]) -> SaltyResult<Vec<u8>> {
+        let sodium_nonce = box_::Nonce::from_slice(nonce)
+            .ok_or(SaltyError::Crypto("Invalid nonce bytes".into()))?;
+        Ok(self.signaling.encrypt_raw_with_session_keys(data, &sodium_nonce)?)
+    }
+
     /// Decrypt raw bytes using the session keys after the handshake has been finished.
     pub fn decrypt_raw_with_session_keys(&self, data: &[u8], nonce: &[u8]) -> SaltyResult<Vec<u8>> {
         let sodium_nonce = box_::Nonce::from_slice(nonce)

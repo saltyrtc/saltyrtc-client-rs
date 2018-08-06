@@ -156,9 +156,9 @@ fn test_peer_sequence_number_with_peer() {
     }));
 }
 
-/// If there's no peer, raw decrypting should fail.
+/// If there's no peer, raw encrypting and decrypting should fail.
 #[test]
-fn test_decrypt_raw_with_session_keys_no_peer() {
+fn test_encrypt_decrypt_raw_with_session_keys_no_peer() {
     let signaling = InitiatorSignaling::new(
         KeyPair::new(),
         Tasks::new(Box::new(DummyTask::new(42))),
@@ -168,8 +168,44 @@ fn test_decrypt_raw_with_session_keys_no_peer() {
     );
     let nonce = box_::gen_nonce();
     assert_eq!(
+        signaling.encrypt_raw_with_session_keys(&[1, 2, 3], &nonce),
+        Err(SignalingError::NoPeer)
+    );
+    assert_eq!(
         signaling.decrypt_raw_with_session_keys(&[1, 2, 3], &nonce),
         Err(SignalingError::NoPeer)
+    );
+}
+
+/// Test encrypting raw bytes.
+#[test]
+fn test_encrypt_raw_with_session_keys_with_peer() {
+    // Generate keypairs and nonce
+    let peer_kp = KeyPair::new();
+    let our_kp = KeyPair::new();
+    let our_private_key_clone = our_kp.private_key().clone();
+    let nonce = box_::gen_nonce();
+
+    // Create signaling instance
+    let mut signaling = MockSignaling::new(
+        Role::Responder,
+        ClientIdentity::Responder(3),
+        SignalingState::Task,
+    );
+    let mut initiator = InitiatorContext::new(PublicKey::random());
+    initiator.session_key = Some(peer_kp.public_key().clone());
+    initiator.keypair = our_kp;
+    signaling.set_peer(initiator);
+
+    // Encrypt data
+    let data = [2, 3, 4, 5];
+    let ciphertext = signaling.encrypt_raw_with_session_keys(&data, &nonce).unwrap();
+    assert_ne!(&data, ciphertext.as_slice());
+
+    // Verify
+    assert_eq!(
+        box_::open(&ciphertext, &nonce, peer_kp.public_key(), &our_private_key_clone),
+        Ok(vec![2, 3, 4, 5])
     );
 }
 
