@@ -38,6 +38,10 @@ pub enum SaltyError {
     #[fail(display = "No shared task found")]
     NoSharedTask,
 
+    /// Peer has not (yet) been determined.
+    #[fail(display = "Peer has not (yet) been determined")]
+    NoPeer,
+
     /// A problem occured related to a task.
     #[fail(display = "Task error: {}", _0)]
     Task(String),
@@ -64,6 +68,7 @@ impl From<SignalingError> for SaltyError {
             SignalingError::InvalidNonce(_) => SaltyError::Protocol(e.to_string()),
             SignalingError::InvalidStateTransition(_) => SaltyError::Crash(e.to_string()),
             SignalingError::NoSharedTask => SaltyError::NoSharedTask,
+            SignalingError::NoPeer => SaltyError::NoPeer,
             SignalingError::Protocol(msg) => SaltyError::Protocol(msg),
             SignalingError::SendError => SaltyError::Network(e.to_string()),
             SignalingError::TaskInitialization(_) => SaltyError::Task(e.to_string()),
@@ -133,6 +138,10 @@ pub(crate) enum SignalingError {
     /// No shared task was found during the handshake.
     #[fail(display = "No shared task found")]
     NoSharedTask,
+
+    /// Peer has not (yet) been determined.
+    #[fail(display = "Peer has not (yet) been determined")]
+    NoPeer,
 
     /// Task initialization failed.
     #[fail(display = "Task initialization failed: {}", _0)]

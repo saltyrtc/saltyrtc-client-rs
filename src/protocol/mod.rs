@@ -17,6 +17,7 @@ use boxes::{ByteBox, OpenBox};
 use crypto::{KeyPair, AuthToken, PublicKey};
 use errors::{SignalingError, SignalingResult, SaltyError, ValidationError};
 use rmpv::{Value};
+use rust_sodium::crypto::box_;
 
 pub(crate) mod context;
 pub(crate) mod cookie;
@@ -796,6 +797,39 @@ pub(crate) trait Signaling {
         );
 
         Ok(HandleAction::Reply(bbox))
+    }
+
+    // Raw encryption / decryption
+
+    /// Encrypt raw bytes for the peer using the session keys.
+    ///
+    /// If this function is called before the peer has been established,
+    /// it will return a `SignalingError::NoPeer`.
+    fn encrypt_raw_with_session_keys(&self, data: &[u8], nonce: &box_::Nonce) -> SignalingResult<Vec<u8>> {
+        let peer = self.get_peer()
+            .ok_or_else(|| SignalingError::NoPeer)?;
+        let peer_session_public_key = peer.session_key()
+            .ok_or_else(|| SignalingError::Crash("Peer session public key not set".into()))?;
+        let our_session_private_key = peer.keypair()
+            .map(|keypair: &KeyPair| keypair.private_key())
+            .ok_or_else(|| SignalingError::Crash("Our session private key not set".into()))?;
+        Ok(box_::seal(data, nonce, peer_session_public_key, our_session_private_key))
+    }
+
+    /// Decrypt raw bytes for the peer using the session keys.
+    ///
+    /// If this function is called before the peer has been established,
+    /// it will return a `SignalingError::NoPeer`.
+    fn decrypt_raw_with_session_keys(&self, data: &[u8], nonce: &box_::Nonce) -> SignalingResult<Vec<u8>> {
+        let peer = self.get_peer()
+            .ok_or_else(|| SignalingError::NoPeer)?;
+        let peer_session_public_key = peer.session_key()
+            .ok_or_else(|| SignalingError::Crash("Peer session public key not set".into()))?;
+        let our_session_private_key = peer.keypair()
+            .map(|keypair: &KeyPair| keypair.private_key())
+            .ok_or_else(|| SignalingError::Crash("Our session private key not set".into()))?;
+        box_::open(data, nonce, peer_session_public_key, our_session_private_key)
+            .map_err(|_| SignalingError::Crypto("Could not decrypt bytes".into()))
     }
 }
 
