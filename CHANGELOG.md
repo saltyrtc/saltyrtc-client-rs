@@ -12,9 +12,18 @@ Possible log types:
 - `[security]` to invite users to upgrade in case of vulnerabilities.
 
 
+### v0.5.0 (2018-08-07)
+
+- [added] Create `SaltyClient::current_peer_sequence_numbers`
+- [added] Create `SaltyClient::encrypt_raw_with_session_keys`
+- [added] Create `SaltyClient::decrypt_raw_with_session_keys`
+- [fixed] Remove duplicate trace log
+- [changed] Upgrade some dependencies
+- [changed] PeerContext: Replace `csn_pair` RefCell with RwLock
+
 ### v0.5.0-beta.3 (2018-06-01)
 
-- Less strict close code validation (accept any u16)
+- [changed] Less strict close code validation (accept any u16)
 
 ### v0.5.0-beta.2 (2018-05-15)
 
