@@ -2,6 +2,7 @@
 use rust_sodium::crypto::box_;
 
 use ::test_helpers::{DummyTask, TestRandom};
+use ::crypto::PrivateKey;
 use super::*;
 use super::csn::CombinedSequenceSnapshot;
 
@@ -206,6 +207,45 @@ fn test_encrypt_raw_with_session_keys_with_peer() {
     assert_eq!(
         box_::open(&ciphertext, &nonce, peer_kp.public_key(), &our_private_key_clone),
         Ok(vec![2, 3, 4, 5])
+    );
+}
+
+/// Test decrypting raw bytes with a known test vector.
+///
+/// Encrypting an empty byte sequence with nonce "connectionidconnectionid" results in the
+/// ciphertext [253, 142, 84, 143, 118, 139, 224, 253, 252, 98, 240, 45, 22, 73, 234, 94].
+#[test]
+fn test_encrypt_raw_with_session_keys_with_peer_known_result() {
+    // Generate keypairs and nonce
+    let peer_kp = KeyPair::from_private_key(PrivateKey::from_slice(&[
+        1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2,
+        3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4,
+    ]).unwrap());
+    let our_kp = KeyPair::from_private_key(PrivateKey::from_slice(&[
+        4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3,
+        2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1,
+    ]).unwrap());
+
+    // Create signaling instance
+    let mut signaling = MockSignaling::new(
+        Role::Responder,
+        ClientIdentity::Responder(3),
+        SignalingState::Task,
+    );
+    let mut initiator = InitiatorContext::new(PublicKey::random());
+    initiator.session_key = Some(peer_kp.public_key().clone());
+    initiator.keypair = our_kp;
+    signaling.set_peer(initiator);
+
+    // Encrypt data
+    let data = [];
+    let nonce = box_::Nonce::from_slice(b"connectionidconnectionid").unwrap();
+    let ciphertext = signaling.encrypt_raw_with_session_keys(&data, &nonce).unwrap();
+
+    // Verify
+    assert_eq!(
+        ciphertext,
+        [253, 142, 84, 143, 118, 139, 224, 253, 252, 98, 240, 45, 22, 73, 234, 94],
     );
 }
 
