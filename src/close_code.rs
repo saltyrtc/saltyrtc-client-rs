@@ -25,6 +25,8 @@ pub enum CloseCode {
     NoSharedTask,
     /// Invalid key
     InvalidKey,
+    /// Timeout
+    Timeout,
     /// Other close code
     Other(u16),
 }
@@ -45,6 +47,7 @@ impl CloseCode {
             InitiatorCouldNotDecrypt => 3005,
             NoSharedTask => 3006,
             InvalidKey => 3007,
+            Timeout => 3008,
             Other(code) => code,
         }
     }
@@ -64,6 +67,7 @@ impl CloseCode {
             3005 => InitiatorCouldNotDecrypt,
             3006 => NoSharedTask,
             3007 => InvalidKey,
+            3008 => Timeout,
             code => Other(code),
         }
     }
