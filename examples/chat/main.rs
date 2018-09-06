@@ -151,13 +151,13 @@ fn main() {
 
     // Read server certificate bytes
     let mut server_cert_bytes: Vec<u8> = vec![];
-    File::open(&Path::new("saltyrtc.der"))
-        .expect("Could not open saltyrtc.der")
+    File::open(&Path::new("saltyrtc.crt"))
+        .expect("Could not open saltyrtc.crt")
         .read_to_end(&mut server_cert_bytes)
-        .expect("Could not read saltyrtc.der");
+        .expect("Could not read saltyrtc.crt");
 
     // Parse server certificate
-    let server_cert = Certificate::from_der(&server_cert_bytes)
+    let server_cert = Certificate::from_pem(&server_cert_bytes)
         .unwrap_or_else(|e| {
             panic!("Problem with CA cert: {}", e);
         });

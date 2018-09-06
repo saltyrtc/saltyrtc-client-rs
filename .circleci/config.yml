@@ -24,7 +24,7 @@ jobs:
           command: /saltyrtc/certs/generate-cert.sh
       - run:
           name: Copy certificate
-          command: cp /saltyrtc/certs/saltyrtc.der .
+          command: cp /saltyrtc/certs/saltyrtc.crt .
 
       # Start processes
       - run:
