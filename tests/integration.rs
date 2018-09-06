@@ -10,14 +10,13 @@ extern crate saltyrtc_client;
 extern crate tokio_core;
 
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
-use std::rc::Rc;
 use std::str;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use failure::Error;
@@ -105,7 +104,7 @@ fn connect_to(host: &str, port: u16, tls_connector: Option<TlsConnector>) -> Res
     // Initialize SaltyRTC
     let keypair = KeyPair::new();
     let task = DummyTask::new(1);
-    let salty = Rc::new(RefCell::new(
+    let salty = Arc::new(RwLock::new(
         SaltyClient::build(keypair)
             .add_task(Box::new(task))
             .with_ping_interval(Some(Duration::from_secs(30)))

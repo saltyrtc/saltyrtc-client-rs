@@ -83,11 +83,8 @@ pub mod tasks;
 mod test_helpers;
 
 // Rust imports
-use std::cell::RefCell;
 use std::error::Error;
-use std::ops::Deref;
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 // Third party imports
@@ -433,7 +430,7 @@ pub fn connect(
     port: u16,
     tls_config: Option<TlsConnector>,
     handle: &Handle,
-    salty: Rc<RefCell<SaltyClient>>,
+    salty: Arc<RwLock<SaltyClient>>,
 ) -> SaltyResult<(
     impl Future<Item=WsClient, Error=SaltyError>,
     UnboundedChannel<Event>,
@@ -442,9 +439,9 @@ pub fn connect(
     libsodium_init()?;
 
     // Parse URL
-    let path = salty.try_borrow()
+    let path = salty.read()
         .map(|client| HEXLOWER.encode(&client.initiator_pubkey().0))
-        .map_err(|_| SaltyError::Crash("Could not borrow SaltyClient instance".into()))?;
+        .map_err(|_| SaltyError::Crash("connect: Could not read-lock SaltyClient".into()))?;
     let url = format!("wss://{}:{}/{}", host, port, path);
     let ws_url = match Url::parse(&url) {
         Ok(b) => b,
@@ -479,8 +476,7 @@ pub fn connect(
         })
         .map(move |client| {
             let role = salty
-                .deref()
-                .try_borrow()
+                .read()
                 .map(|s| s.role().to_string())
                 .unwrap_or_else(|_| "Unknown".to_string());
             info!("Connected to server as {}", role);
@@ -583,14 +579,14 @@ fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> Sal
 /// It returns the async websocket client instance.
 pub fn do_handshake(
     client: WsClient,
-    salty: Rc<RefCell<SaltyClient>>,
+    salty: Arc<RwLock<SaltyClient>>,
     event_tx: mpsc::UnboundedSender<Event>,
     timeout: Option<Duration>,
 ) -> impl Future<Item=WsClient, Error=SaltyError> {
     // Main loop
     let main_loop = future::loop_fn(client, move |client| {
 
-        let salty = Rc::clone(&salty);
+        let salty = Arc::clone(&salty);
 
         // Take the next incoming message
         let event_tx = event_tx.clone();
@@ -619,13 +615,13 @@ pub fn do_handshake(
                 };
 
                 // Handle message bytes
-                let handle_actions = match salty.deref().try_borrow_mut() {
+                let handle_actions = match salty.write() {
                     Ok(mut s) => match s.handle_message(bbox) {
                         Ok(actions) => actions,
                         Err(e) => return boxed!(future::err(e.into())),
                     },
                     Err(e) => return boxed!(future::err(SaltyError::Crash(
-                        format!("Could not get mutable reference to SaltyClient: {}", e)
+                        format!("do_handshake: Could not write-lock SaltyClient: {}", e)
                     ))),
                 };
 
@@ -712,15 +708,14 @@ pub fn do_handshake(
 #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
 pub fn task_loop(
     client: WsClient,
-    salty: Rc<RefCell<SaltyClient>>,
+    salty: Arc<RwLock<SaltyClient>>,
     event_tx: mpsc::UnboundedSender<Event>,
 ) -> Result<(
     Arc<Mutex<BoxedTask>>,
     impl Future<Item=(), Error=SaltyError>,
 ), SaltyError> {
     let task_name = salty
-        .deref()
-        .try_borrow()
+        .read()
         .ok()
         .and_then(|salty| salty.task())
         .and_then(|task| match task.lock() {
@@ -730,7 +725,7 @@ pub fn task_loop(
         .unwrap_or_else(|| "Unknown".into());
     info!("Starting task loop for task {}", task_name);
 
-    let salty = Rc::clone(&salty);
+    let salty = Arc::clone(&salty);
 
     // Split websocket connection into sink/stream
     let (ws_sink, ws_stream) = client.split();
@@ -762,20 +757,20 @@ pub fn task_loop(
         // * `future::err(Ok(()))` to stop the loop without an error
         // * `future::err(Err(_))` to stop the loop with an error
         .for_each({
-            let salty = Rc::clone(&salty);
+            let salty = Arc::clone(&salty);
             let raw_outgoing_tx = raw_outgoing_tx.clone();
             move |msg: WsMessageDecoded| {
                 let raw_outgoing_tx = raw_outgoing_tx.clone();
                 match msg {
                     WsMessageDecoded::ByteBox(bbox) => {
                         // Handle message bytes
-                        let handle_actions = match salty.deref().try_borrow_mut() {
+                        let handle_actions = match salty.write() {
                             Ok(mut s) => match s.handle_message(bbox) {
                                 Ok(actions) => actions,
                                 Err(e) => return boxed!(future::err(Err(e.into()))),
                             },
                             Err(e) => return boxed!(future::err(Err(
-                                SaltyError::Crash(format!("Could not get mutable reference to SaltyClient: {}", e))
+                                SaltyError::Crash(format!("task_loop/reader: Could not write-lock SaltyClient: {}", e))
                             ))),
                         };
 
@@ -904,13 +899,13 @@ pub fn task_loop(
 
         // Encode and encrypt values.
         .and_then({
-            let salty = Rc::clone(&salty);
+            let salty = Arc::clone(&salty);
             move |msg: TaskMessage| {
                 trace!("Transforming outgoing message: {:?}", msg);
 
                 // Get reference to SaltyClient
                 // TODO: Can we do something about the errors here?
-                let mut salty_mut = salty.deref().try_borrow_mut().map_err(|_| Err(()))?;
+                let mut salty_mut = salty.write().map_err(|_| Err(()))?;
 
                 // When we receive a `Value` message, simply send it as-is.
                 // But when we receive a `Close` message, also insert a WebSocket close message.
@@ -1019,12 +1014,12 @@ pub fn task_loop(
     );
 
     // Get reference to task
-    let task = match salty.try_borrow_mut() {
+    let task = match salty.write() {
         Ok(salty) => salty
             .task()
             .ok_or_else(|| SaltyError::Crash("Task not set".into()))?,
         Err(e) => return Err(
-            SaltyError::Crash(format!("Could not mutably borrow SaltyRTC instance: {}", e))
+            SaltyError::Crash(format!("task_loop/task: Could not write-lock SaltyClient: {}", e))
         ),
     };
 
