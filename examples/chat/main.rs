@@ -13,12 +13,11 @@ extern crate tokio_core;
 
 mod chat_task;
 
-use std::cell::RefCell;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::process;
-use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 use std::sync::mpsc as std_mpsc;
 use std::thread;
 use std::time::Duration;
@@ -250,8 +249,8 @@ fn main() {
     };
     println!("******************************\x1B[0m\n");
 
-    // Wrap SaltyClient in a Rc<RefCell<>>
-    let salty_rc = Rc::new(RefCell::new(salty));
+    // Wrap SaltyClient in an Arc<RwLock<>>
+    let salty_arc = Arc::new(RwLock::new(salty));
 
     // Connect to server
     let (connect_future, event_channel) = saltyrtc_client::connect(
@@ -259,7 +258,7 @@ fn main() {
             8765,
             Some(tls_connector),
             &core.handle(),
-            salty_rc.clone(),
+            salty_arc.clone(),
         )
         .unwrap();
 
@@ -269,7 +268,7 @@ fn main() {
         .map(|client| { println!("Connected to server"); client })
         .and_then(|client| saltyrtc_client::do_handshake(
             client,
-            salty_rc.clone(),
+            salty_arc.clone(),
             event_tx,
             None,
         ))
@@ -288,7 +287,7 @@ fn main() {
     };
 
     // Set up task loop
-    let (task, task_loop) = saltyrtc_client::task_loop(client, salty_rc.clone(), event_channel.clone_tx())
+    let (task, task_loop) = saltyrtc_client::task_loop(client, salty_arc.clone(), event_channel.clone_tx())
         .unwrap_or_else(|e| {
             println!("Creating task loop failed: {}", e);
             process::exit(1);
