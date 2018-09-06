@@ -17,8 +17,42 @@ everything feasible.
 
 ## Testing
 
-**Note:** The tests currently expect a [SaltyRTC Server][server] instance to
-run on `localhost:6699`.
+### Setup
+
+The integration tests currently expect a [SaltyRTC Server][server] instance to
+run on `localhost:8765`.
+
+First, create a test certificate for localhost.
+
+    openssl req \
+       -newkey rsa:1024 \
+       -x509 \
+       -nodes \
+       -keyout saltyrtc.key \
+       -new \
+       -out saltyrtc.crt \
+       -subj /CN=localhost \
+       -reqexts SAN \
+       -extensions SAN \
+       -config <(cat /etc/ssl/openssl.cnf \
+         <(printf '[SAN]\nsubjectAltName=DNS:localhost')) \
+       -sha256 \
+       -days 1825
+
+Create a Python virtualenv with dependencies:
+
+    python3 -m virtualenv venv
+    venv/bin/pip install saltyrtc.server[logging]
+
+Finally, start the server with the following test permanent key:
+
+    export SALTYRTC_SERVER_PERMANENT_KEY=0919b266ce1855419e4066fc076b39855e728768e3afa773105edd2e37037c20 # Public: 09a59a5fa6b45cb07638a3a6e347ce563a948b756fd22f9527465f7c79c2a864
+    venv/bin/saltyrtc-server -v 5 serve -p 8765 \
+        -sc saltyrtc.crt -sk saltyrtc.key \
+        -k $SALTYRTC_SERVER_PERMANENT_KEY
+
+Before you run the client tests, symlink the `saltyrtc.crt` file into your
+`saltyrtc-client-rs` directory.
 
 ### Unit Tests
 
@@ -87,7 +121,7 @@ To see all options, use `cargo run --example chat -- initiator --help` and
 The chat example will log to a file called `chat.<role>.log`.
 
 **Note:** The tests currently expect a [SaltyRTC Server][server] instance to
-run on `localhost:6699`.
+run on `localhost:8765`.
 
 
 ## Msgpack Debugging
