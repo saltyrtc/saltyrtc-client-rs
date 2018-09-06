@@ -12,6 +12,12 @@ Possible log types:
 - `[security]` to invite users to upgrade in case of vulnerabilities.
 
 
+### v0.6.0 (2018-09-06)
+
+- [added] New close code: 3008 timeout
+- [fixed] Use thread-safe SaltyClient smart pointers in public APIs (#50)
+- [changed] Upgrade `rust_sodium` to 0.10.0
+
 ### v0.5.0 (2018-08-07)
 
 - [added] Create `SaltyClient::current_peer_sequence_numbers`

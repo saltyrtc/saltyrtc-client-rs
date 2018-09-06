@@ -1,6 +1,6 @@
 [package]
 name = "saltyrtc-client"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Danilo Bargen <danilo.bargen@threema.ch>"]
 documentation = "https://docs.rs/saltyrtc-client"
 repository = "https://github.com/saltyrtc/saltyrtc-client-rs"
