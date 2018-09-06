@@ -24,8 +24,8 @@ mopa = "0.2"
 native-tls = "0.1.4"
 rmp-serde = "0.13"
 rmpv = { version = "0.4", features = ["with-serde"] }
-rust_sodium-sys = { version = "0.9.0" }
-rust_sodium = { version = "0.9.0" }
+rust_sodium-sys = "0.10.0"
+rust_sodium = "0.10.0"
 serde = "1.0"
 serde_derive = "1.0"
 tokio-core = "0.1.9"
