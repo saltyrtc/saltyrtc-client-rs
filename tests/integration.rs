@@ -88,14 +88,11 @@ fn get_tls_connector() -> TlsConnector {
         });
 
     // Create TLS connector instance
-    let mut tls_builder = TlsConnector::builder()
-        .unwrap_or_else(|e| panic!("Could not initialize TlsConnector builder: {}", e));
-    tls_builder.supported_protocols(&[Protocol::Tlsv12, Protocol::Tlsv11, Protocol::Tlsv10])
-        .unwrap_or_else(|e| panic!("Could not set TLS protocols: {}", e));
-    tls_builder.add_root_certificate(server_cert)
-        .unwrap_or_else(|e| panic!("Could not add root certificate: {}", e));
-
-    tls_builder.build()
+    TlsConnector::builder()
+        .min_protocol_version(Some(Protocol::Tlsv10))
+        .max_protocol_version(None)
+        .add_root_certificate(server_cert)
+        .build()
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e))
 }
 
@@ -166,9 +163,11 @@ fn connection_error_tls_error() {
     match result {
         Ok(_) => panic!("Connection should have failed but did not!"),
         Err(e) => match e {
-            SaltyError::Network(msg) => assert!(msg.starts_with(
-                "Could not connect to server (127.0.0.1:8765): WebSocketError: TLS failure: The OpenSSL library reported an error"
-            )),
+            SaltyError::Network(msg) => {
+                println!("msg is: {}", msg);
+                assert!(msg.contains("certificate verify failed"));
+                assert!(msg.contains("IP address mismatch"));
+            },
             other => panic!("Connection should have failed with Network error, but failed with {:?}", other),
         },
     };
