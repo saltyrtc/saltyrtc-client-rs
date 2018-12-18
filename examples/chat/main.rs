@@ -9,7 +9,7 @@ extern crate futures;
 extern crate native_tls;
 extern crate saltyrtc_client;
 extern crate log4rs;
-extern crate tokio_core;
+extern crate tokio;
 
 mod chat_task;
 
@@ -42,7 +42,6 @@ use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str, priva
 use saltyrtc_client::dep::native_tls::{TlsConnector, Certificate, Protocol};
 use saltyrtc_client::errors::SaltyError;
 use saltyrtc_client::tasks::Task;
-use tokio_core::reactor::Core;
 
 use chat_task::{ChatTask, ChatMessage};
 
@@ -146,6 +145,7 @@ fn main() {
     let log_handle = log4rs::init_config(setup_logging(role, true)).unwrap();
 
     // Tokio reactor core
+    let mut rt = tokio::runtime::current_thread::Runtime::new().unwrap();
     let mut core = Core::new().unwrap();
 
     // Read server certificate bytes

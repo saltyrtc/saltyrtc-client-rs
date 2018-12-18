@@ -7,7 +7,7 @@ extern crate failure;
 extern crate log;
 extern crate log4rs;
 extern crate saltyrtc_client;
-extern crate tokio_core;
+extern crate tokio;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -35,7 +35,6 @@ use saltyrtc_client::dep::futures::sync::mpsc::{UnboundedSender, UnboundedReceiv
 use saltyrtc_client::dep::futures::sync::oneshot::Sender as OneshotSender;
 use saltyrtc_client::dep::rmpv::Value;
 use saltyrtc_client::tasks::{Task, TaskMessage};
-use tokio_core::reactor::Core;
 
 
 /// An appender that uses println! for logging so that the calls are captured by libtest.
@@ -88,14 +87,11 @@ fn get_tls_connector() -> TlsConnector {
         });
 
     // Create TLS connector instance
-    let mut tls_builder = TlsConnector::builder()
-        .unwrap_or_else(|e| panic!("Could not initialize TlsConnector builder: {}", e));
-    tls_builder.supported_protocols(&[Protocol::Tlsv12, Protocol::Tlsv11, Protocol::Tlsv10])
-        .unwrap_or_else(|e| panic!("Could not set TLS protocols: {}", e));
-    tls_builder.add_root_certificate(server_cert)
-        .unwrap_or_else(|e| panic!("Could not add root certificate: {}", e));
-
-    tls_builder.build()
+    TlsConnector::builder()
+        .min_protocol_version(Some(Protocol::Tlsv10))
+        .max_protocol_version(None)
+        .add_root_certificate(server_cert)
+        .build()
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e))
 }
 
@@ -112,17 +108,12 @@ fn connect_to(host: &str, port: u16, tls_connector: Option<TlsConnector>) -> Res
             .expect("Could not create SaltyClient instance")
     ));
 
-    // Reactor
-    let mut core = Core::new().unwrap();
-    let handle = core.handle();
-
     // Connect
     let timeout = Duration::from_millis(1000);
     let (connect_future, event_channel) = saltyrtc_client::connect(
             host,
             port,
             tls_connector,
-            &handle,
             salty.clone(),
         )
         .unwrap();
@@ -135,7 +126,8 @@ fn connect_to(host: &str, port: u16, tls_connector: Option<TlsConnector>) -> Res
         ));
 
     // Run future to completion
-    core.run(future)
+    let mut rt = tokio::runtime::current_thread::Runtime::new().unwrap();
+    rt.block_on(future)
 }
 
 /// Connections to a port without a listening service should fail with a NetworkError.
