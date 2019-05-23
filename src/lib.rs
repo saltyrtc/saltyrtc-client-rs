@@ -349,7 +349,7 @@ pub enum Event {
     /// Server handshake is done.
     ///
     /// The boolean indicates whether a peer is already
-    /// connected + authenticated.
+    /// connected + authenticated towards the server.
     ServerHandshakeDone(bool),
 
     /// Peer handshake is done.
