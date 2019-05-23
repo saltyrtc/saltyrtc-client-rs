@@ -173,7 +173,8 @@ pub(crate) trait Signaling {
         let role = self.role();
         let peer: &mut dyn PeerContext = self.get_peer_with_address_mut(nonce.source()).ok_or_else(|| {
             if role == Role::Initiator && nonce.source().is_responder() {
-                ValidationError::Fail(format!("Could not find responder with address {}", nonce.source()))
+                // Note: This can happen since a message from a responder may still be in flight.
+                ValidationError::DropMsg(format!("Could not find responder with address {}", nonce.source()))
             } else {
                 ValidationError::Crash("Got message from invalid sender that wasn't dropped".into())
             }
@@ -230,7 +231,8 @@ pub(crate) trait Signaling {
         let role = self.role();
         let peer: &mut dyn PeerContext = self.get_peer_with_address_mut(nonce.source()).ok_or_else(|| {
             if role == Role::Initiator && nonce.source().is_responder() {
-                ValidationError::Fail(format!("Could not find responder with address {}", nonce.source()))
+                // Note: This can happen since a message from a responder may still be in flight.
+                ValidationError::DropMsg(format!("Could not find responder with address {}", nonce.source()))
             } else {
                 ValidationError::Crash("Got message from invalid sender that wasn't dropped".into())
             }
@@ -975,6 +977,8 @@ impl Signaling for InitiatorSignaling {
             Identity::Responder(_) => {
                 if self.common().signaling_state() == SignalingState::Task {
                     // If we've already selected a peer, return it if it matches the address.
+                    // Note: This is a deviation from the SaltyRTC protocol which allows
+                    //       connections to multiple responders.
                     let peer = self.responder.as_mut().map(|p| p as &mut dyn PeerContext);
                     let valid = match peer {
                         Some(ref p) => {

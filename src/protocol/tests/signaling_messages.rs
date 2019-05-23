@@ -1431,3 +1431,32 @@ mod disconnected {
         assert_eq!(actions[0], HandleAction::Event(Event::Disconnected(7)));
     }
 }
+
+mod regressions {
+    use super::*;
+
+    /// When a responder has been dropped, a message may still be in flight
+    /// and could be received by the initiator. The initiator should ignore
+    /// the message and not fail with a protocol error.
+    /// See: https://github.com/saltyrtc/saltyrtc-client-rs/pull/59
+    #[test]
+    fn ignore_in_flight_responder_message() {
+        let peer_trusted_pk = PublicKey::random();
+        let mut ctx = TestContext::initiator(
+            ClientIdentity::Initiator, None,
+            SignalingState::PeerHandshake, ServerHandshakeState::Done
+        );
+
+        // Encrypt message
+        let responder_ks = KeyPair::new();
+        let msg = Message::Close(Close::from_close_code(CloseCode::NoSharedTask));
+        let bbox = TestMsgBuilder::new(msg).from(3).to(1)
+            .build(Cookie::random(),
+                   &responder_ks,
+                   ctx.our_ks.public_key());
+
+        // Handle message
+        let actions = ctx.signaling.handle_message(bbox).unwrap();
+        assert_eq!(actions.len(), 0);
+    }
+}
