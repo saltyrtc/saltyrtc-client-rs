@@ -508,6 +508,10 @@ fn decode_ws_message(msg: OwnedMessage) -> SaltyResult<WsMessageDecoded> {
             debug!("--> Incoming WS ping message");
             WsMessageDecoded::Ping(payload)
         },
+        OwnedMessage::Pong(_) => {
+            debug!("--> Incoming WS pong message (ignored)");
+            WsMessageDecoded::Ignore
+        },
         OwnedMessage::Close(close_data) => {
             debug!("--> Incoming WS close message");
             match close_data {
@@ -523,8 +527,8 @@ fn decode_ws_message(msg: OwnedMessage) -> SaltyResult<WsMessageDecoded> {
             };
             return Err(SaltyError::Network("Server message stream ended".into()));
         },
-        other => {
-            warn!("Skipping non-binary message: {:?}", other);
+        OwnedMessage::Text(payload) => {
+            warn!("Skipping text message: {:?}", payload);
             WsMessageDecoded::Ignore
         },
     };
