@@ -1,10 +1,10 @@
-use ::crypto_types::UnsignedKeys;
-use ::test_helpers::{DummyTask, TestRandom};
-use self::cookie::{Cookie, CookiePair};
-use self::csn::{CombinedSequence, CombinedSequenceSnapshot};
-use self::messages::*;
+use crate::crypto_types::UnsignedKeys;
+use crate::test_helpers::{DummyTask, TestRandom};
 
 use super::*;
+use super::cookie::{Cookie, CookiePair};
+use super::csn::{CombinedSequence, CombinedSequenceSnapshot};
+use super::messages::*;
 
 struct TestContext<S: Signaling> {
     /// Our permanent keypair.

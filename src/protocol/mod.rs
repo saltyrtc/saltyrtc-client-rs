@@ -13,9 +13,9 @@ use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use boxes::{ByteBox, OpenBox};
-use crypto::{KeyPair, AuthToken, PublicKey};
-use errors::{SignalingError, SignalingResult, SaltyError, ValidationError};
+use crate::boxes::{ByteBox, OpenBox};
+use crate::crypto::{KeyPair, AuthToken, PublicKey};
+use crate::errors::{SignalingError, SignalingResult, SaltyError, ValidationError};
 use rmpv::{Value};
 use rust_sodium::crypto::box_;
 
@@ -30,8 +30,8 @@ pub(crate) mod types;
 
 #[cfg(test)] mod tests;
 
-use ::{Event, CloseCode};
-use ::tasks::{Tasks, BoxedTask, TaskMessage};
+use crate::{Event, CloseCode};
+use crate::tasks::{Tasks, BoxedTask, TaskMessage};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
@@ -655,7 +655,7 @@ pub(crate) trait Signaling {
         };
         let client_auth = ClientAuth {
             your_cookie: self.server().cookie_pair().theirs.clone().unwrap(),
-            subprotocols: vec![::SUBPROTOCOL.into()],
+            subprotocols: vec![crate::SUBPROTOCOL.into()],
             ping_interval,
             your_key: self.server().permanent_key().cloned(),
         }.into_message();

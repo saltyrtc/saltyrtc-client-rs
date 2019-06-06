@@ -18,7 +18,7 @@ use futures::sync::oneshot::Sender as OneshotSender;
 use mopa::Any;
 use rmpv::Value;
 
-use ::CloseCode;
+use crate::CloseCode;
 
 
 /// A type alias for a boxed task.
@@ -174,7 +174,7 @@ pub enum TaskMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::test_helpers::DummyTask;
+    use crate::test_helpers::DummyTask;
 
     #[test]
     fn create_tasks() {

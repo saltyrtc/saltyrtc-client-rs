@@ -1,8 +1,9 @@
 //! Protocol tests.
 use rust_sodium::crypto::box_;
 
-use ::test_helpers::{DummyTask, TestRandom};
-use ::crypto::PrivateKey;
+use crate::crypto::PrivateKey;
+use crate::test_helpers::{DummyTask, TestRandom};
+
 use super::*;
 use super::csn::CombinedSequenceSnapshot;
 

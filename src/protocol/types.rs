@@ -5,10 +5,10 @@ use std::result::Result as StdResult;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use ::Event;
-use ::boxes::ByteBox;
-use ::errors::SaltyError;
-use ::tasks::TaskMessage;
+use crate::Event;
+use crate::boxes::ByteBox;
+use crate::errors::SaltyError;
+use crate::tasks::TaskMessage;
 
 
 /// The role of a peer.

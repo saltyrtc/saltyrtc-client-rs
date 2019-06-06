@@ -8,10 +8,10 @@ use rmp_serde as rmps;
 use rmpv::Value;
 use rust_sodium::crypto::box_::NONCEBYTES;
 
-use errors::{SignalingError, SignalingResult};
-use crypto::{KeyPair, PublicKey, AuthToken};
-use protocol::Nonce;
-use protocol::messages::Message;
+use crate::errors::{SignalingError, SignalingResult};
+use crate::crypto::{KeyPair, PublicKey, AuthToken};
+use crate::protocol::Nonce;
+use crate::protocol::messages::Message;
 
 /// An open box (unencrypted message + nonce).
 #[derive(Debug, PartialEq)]
@@ -203,9 +203,9 @@ fn log_decrypted_bytes(decrypted: &[u8]) {
 
 #[cfg(test)]
 mod tests {
-    use protocol::cookie::Cookie;
-    use protocol::csn::CombinedSequenceSnapshot;
-    use protocol::types::Address;
+    use crate::protocol::cookie::Cookie;
+    use crate::protocol::csn::CombinedSequenceSnapshot;
+    use crate::protocol::types::Address;
 
     use super::*;
 

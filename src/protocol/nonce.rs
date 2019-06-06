@@ -8,7 +8,7 @@ use std::io::Write;
 use byteorder::{BigEndian, ByteOrder};
 use rust_sodium::crypto::{box_, secretbox};
 
-use errors::{SignalingError, SignalingResult};
+use crate::errors::{SignalingError, SignalingResult};
 
 use super::cookie::Cookie;
 use super::csn::CombinedSequenceSnapshot;

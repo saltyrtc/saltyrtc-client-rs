@@ -34,7 +34,7 @@ pub enum CloseCode {
 impl CloseCode {
     /// Return the numeric close code.
     pub fn as_number(self) -> u16 {
-        use CloseCode::*;
+        use self::CloseCode::*;
         match self {
             WsClosingNormal => 1000,
             WsGoingAway => 1001,
@@ -54,7 +54,7 @@ impl CloseCode {
 
     /// Create a `CloseCode` instance from a numeric close code.
     pub fn from_number(code: u16) -> CloseCode {
-        use CloseCode::*;
+        use self::CloseCode::*;
         match code {
             1000 => WsClosingNormal,
             1001 => WsGoingAway,

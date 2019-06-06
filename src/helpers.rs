@@ -1,4 +1,4 @@
-use errors::{SaltyResult, SaltyError};
+use crate::errors::{SaltyResult, SaltyError};
 
 /// Initialize libsodium. Return an error if initialization failed.
 ///

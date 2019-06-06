@@ -6,7 +6,7 @@ use rust_sodium::randombytes::randombytes_into;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use helpers::libsodium_init_or_panic;
+use crate::helpers::libsodium_init_or_panic;
 
 
 const COOKIE_BYTES: usize = 16;

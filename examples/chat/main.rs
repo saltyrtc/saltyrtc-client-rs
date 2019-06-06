@@ -44,7 +44,7 @@ use saltyrtc_client::errors::SaltyError;
 use saltyrtc_client::tasks::Task;
 use tokio_core::reactor::Core;
 
-use chat_task::{ChatTask, ChatMessage};
+use crate::chat_task::{ChatTask, ChatMessage};
 
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
