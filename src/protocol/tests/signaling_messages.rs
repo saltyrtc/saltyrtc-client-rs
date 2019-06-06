@@ -1306,7 +1306,7 @@ mod new_responder {
         };
 
         // The first 252 responders should be registered just fine
-        for i in 0..252 { // Waiting for inclusive ranges (1.26)
+        for i in 0..252 {
             let actions = handle_message(csn.increment().unwrap(), i + 2);
             assert!(actions.is_empty());
         }

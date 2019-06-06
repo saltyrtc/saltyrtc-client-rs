@@ -5,7 +5,7 @@ authors = ["Danilo Bargen <danilo.bargen@threema.ch>"]
 documentation = "https://docs.rs/saltyrtc-client"
 repository = "https://github.com/saltyrtc/saltyrtc-client-rs"
 license = "MIT OR Apache-2.0"
-description = "Asynchronous SaltyRTC client implementation for Rust 1.26+."
+description = "Asynchronous SaltyRTC client implementation for Rust 1.31+."
 readme = "README.md"
 keywords = ["saltyrtc", "end-to-end", "e2e", "signaling"]
 categories = ["network-programming"]
@@ -16,25 +16,25 @@ maintenance = { status = "actively-developed" }
 
 [dependencies]
 byteorder = "1.1"
-data-encoding = "2.0.0-rc.2"
-failure = "0.1.1"
+data-encoding = "2.1"
+failure = "0.1"
 futures = "0.1.0"  # Make sure to use same version as websocket
-log = "0.4.0-rc.1"
+log = "0.4"
 mopa = "0.2"
-native-tls = "0.1.4"
+native-tls = "0.2"
 rmp-serde = "0.13"
 rmpv = { version = "0.4", features = ["with-serde"] }
-rust_sodium-sys = "0.10.0"
-rust_sodium = "0.10.0"
-serde = "1.0"
-serde_derive = "1.0"
-tokio-core = "0.1.9"
+rust_sodium-sys = "0.10.4"
+rust_sodium = "0.10.2"
+serde = "1"
+serde_derive = "1"
+tokio-core = "0.1"
 tokio-timer = "0.1"
-websocket = "0.20"
+websocket = "0.21"
 
 [dev-dependencies]
-clap = "2.27"
-cursive = "0.8"
+clap = "2"
+cursive = "0.11"
 log4rs = "0.8"
 
 [features]

@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use clap::{Arg, App, SubCommand};
 use cursive::{Cursive};
-use cursive::traits::{Identifiable};
+use cursive::traits::{Identifiable, Scrollable};
 use cursive::view::ScrollStrategy;
 use cursive::views::{TextView, EditView, BoxView, LinearLayout};
 use data_encoding::{HEXLOWER};
@@ -162,13 +162,11 @@ fn main() {
         });
 
     // Create TLS connector instance
-    let mut tls_builder = TlsConnector::builder()
-        .unwrap_or_else(|e| panic!("Could not initialize TlsConnector builder: {}", e));
-    tls_builder.supported_protocols(&[Protocol::Tlsv12, Protocol::Tlsv11, Protocol::Tlsv10])
-        .unwrap_or_else(|e| panic!("Could not set TLS protocols: {}", e));
-    tls_builder.add_root_certificate(server_cert)
-        .unwrap_or_else(|e| panic!("Could not add root certificate: {}", e));
-    let tls_connector = tls_builder.build()
+    let tls_connector = TlsConnector::builder()
+        .min_protocol_version(Some(Protocol::Tlsv10))
+        .max_protocol_version(None)
+        .add_root_certificate(server_cert)
+        .build()
         .unwrap_or_else(|e| panic!("Could not initialize TlsConnector: {}", e));
 
     // Create or restore public permanent keypair
@@ -305,12 +303,12 @@ fn main() {
     let remote = core.remote();
     let tui_thread = thread::spawn(move || {
         // Launch TUI
-        let mut tui = Cursive::new();
-        tui.set_fps(10);
+        let mut tui = Cursive::ncurses().expect("Could not initialize ncurses backend");
+        tui.set_autorefresh(true);
 
         // Create text view (for displaying messages)
         let text_view = TextView::new("=== Welcome to SaltyChat! ===\nType /quit to exit.\nType /help to list available commands.\n\n")
-            .scrollable(true)
+            .scrollable()
             .scroll_strategy(ScrollStrategy::StickToBottom)
             .with_id(VIEW_TEXT_ID);
 
