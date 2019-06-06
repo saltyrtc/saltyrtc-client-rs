@@ -41,33 +41,14 @@
 #![recursion_limit = "1024"]
 #![deny(missing_docs)]
 
-extern crate byteorder;
-extern crate data_encoding;
-#[macro_use]
-extern crate failure;
-#[macro_use]
-extern crate futures;
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate mopa;
-extern crate native_tls;
-extern crate rmp_serde;
-extern crate rmpv;
-extern crate rust_sodium;
-extern crate rust_sodium_sys;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate tokio_core;
-extern crate tokio_timer;
-extern crate websocket;
 
 /// Re-exports of dependencies that are in the public API.
 pub mod dep {
-    pub extern crate futures;
-    pub extern crate native_tls;
-    pub extern crate rmpv;
+    pub use futures;
+    pub use native_tls;
+    pub use rmpv;
 }
 
 // Modules
@@ -101,30 +82,30 @@ use tokio_core::net::TcpStream;
 use tokio_timer::Timer;
 use websocket::WebSocketError;
 use websocket::client::ClientBuilder;
-use websocket::client::async::{Client, TlsStream};
+use websocket::client::r#async::{Client, TlsStream};
 use websocket::client::builder::Url;
 use websocket::ws::dataframe::DataFrame;
 use websocket::header::WebSocketProtocol;
 use websocket::message::{OwnedMessage, CloseData};
 
 // Re-exports
-pub use close_code::CloseCode;
-pub use protocol::Role;
-pub use protocol::csn::PeerSequenceNumbers;
+pub use crate::close_code::CloseCode;
+pub use crate::protocol::Role;
+pub use crate::protocol::csn::PeerSequenceNumbers;
 
 /// Cryptography-related types like public/private keys.
 pub mod crypto {
-    pub use crypto_types::{KeyPair, PublicKey, PrivateKey, AuthToken};
-    pub use crypto_types::{public_key_from_hex_str, private_key_from_hex_str};
+    pub use crate::crypto_types::{KeyPair, PublicKey, PrivateKey, AuthToken};
+    pub use crate::crypto_types::{public_key_from_hex_str, private_key_from_hex_str};
 }
 
 // Internal imports
-use boxes::{ByteBox};
-use crypto_types::{KeyPair, PublicKey, AuthToken};
-use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
-use helpers::libsodium_init;
-use protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
-use tasks::{Tasks, TaskMessage, BoxedTask};
+use crate::boxes::{ByteBox};
+use crate::crypto_types::{KeyPair, PublicKey, AuthToken};
+use crate::errors::{SaltyResult, SaltyError, SignalingResult, SignalingError, BuilderError};
+use crate::helpers::libsodium_init;
+use crate::protocol::{HandleAction, Signaling, InitiatorSignaling, ResponderSignaling};
+use crate::tasks::{Tasks, TaskMessage, BoxedTask};
 
 
 // Constants
@@ -134,7 +115,7 @@ const DEFAULT_MSGPACK_DEBUG_URL: &'static str = "https://msgpack.dbrgn.ch/#base6
 
 
 /// A type alias for a boxed future.
-pub type BoxedFuture<T, E> = Box<Future<Item = T, Error = E>>;
+pub type BoxedFuture<T, E> = Box<dyn Future<Item = T, Error = E>>;
 
 /// A type alias for the async websocket client type.
 pub type WsClient = Client<TlsStream<TcpStream>>;
@@ -272,7 +253,7 @@ pub struct SaltyClient {
     /// [`InitiatorSignaling`](protocol/struct.InitiatorSignaling.html) or a
     /// [`ResponderSignaling`](protocol/struct.ResponderSignaling.html)
     /// instance.
-    signaling: Box<Signaling>,
+    signaling: Box<dyn Signaling>,
 }
 
 impl SaltyClient {

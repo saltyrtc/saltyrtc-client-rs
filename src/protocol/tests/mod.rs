@@ -1,8 +1,9 @@
 //! Protocol tests.
 use rust_sodium::crypto::box_;
 
-use ::test_helpers::{DummyTask, TestRandom};
-use ::crypto::PrivateKey;
+use crate::crypto::PrivateKey;
+use crate::test_helpers::{DummyTask, TestRandom};
+
 use super::*;
 use super::csn::CombinedSequenceSnapshot;
 
@@ -31,7 +32,7 @@ fn test_responder_counter_overflow() {
 
 struct MockSignaling {
     pub common: Common,
-    pub peer: Option<Box<PeerContext>>,
+    pub peer: Option<Box<dyn PeerContext>>,
     pub initiator_pubkey: PublicKey,
 }
 
@@ -73,11 +74,11 @@ impl Signaling for MockSignaling {
         &mut self.common
     }
 
-    fn get_peer(&self) -> Option<&PeerContext> {
+    fn get_peer(&self) -> Option<&dyn PeerContext> {
         self.peer.as_ref().map(AsRef::as_ref)
     }
 
-    fn get_peer_with_address_mut(&mut self, _addr: Address) -> Option<&mut PeerContext> {
+    fn get_peer_with_address_mut(&mut self, _addr: Address) -> Option<&mut dyn PeerContext> {
         None
     }
 

@@ -3,12 +3,6 @@
 //! These tests require a SaltyRTC server running on `localhost:8765`
 //! and a `saltyrtc.crt` CA certificate (PEM) in the repository root directory.
 
-extern crate failure;
-extern crate log;
-extern crate log4rs;
-extern crate saltyrtc_client;
-extern crate tokio_core;
-
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error as StdError;
@@ -41,7 +35,7 @@ use tokio_core::reactor::Core;
 /// An appender that uses println! for logging so that the calls are captured by libtest.
 #[derive(Debug)]
 struct CapturedConsoleAppender {
-    encoder: Box<Encode>,
+    encoder: Box<dyn Encode>,
 }
 
 impl CapturedConsoleAppender {
@@ -53,7 +47,7 @@ impl CapturedConsoleAppender {
 }
 
 impl Append for CapturedConsoleAppender {
-    fn append(&self, record: &Record) -> Result<(), Box<StdError + Sync + Send>> {
+    fn append(&self, record: &Record) -> Result<(), Box<dyn StdError + Sync + Send>> {
         let mut writer = SimpleWriter(Vec::<u8>::new());
         self.encoder.encode(&mut writer, record)?;
         let line = str::from_utf8(&writer.0).unwrap();

@@ -11,14 +11,15 @@ use std::convert::From;
 
 use rmp_serde as rmps;
 use rmpv::Value;
+use serde::{Deserialize, Serialize};
 
-use crypto_types::{PublicKey, SignedKeys};
-use errors::{SignalingError, SignalingResult};
+use crate::CloseCode;
+use crate::crypto_types::{PublicKey, SignedKeys};
+use crate::errors::{SignalingError, SignalingResult};
+use crate::tasks::Tasks;
 
-use ::CloseCode;
-use ::protocol::{Address, Cookie};
-use ::protocol::send_error::SendErrorId;
-use ::tasks::Tasks;
+use super::{Address, Cookie};
+use super::send_error::SendErrorId;
 
 
 /// The `Message` enum contains all possible message types that may be used
@@ -141,7 +142,7 @@ impl ClientHello {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        ::helpers::libsodium_init_or_panic();
+        crate::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 32];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
         Self { key: PublicKey::from_slice(&bytes).unwrap() }
@@ -163,7 +164,7 @@ impl ServerHello {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        ::helpers::libsodium_init_or_panic();
+        crate::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 32];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
         Self { key: PublicKey::from_slice(&bytes).unwrap() }
@@ -298,7 +299,7 @@ impl Token {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        ::helpers::libsodium_init_or_panic();
+        crate::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 32];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
         Self { key: PublicKey::from_slice(&bytes).unwrap() }
@@ -318,7 +319,7 @@ impl Key {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        ::helpers::libsodium_init_or_panic();
+        crate::helpers::libsodium_init_or_panic();
         let mut bytes = [0u8; 32];
         ::rust_sodium::randombytes::randombytes_into(&mut bytes);
         Self { key: PublicKey::from_slice(&bytes).unwrap() }

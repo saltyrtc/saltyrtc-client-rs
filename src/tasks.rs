@@ -15,14 +15,14 @@ use std::iter::IntoIterator;
 use failure::Error;
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use futures::sync::oneshot::Sender as OneshotSender;
-use mopa::Any;
+use mopa::{Any, mopafy};
 use rmpv::Value;
 
-use ::CloseCode;
+use crate::CloseCode;
 
 
 /// A type alias for a boxed task.
-pub type BoxedTask = Box<Task + Send>;
+pub type BoxedTask = Box<dyn Task + Send>;
 
 
 /// An interface that needs to be implemented by every signaling task.
@@ -174,7 +174,7 @@ pub enum TaskMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::test_helpers::DummyTask;
+    use crate::test_helpers::DummyTask;
 
     #[test]
     fn create_tasks() {

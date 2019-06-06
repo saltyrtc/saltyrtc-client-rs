@@ -13,9 +13,9 @@ use rust_sodium_sys::crypto_scalarmult_base;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use errors::{SaltyResult, SaltyError, SignalingResult, SignalingError};
-use helpers::{libsodium_init_or_panic};
-use protocol::Nonce;
+use crate::errors::{SaltyResult, SaltyError, SignalingResult, SignalingError};
+use crate::helpers::{libsodium_init_or_panic};
+use crate::protocol::Nonce;
 
 /// A public key used for decrypting data.
 ///
@@ -373,7 +373,7 @@ impl<'de> Deserialize<'de> for SignedKeys {
 }
 
 #[cfg(test)]
-use test_helpers::TestRandom;
+use crate::test_helpers::TestRandom;
 #[cfg(test)]
 impl TestRandom for PublicKey {
     fn random() -> PublicKey {

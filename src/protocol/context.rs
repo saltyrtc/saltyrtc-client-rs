@@ -2,7 +2,7 @@
 
 use std::sync::RwLock;
 
-use crypto::{PublicKey, KeyPair};
+use crate::crypto::{PublicKey, KeyPair};
 
 use super::cookie::{CookiePair};
 use super::csn::{CombinedSequencePair};

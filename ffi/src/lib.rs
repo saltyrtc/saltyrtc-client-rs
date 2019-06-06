@@ -16,8 +16,6 @@
 #![allow(non_camel_case_types)]
 
 #[macro_use] extern crate log;
-extern crate saltyrtc_client;
-extern crate tokio_core;
 
 use std::boxed::Box;
 use std::ptr;

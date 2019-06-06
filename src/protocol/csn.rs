@@ -8,8 +8,8 @@ use std::cmp;
 
 use rust_sodium::randombytes::randombytes;
 
-use errors::{SignalingError, SignalingResult};
-use helpers::libsodium_init_or_panic;
+use crate::errors::{SignalingError, SignalingResult};
+use crate::helpers::libsodium_init_or_panic;
 
 
 /// This type handles the overflow checking of the 48 bit combined sequence

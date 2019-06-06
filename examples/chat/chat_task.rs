@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::{Arc, Mutex};
 
-use failure::Error;
+use failure::{Error, bail};
 use futures::{Future, Stream, Sink, future};
 use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use futures::sync::oneshot::Sender as OneshotSender;

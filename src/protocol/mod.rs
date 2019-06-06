@@ -13,9 +13,9 @@ use std::mem;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use boxes::{ByteBox, OpenBox};
-use crypto::{KeyPair, AuthToken, PublicKey};
-use errors::{SignalingError, SignalingResult, SaltyError, ValidationError};
+use crate::boxes::{ByteBox, OpenBox};
+use crate::crypto::{KeyPair, AuthToken, PublicKey};
+use crate::errors::{SignalingError, SignalingResult, SaltyError, ValidationError};
 use rmpv::{Value};
 use rust_sodium::crypto::box_;
 
@@ -30,8 +30,8 @@ pub(crate) mod types;
 
 #[cfg(test)] mod tests;
 
-use ::{Event, CloseCode};
-use ::tasks::{Tasks, BoxedTask, TaskMessage};
+use crate::{Event, CloseCode};
+use crate::tasks::{Tasks, BoxedTask, TaskMessage};
 use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
 pub(crate) use self::cookie::{Cookie};
 use self::messages::{
@@ -120,10 +120,10 @@ pub(crate) trait Signaling {
     /// Return the peer context.
     ///
     /// May return `None` if the peer is not yet set.
-    fn get_peer(&self) -> Option<&PeerContext>;
+    fn get_peer(&self) -> Option<&dyn PeerContext>;
 
     /// Return the peer context with the specified address.
-    fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut PeerContext>;
+    fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut dyn PeerContext>;
 
     /// Return the initiator public permanent key.
     fn initiator_pubkey(&self) -> &PublicKey;
@@ -133,7 +133,7 @@ pub(crate) trait Signaling {
     fn current_peer_sequence_numbers(&self) -> Option<csn::PeerSequenceNumbers> {
         self.get_peer()
             // Get reference to peer CSN pair
-            .map(|peer: &PeerContext| peer.csn_pair())
+            .map(|peer: &dyn PeerContext| peer.csn_pair())
             // Acquire read lock
             .map(|csn_pair_lock| csn_pair_lock.read().expect("CSN pair rwlock is poisoned"))
             // If both our and their CNS are available, return a snapshot.
@@ -171,7 +171,7 @@ pub(crate) trait Signaling {
         // * MUST check that the combined sequence number of the source peer
         //   has been increased by 1 and has not reset to 0.
         let role = self.role();
-        let peer: &mut PeerContext = self.get_peer_with_address_mut(nonce.source()).ok_or_else(|| {
+        let peer: &mut dyn PeerContext = self.get_peer_with_address_mut(nonce.source()).ok_or_else(|| {
             if role == Role::Initiator && nonce.source().is_responder() {
                 ValidationError::Fail(format!("Could not find responder with address {}", nonce.source()))
             } else {
@@ -228,7 +228,7 @@ pub(crate) trait Signaling {
         //
         // * MUST ensure that the 16 byte cookie of the sender has not changed
         let role = self.role();
-        let peer: &mut PeerContext = self.get_peer_with_address_mut(nonce.source()).ok_or_else(|| {
+        let peer: &mut dyn PeerContext = self.get_peer_with_address_mut(nonce.source()).ok_or_else(|| {
             if role == Role::Initiator && nonce.source().is_responder() {
                 ValidationError::Fail(format!("Could not find responder with address {}", nonce.source()))
             } else {
@@ -514,7 +514,7 @@ pub(crate) trait Signaling {
     fn encode_close_message(
         &self,
         reason: CloseCode,
-        peer_ctx: Option<&PeerContext>,
+        peer_ctx: Option<&dyn PeerContext>,
     ) -> SignalingResult<ByteBox> {
         // Get peer
         let peer = match peer_ctx {
@@ -655,7 +655,7 @@ pub(crate) trait Signaling {
         };
         let client_auth = ClientAuth {
             your_cookie: self.server().cookie_pair().theirs.clone().unwrap(),
-            subprotocols: vec![::SUBPROTOCOL.into()],
+            subprotocols: vec![crate::SUBPROTOCOL.into()],
             ping_interval,
             your_key: self.server().permanent_key().cloned(),
         }.into_message();
@@ -958,15 +958,15 @@ impl Signaling for InitiatorSignaling {
         &mut self.common
     }
 
-    fn get_peer(&self) -> Option<&PeerContext> {
-        self.responder.as_ref().map(|p| p as &PeerContext)
+    fn get_peer(&self) -> Option<&dyn PeerContext> {
+        self.responder.as_ref().map(|p| p as &dyn PeerContext)
     }
 
-    fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut PeerContext> {
+    fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut dyn PeerContext> {
         let identity: Identity = addr.into();
         match identity {
             // Server can always send us messages
-            Identity::Server => Some(&mut self.common.server as &mut PeerContext),
+            Identity::Server => Some(&mut self.common.server as &mut dyn PeerContext),
 
             // We're the initiator, this doesn't make any sense
             Identity::Initiator => None,
@@ -975,7 +975,7 @@ impl Signaling for InitiatorSignaling {
             Identity::Responder(_) => {
                 if self.common().signaling_state() == SignalingState::Task {
                     // If we've already selected a peer, return it if it matches the address.
-                    let peer = self.responder.as_mut().map(|p| p as &mut PeerContext);
+                    let peer = self.responder.as_mut().map(|p| p as &mut dyn PeerContext);
                     let valid = match peer {
                         Some(ref p) => {
                             let peer_addr: Address = p.identity().into();
@@ -990,7 +990,7 @@ impl Signaling for InitiatorSignaling {
                     }
                 } else {
                     // Otherwise look in the list of known responders.
-                    self.responders.get_mut(&addr).map(|r| r as &mut PeerContext)
+                    self.responders.get_mut(&addr).map(|r| r as &mut dyn PeerContext)
                 }
             }
         }
@@ -1044,7 +1044,7 @@ impl Signaling for InitiatorSignaling {
             )),
 
             // From responder
-            Address(0x02...0xff) => {
+            Address(0x02..=0xff) => {
                 if self.identity() == ClientIdentity::Initiator {
                     Ok(())
                 } else {
@@ -1616,11 +1616,11 @@ impl Signaling for ResponderSignaling {
         &mut self.common
     }
 
-    fn get_peer(&self) -> Option<&PeerContext> {
-        Some(&self.initiator as &PeerContext)
+    fn get_peer(&self) -> Option<&dyn PeerContext> {
+        Some(&self.initiator as &dyn PeerContext)
     }
 
-    fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut PeerContext> {
+    fn get_peer_with_address_mut(&mut self, addr: Address) -> Option<&mut dyn PeerContext> {
         let identity: Identity = addr.into();
         match identity {
             Identity::Server => Some(&mut self.common.server),
@@ -1684,7 +1684,7 @@ impl Signaling for ResponderSignaling {
             },
 
             // From responder
-            Address(0x02...0xff) => Err(ValidationError::DropMsg(
+            Address(0x02..=0xff) => Err(ValidationError::DropMsg(
                 format!("Bad source: {} (our identity is {})", nonce.source(), self.identity())
             )),
 

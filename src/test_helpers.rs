@@ -10,8 +10,8 @@ use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
 use futures::sync::oneshot::Sender as OneshotSender;
 use rmpv::Value;
 
-use ::CloseCode;
-use tasks::{Task, TaskMessage};
+use crate::CloseCode;
+use crate::tasks::{Task, TaskMessage};
 
 
 #[derive(Debug, PartialEq, Eq, Clone)]

@@ -6,7 +6,8 @@ use byteorder::{BigEndian, ByteOrder};
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Unexpected, Error as SerdeError};
 
-use errors::{SignalingError, SignalingResult};
+use crate::errors::{SignalingError, SignalingResult};
+
 use super::Address;
 use super::csn::CombinedSequenceSnapshot;
 

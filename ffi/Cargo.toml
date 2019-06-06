@@ -2,6 +2,7 @@
 name = "saltyrtc-client-ffi"
 version = "0.1.0"
 authors = ["Danilo Bargen <danilo.bargen@threema.ch>"]
+edition = "2018"
 
 [lib]
 name = "saltyrtc_client_ffi"
