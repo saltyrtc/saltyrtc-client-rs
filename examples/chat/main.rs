@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use clap::{Arg, App, SubCommand};
 use cursive::{Cursive};
-use cursive::traits::{Identifiable};
+use cursive::traits::{Identifiable, Scrollable};
 use cursive::view::ScrollStrategy;
 use cursive::views::{TextView, EditView, BoxView, LinearLayout};
 use data_encoding::{HEXLOWER};
@@ -303,12 +303,12 @@ fn main() {
     let remote = core.remote();
     let tui_thread = thread::spawn(move || {
         // Launch TUI
-        let mut tui = Cursive::new();
-        tui.set_fps(10);
+        let mut tui = Cursive::ncurses().expect("Could not initialize ncurses backend");
+        tui.set_autorefresh(true);
 
         // Create text view (for displaying messages)
         let text_view = TextView::new("=== Welcome to SaltyChat! ===\nType /quit to exit.\nType /help to list available commands.\n\n")
-            .scrollable(true)
+            .scrollable()
             .scroll_strategy(ScrollStrategy::StickToBottom)
             .with_id(VIEW_TEXT_ID);
 

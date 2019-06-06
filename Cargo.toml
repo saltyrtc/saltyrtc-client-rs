@@ -24,8 +24,8 @@ mopa = "0.2"
 native-tls = "0.2"
 rmp-serde = "0.13"
 rmpv = { version = "0.4", features = ["with-serde"] }
-rust_sodium-sys = "0.10.0"
-rust_sodium = "0.10.0"
+rust_sodium-sys = "0.10.1"
+rust_sodium = "0.10.1"
 serde = "1.0"
 serde_derive = "1.0"
 tokio-core = "0.1.9"
@@ -34,7 +34,7 @@ websocket = "0.21"
 
 [dev-dependencies]
 clap = "2.27"
-cursive = "0.8"
+cursive = "0.11"
 log4rs = "0.8"
 
 [features]
