@@ -1001,8 +1001,8 @@ impl Signaling for InitiatorSignaling {
     }
 
     fn validate_nonce_destination(&mut self, nonce: &Nonce) -> Result<(), ValidationError> {
-		// A client MUST check that the destination address targets its
-		// assigned identity (or `0x00` during authentication).
+        // A client MUST check that the destination address targets its
+        // assigned identity (or `0x00` during authentication).
         if self.identity() == ClientIdentity::Unknown
         && !nonce.destination().is_unknown()
         && self.server_handshake_state() != ServerHandshakeState::New {
@@ -1634,8 +1634,8 @@ impl Signaling for ResponderSignaling {
     }
 
     fn validate_nonce_destination(&mut self, nonce: &Nonce) -> Result<(), ValidationError> {
-		// A client MUST check that the destination address targets its
-		// assigned identity (or `0x00` during authentication).
+        // A client MUST check that the destination address targets its
+        // assigned identity (or `0x00` during authentication).
         if self.identity() == ClientIdentity::Unknown
         && !nonce.destination().is_unknown()
         && self.server_handshake_state() != ServerHandshakeState::New {
