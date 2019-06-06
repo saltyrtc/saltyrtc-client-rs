@@ -2,7 +2,7 @@
 //!
 //! See https://github.com/alexcrichton/futures-rs/issues/462 for discussion.
 
-use futures::{Poll, Async, Future, AsyncSink};
+use futures::{Poll, Async, Future, AsyncSink, try_ready};
 use futures::stream::{Stream, Fuse};
 use futures::sink::Sink;
 

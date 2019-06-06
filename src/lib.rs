@@ -41,33 +41,14 @@
 #![recursion_limit = "1024"]
 #![deny(missing_docs)]
 
-extern crate byteorder;
-extern crate data_encoding;
-#[macro_use]
-extern crate failure;
-#[macro_use]
-extern crate futures;
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate mopa;
-extern crate native_tls;
-extern crate rmp_serde;
-extern crate rmpv;
-extern crate rust_sodium;
-extern crate rust_sodium_sys;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate tokio_core;
-extern crate tokio_timer;
-extern crate websocket;
 
 /// Re-exports of dependencies that are in the public API.
 pub mod dep {
-    pub extern crate futures;
-    pub extern crate native_tls;
-    pub extern crate rmpv;
+    pub use futures;
+    pub use native_tls;
+    pub use rmpv;
 }
 
 // Modules
@@ -134,7 +115,7 @@ const DEFAULT_MSGPACK_DEBUG_URL: &'static str = "https://msgpack.dbrgn.ch/#base6
 
 
 /// A type alias for a boxed future.
-pub type BoxedFuture<T, E> = Box<Future<Item = T, Error = E>>;
+pub type BoxedFuture<T, E> = Box<dyn Future<Item = T, Error = E>>;
 
 /// A type alias for the async websocket client type.
 pub type WsClient = Client<TlsStream<TcpStream>>;
@@ -272,7 +253,7 @@ pub struct SaltyClient {
     /// [`InitiatorSignaling`](protocol/struct.InitiatorSignaling.html) or a
     /// [`ResponderSignaling`](protocol/struct.ResponderSignaling.html)
     /// instance.
-    signaling: Box<Signaling>,
+    signaling: Box<dyn Signaling>,
 }
 
 impl SaltyClient {

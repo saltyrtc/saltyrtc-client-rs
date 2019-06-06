@@ -6,6 +6,7 @@
 use std::convert::From;
 use std::sync::TryLockError;
 
+use failure::Fail;
 use rmp_serde::decode::Error as SerdeDecodeError;
 use tokio_timer::TimeoutError;
 

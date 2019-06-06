@@ -1,15 +1,6 @@
 //! Connect to a server as initiator and print the connection info.
 
-extern crate clap;
-extern crate cursive;
-extern crate data_encoding;
-#[macro_use] extern crate failure;
-extern crate futures;
 #[macro_use] extern crate log;
-extern crate native_tls;
-extern crate saltyrtc_client;
-extern crate log4rs;
-extern crate tokio_core;
 
 mod chat_task;
 
@@ -365,7 +356,7 @@ fn main() {
     // Get reference to task and downcast to ChatTask.
     // We can be sure that it's a ChatTask since that's the only one we proposed.
     let mut t = task.lock().expect("Could not lock task mutex");
-    let chat_task: &mut ChatTask = (&mut **t as &mut Task)
+    let chat_task: &mut ChatTask = (&mut **t as &mut dyn Task)
         .downcast_mut::<ChatTask>()
         .expect("Chosen task is not a ChatTask");
 
@@ -506,10 +497,10 @@ fn main() {
 
     // Main future
     let main_loop = future::join_all(vec![
-       Box::new(task_loop) as Box<Future<Item=_, Error=_>>,
-       Box::new(send_loop) as Box<Future<Item=_, Error=_>>,
-       Box::new(receive_loop) as Box<Future<Item=_, Error=_>>,
-       Box::new(event_loop) as Box<Future<Item=_, Error=_>>,
+       Box::new(task_loop) as Box<dyn Future<Item=_, Error=_>>,
+       Box::new(send_loop) as Box<dyn Future<Item=_, Error=_>>,
+       Box::new(receive_loop) as Box<dyn Future<Item=_, Error=_>>,
+       Box::new(event_loop) as Box<dyn Future<Item=_, Error=_>>,
     ])
     .map(|_| ())
     .map_err(|_| ());

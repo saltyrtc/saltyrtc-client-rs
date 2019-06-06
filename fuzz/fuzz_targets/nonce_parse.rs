@@ -1,6 +1,7 @@
 #![no_main]
-#[macro_use] extern crate libfuzzer_sys;
-extern crate saltyrtc_client;
+
+use libfuzzer_sys::fuzz_target;
+use saltyrtc_client;
 
 fuzz_target!(|data: &[u8]| {
     // Parse nonce from bytes. Should never panic.

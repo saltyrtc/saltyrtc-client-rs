@@ -1,9 +1,8 @@
-#[macro_use]
-extern crate lazy_static;
-
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Mutex, MutexGuard};
+
+use lazy_static::lazy_static;
 
 lazy_static! {
     static ref C_TEST_MUTEX: Mutex<()> = Mutex::new(());

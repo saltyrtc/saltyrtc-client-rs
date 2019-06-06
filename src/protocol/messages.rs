@@ -11,6 +11,7 @@ use std::convert::From;
 
 use rmp_serde as rmps;
 use rmpv::Value;
+use serde::{Deserialize, Serialize};
 
 use crate::CloseCode;
 use crate::crypto_types::{PublicKey, SignedKeys};
