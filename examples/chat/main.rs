@@ -243,8 +243,8 @@ fn main() {
 
     // Connect to server
     let (connect_future, event_channel) = saltyrtc_client::connect(
-            "localhost",
-            8765,
+            "server.saltyrtc.org",
+            443,
             Some(tls_connector),
             &core.handle(),
             salty_arc.clone(),
@@ -537,7 +537,7 @@ fn setup_logging(role: Role, log_to_stdout: bool) -> Config {
         .unwrap();
 
     // Instantiate filters
-    let info_filter = ThresholdFilter::new(LevelFilter::Info);
+    let info_filter = ThresholdFilter::new(LevelFilter::Debug);
 
     // Config builder
     let builder = Config::builder()

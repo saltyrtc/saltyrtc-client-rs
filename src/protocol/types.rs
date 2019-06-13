@@ -5,7 +5,7 @@ use std::result::Result as StdResult;
 use serde::ser::{Serialize, Serializer};
 use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use crate::Event;
+use crate::{Event, CloseCode};
 use crate::boxes::ByteBox;
 use crate::errors::SaltyError;
 use crate::tasks::TaskMessage;
@@ -237,6 +237,8 @@ pub(crate) enum HandleAction {
     Event(Event),
     /// A task message was received and decoded.
     TaskMessage(TaskMessage),
+    /// Close the websocket with a specific close code.
+    Close(CloseCode),
 }
 
 

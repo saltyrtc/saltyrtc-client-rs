@@ -643,6 +643,9 @@ pub fn do_handshake(
                                 late_error = Some(e);
                             }
                         },
+                        HandleAction::Close(code) => {
+                            messages.push(OwnedMessage::Close(Some(CloseData::new(code.as_number(), "".to_string()))))
+                        },
                     }
                 }
 
@@ -769,6 +772,10 @@ pub fn task_loop(
                                 HandleAction::Reply(bbox) => out_messages.push(OwnedMessage::Binary(bbox.into_bytes())),
                                 HandleAction::TaskMessage(msg) => {
                                     if let TaskMessage::Close(_) = msg {
+                                        out_messages.push(OwnedMessage::Close(Some(CloseData {
+                                            status_code: 1000,
+                                            reason: "".to_string(),
+                                        })));
                                         close_stream = true;
                                     }
 
@@ -790,6 +797,13 @@ pub fn task_loop(
                                 HandleAction::HandshakeError(_) => return boxed!(future::err(Err(
                                     SaltyError::Crash("Got HandleAction::HandshakeError in task loop".into())
                                 ))),
+                                HandleAction::Close(code) => {
+                                    out_messages.push(OwnedMessage::Close(Some(CloseData {
+                                        status_code: code.as_number(),
+                                        reason: "".to_string(),
+                                    })));
+                                    close_stream = true;
+                                },
                             }
                         }
 
@@ -824,6 +838,8 @@ pub fn task_loop(
                             out_future
                                 .join(in_future)
                                 .and_then(move |_| if close_stream {
+                                    // TODO(dbrgn): Tear down all futures to stop the loop
+
                                     // Stop processing stream
                                     Err(Ok(()))
                                 } else {

@@ -1808,7 +1808,16 @@ impl Signaling for ResponderSignaling {
     fn handle_new_initiator(&mut self, _msg: NewInitiator) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received new-initiator from server");
 
-        let mut actions: Vec<HandleAction> = vec![];
+        // Close when a new initiator has connected.
+        //
+        // Note: This deviates from the intention of the specification to allow
+        //       for more than one connection towards an initiator over the same
+        //       WebSocket connection.
+        let signaling_state = self.common().signaling_state();
+        if signaling_state == SignalingState::Task {
+            debug!("Received new-initiator message in state {:?}, closing", signaling_state);
+            return Ok(vec![HandleAction::Close(CloseCode::WsClosingNormal)])
+        }
 
         // A responder who receives a 'new-initiator' message MUST proceed by
         // deleting all currently cached information about and for the previous
@@ -1829,6 +1838,7 @@ impl Signaling for ResponderSignaling {
                 return Err(SignalingError::Crash("No auth provider set".into()));
             },
         }
+        let mut actions: Vec<HandleAction> = vec![];
         if send_token {
             let old_auth_provider = mem::replace(&mut self.common_mut().auth_provider, None);
             if let Some(AuthProvider::Token(token)) = old_auth_provider {

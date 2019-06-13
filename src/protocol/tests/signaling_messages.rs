@@ -531,6 +531,7 @@ mod client_auth {
             HandleAction::HandshakeError(_) => panic!("Unexpected HandshakeError"),
             HandleAction::TaskMessage(_) => panic!("Unexpected TaskMessage"),
             HandleAction::Event(_) => panic!("Unexpected Event"),
+            HandleAction::Close(_) => panic!("Unexpected Close"),
         };
 
         let decrypted = OpenBox::<Message>::decrypt(
