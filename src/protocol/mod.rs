@@ -1521,6 +1521,20 @@ impl InitiatorSignaling {
     }
 
     fn process_new_responder(&mut self, address: Address) -> SignalingResult<Option<HandleAction>> {
+        // Drop a new responder after a handshake with one responder has already
+        // completed.
+        //
+        // Note: This deviates from the intention of the specification to allow
+        //       for more than one connection towards a responder over the same
+        //       WebSocket connection.
+        let signaling_state = self.common().signaling_state();
+        if signaling_state == SignalingState::Task {
+            debug!("Dropping responder {:?} in state {:?}", address, signaling_state);
+            return self
+                .send_drop_responder(address, DropReason::DroppedByInitiator)
+                .map(Option::Some);
+        }
+
         // If a responder with the same id already exists,
         // all currently cached information about and for the previous responder
         // (such as cookies and the sequence number) MUST be deleted first.
