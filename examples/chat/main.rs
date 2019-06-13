@@ -14,7 +14,7 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{Arg, App, SubCommand};
-use cursive::{Cursive};
+use cursive::{Cursive, CbSink};
 use cursive::traits::{Identifiable, Scrollable};
 use cursive::view::ScrollStrategy;
 use cursive::views::{TextView, EditView, BoxView, LinearLayout};
@@ -299,9 +299,9 @@ fn main() {
 
         // Create text view (for displaying messages)
         let text_view = TextView::new("=== Welcome to SaltyChat! ===\nType /quit to exit.\nType /help to list available commands.\n\n")
+            .with_id(VIEW_TEXT_ID)
             .scrollable()
-            .scroll_strategy(ScrollStrategy::StickToBottom)
-            .with_id(VIEW_TEXT_ID);
+            .scroll_strategy(ScrollStrategy::StickToBottom);
 
         // Create input view (for composing messages)
         let input_view = EditView::new()
@@ -317,7 +317,7 @@ fn main() {
                 // Clear input field
                 tui.call_on_id(VIEW_INPUT_ID, |view: &mut EditView| {
                     view.set_content("");
-                });
+                }).unwrap_or_else(|| error!("View with id {} not found", VIEW_INPUT_ID));
             })
             .with_id(VIEW_INPUT_ID);
 
@@ -335,7 +335,7 @@ fn main() {
         // Launch TUI event loop
         tui.run();
     });
-    let tui_sender = cb_sink_rx.recv().expect("Could not get sender from TUI thread");
+    let tui_sender: CbSink = cb_sink_rx.recv().expect("Could not get sender from TUI thread");
 
     // Macro to write a text line to the TUI text view
     macro_rules! log_line {
@@ -345,7 +345,7 @@ fn main() {
                 tui.call_on_id(VIEW_TEXT_ID, |view: &mut TextView| {
                     view.append(text);
                     view.append("\n");
-                });
+                }).unwrap_or_else(|| error!("View with id {} not found", VIEW_TEXT_ID));
             })).unwrap();
         }};
         ($line:expr, $($arg:tt)*) => {{
