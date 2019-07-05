@@ -87,8 +87,9 @@ Then run `clippy` through nightly cargo:
 
 ## Example Client
 
-There is an example chat client at `examples/chat/main.rs`. You can invoke it both as
-initiator or responder.
+There is an example chat client at `examples/chat/main.rs`. You can invoke it
+both as initiator or responder. Note that you need to have libncurses installed
+on your system for the chat example to work.
 
 If you start the chat as initiator, the signaling path and auth token will be
 randomly generated and printed:
