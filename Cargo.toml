@@ -31,6 +31,8 @@ serde = { version = "1", features = ["derive"] }
 tokio-core = "0.1"
 tokio-timer = "0.1"
 websocket = "0.21"
+array-macro = "=1.0.3"  # See https://gitlab.com/KonradBorowski/array-macro/issues/2,
+                        # remove as soon as we require Rust 1.36+
 
 [dev-dependencies]
 clap = "2"
