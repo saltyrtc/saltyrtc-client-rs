@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: saltyrtc/circleci-image-rs:master
+      - image: saltyrtc/circleci-image-rs:1.36
     steps:
       - checkout
 
@@ -43,7 +43,7 @@ jobs:
           command: cargo build
       - run:
           name: Audit (Rust)
-          command: cargo audit
+          command: cargo generate-lockfile && cargo audit --ignore RUSTSEC-2019-0006
 
       # Build and test FFI crate
       - run:
@@ -54,7 +54,7 @@ jobs:
           command: cd ffi && cargo test
       - run:
           name: Audit (Rust FFI)
-          command: cd ffi && cargo audit
+          command: cd ffi && cargo generate-lockfile && cargo audit
 
       # Show server log
       - run:
