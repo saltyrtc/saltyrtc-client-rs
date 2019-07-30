@@ -155,7 +155,10 @@ impl From<ClientIdentity> for Address {
         Address(match val {
             ClientIdentity::Unknown => 0x00,
             ClientIdentity::Initiator => 0x01,
-            ClientIdentity::Responder(address) => { assert!(address > 0x01); address },
+            ClientIdentity::Responder(address) => {
+                assert!(address > 0x01, "address <= 0x01");
+                address
+            },
         })
     }
 }
@@ -169,7 +172,10 @@ impl From<Identity> for Address {
         Address(match val {
             Identity::Server => 0x00,
             Identity::Initiator => 0x01,
-            Identity::Responder(address) => { assert!(address > 0x01); address },
+            Identity::Responder(address) => {
+                assert!(address > 0x01, "address <= 0x01");
+                address
+            },
         })
     }
 }
@@ -251,7 +257,7 @@ mod tests {
 
     /// Converting an invalid `Responder` into an `Address` should panic.
     #[test]
-    #[should_panic(expected = "assertion failed: address > 1")]
+    #[should_panic(expected = "address <= 0x01")]
     fn client_identity_invalid_responder_into_address() {
         let responder_invalid = ClientIdentity::Responder(0x01);
         let _: Address = responder_invalid.into();
