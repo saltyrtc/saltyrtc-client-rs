@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     docker:
-      - image: saltyrtc/circleci-image-rs:master
+      - image: saltyrtc/circleci-image-rs:1.36
     steps:
       - checkout
 
