@@ -1441,7 +1441,6 @@ mod regressions {
     /// See: https://github.com/saltyrtc/saltyrtc-client-rs/pull/59
     #[test]
     fn ignore_in_flight_responder_message() {
-        let peer_trusted_pk = PublicKey::random();
         let mut ctx = TestContext::initiator(
             ClientIdentity::Initiator, None,
             SignalingState::PeerHandshake, ServerHandshakeState::Done
