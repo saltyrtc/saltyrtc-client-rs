@@ -192,7 +192,7 @@ fn log_decrypted_bytes(decrypted: &[u8]) {
         .replace("/", "%2F");
     match option_env!("MSGPACK_DEBUG_URL") {
         Some(url) => trace!("Decrypted bytes: {}{}", url, encoded()),
-        None => trace!("Decrypted bytes: {}{}", ::DEFAULT_MSGPACK_DEBUG_URL, encoded()),
+        None => trace!("Decrypted bytes: {}{}", crate::DEFAULT_MSGPACK_DEBUG_URL, encoded()),
     }
 }
 
