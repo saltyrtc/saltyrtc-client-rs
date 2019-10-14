@@ -1057,9 +1057,6 @@ impl Signaling for InitiatorSignaling {
                     ))
                 }
             },
-
-            // Required due to https://github.com/rust-lang/rfcs/issues/1550
-            Address(_) => unreachable!(),
         }
     }
 
@@ -1691,9 +1688,6 @@ impl Signaling for ResponderSignaling {
             Address(0x02..=0xff) => Err(ValidationError::DropMsg(
                 format!("Bad source: {} (our identity is {})", nonce.source(), self.identity())
             )),
-
-            // Required due to https://github.com/rust-lang/rfcs/issues/1550
-            Address(_) => unreachable!(),
         }
     }
 
