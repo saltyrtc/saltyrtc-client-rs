@@ -40,7 +40,7 @@ jobs:
           command: cargo test
       - run:
           name: Build with flags (Rust)
-          command: cargo build
+          command: cargo build --features msgpack-debugging
       - run:
           name: Audit (Rust)
           command: cargo generate-lockfile && cargo audit --ignore RUSTSEC-2019-0006
