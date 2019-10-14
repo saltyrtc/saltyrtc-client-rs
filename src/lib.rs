@@ -458,6 +458,7 @@ pub fn connect(
             }
         })
         .map(move |client| {
+            debug!("Connected to {}", ws_url);
             let role = salty
                 .read()
                 .map(|s| s.role().to_string())
