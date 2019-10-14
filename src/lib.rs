@@ -367,6 +367,8 @@ enum WsMessageDecoded {
     ByteBox(ByteBox),
     /// We got a ping message.
     Ping(Vec<u8>),
+    /// We got a close message.
+    Close(Option<CloseCode>),
     /// We got a message type that we want to ignore.
     Ignore,
 }
@@ -503,10 +505,13 @@ fn decode_ws_message(msg: OwnedMessage) -> SaltyResult<WsMessageDecoded> {
                     } else {
                         info!("Server closed connection with close code {} ({})", close_code, data.reason);
                     }
-                },
-                None => info!("Server closed connection without close code"),
-            };
-            return Err(SaltyError::Network("Server message stream ended".into()));
+                    WsMessageDecoded::Close(Some(close_code))
+                }
+                None => {
+                    info!("Server closed connection without close code");
+                    WsMessageDecoded::Close(None)
+                }
+            }
         },
         OwnedMessage::Text(payload) => {
             warn!("Skipping text message: {:?}", payload);
@@ -543,6 +548,11 @@ fn preprocess_ws_message((decoded, client): (WsMessageDecoded, WsClient)) -> Sal
                     debug!("Sent pong message");
                     Loop::Continue(client)
                 });
+            let action = PipelineAction::Future(boxed!(future));
+            return Ok(action);
+        },
+        WsMessageDecoded::Close(_code) => {
+            let future = future::ok(Loop::Break(client));
             let action = PipelineAction::Future(boxed!(future));
             return Ok(action);
         },
@@ -840,7 +850,7 @@ pub fn task_loop(
                             .map_err(|e| Err(SaltyError::Network(format!("Could not enqueue pong message: {}", e))));
                         boxed!(future)
                     },
-                    WsMessageDecoded::Ignore => boxed!(future::ok(())),
+                    WsMessageDecoded::Close(_) | WsMessageDecoded::Ignore => boxed!(future::ok(())),
                 }
             }
         })
