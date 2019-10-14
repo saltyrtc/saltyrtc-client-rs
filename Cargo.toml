@@ -30,7 +30,7 @@ rust_sodium = "0.10.2"
 serde = { version = "1", features = ["derive"] }
 tokio-core = "0.1"
 tokio-timer = "0.1"
-websocket = "0.21"
+websocket = { version = "0.21", default-features = false, features = ["async", "async-ssl"] }
 
 [dev-dependencies]
 clap = "2"
