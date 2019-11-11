@@ -13,7 +13,7 @@ edition = "2018"
 
 [badges]
 circle-ci = { repository = "saltyrtc/saltyrtc-client-rs", branch = "master" }
-maintenance = { status = "actively-developed" }
+maintenance = { status = "passively-maintained" }
 
 [dependencies]
 byteorder = "1.1"
