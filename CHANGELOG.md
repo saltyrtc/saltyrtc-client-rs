@@ -12,7 +12,7 @@ Possible log types:
 - `[security]` to invite users to upgrade in case of vulnerabilities.
 
 
-### v0.7.0 (Unreleased)
+### v0.7.0 (2021-02-15)
 
 - [fix] Handle connection closing by server (#70)
 - [fix] Ignore unknown responders (#59)
