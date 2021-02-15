@@ -34,7 +34,7 @@ websocket = { version = "0.21", default-features = false, features = ["async", "
 
 [dev-dependencies]
 clap = "2"
-cursive = { git = "https://github.com/gyscos/cursive", branch = "master" }
+cursive = "0.15"
 log4rs = "0.8"
 
 [features]

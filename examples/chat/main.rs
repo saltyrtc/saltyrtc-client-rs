@@ -14,10 +14,10 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{Arg, App, SubCommand};
-use cursive::{Cursive, CbSink};
+use cursive::{Cursive, CursiveExt, CbSink};
 use cursive::traits::{Identifiable, Scrollable};
 use cursive::view::ScrollStrategy;
-use cursive::views::{TextView, EditView, BoxView, LinearLayout};
+use cursive::views::{TextView, EditView, ResizedView, LinearLayout};
 use data_encoding::{HEXLOWER};
 use futures::{Sink, Stream, future};
 use futures::future::Future;
@@ -299,7 +299,7 @@ fn main() {
 
         // Create text view (for displaying messages)
         let text_view = TextView::new("=== Welcome to SaltyChat! ===\nType /quit to exit.\nType /help to list available commands.\n\n")
-            .with_id(VIEW_TEXT_ID)
+            .with_name(VIEW_TEXT_ID)
             .scrollable()
             .scroll_strategy(ScrollStrategy::StickToBottom);
 
@@ -315,16 +315,16 @@ fn main() {
                 remote.spawn(move |_| send_future);
 
                 // Clear input field
-                tui.call_on_id(VIEW_INPUT_ID, |view: &mut EditView| {
+                tui.call_on_name(VIEW_INPUT_ID, |view: &mut EditView| {
                     view.set_content("");
                 }).unwrap_or_else(|| error!("View with id {} not found", VIEW_INPUT_ID));
             })
-            .with_id(VIEW_INPUT_ID);
+            .with_name(VIEW_INPUT_ID);
 
         // Create layout
-        let layout = BoxView::with_full_screen(
+        let layout = ResizedView::with_full_screen(
             LinearLayout::vertical()
-                .child(BoxView::with_full_height(text_view))
+                .child(ResizedView::with_full_height(text_view))
                 .child(input_view)
         );
         tui.add_fullscreen_layer(layout);
@@ -342,7 +342,7 @@ fn main() {
         ($line:expr) => {{
             let text = $line.to_string();
             tui_sender.send(Box::new(move |tui: &mut Cursive| {
-                tui.call_on_id(VIEW_TEXT_ID, |view: &mut TextView| {
+                tui.call_on_name(VIEW_TEXT_ID, |view: &mut TextView| {
                     view.append(text);
                     view.append("\n");
                 }).unwrap_or_else(|| error!("View with id {} not found", VIEW_TEXT_ID));
