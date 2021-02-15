@@ -1,10 +1,9 @@
 # saltyrtc-client-rs
 
 [![CircleCI][circle-ci-badge]][circle-ci]
-[![Rust][rust-badge]][github]
 [![Join our chat on Gitter](https://badges.gitter.im/saltyrtc/Lobby.svg)](https://gitter.im/saltyrtc/Lobby)
 
-Asynchronous [SaltyRTC][saltyrtc] client implementation for Rust 1.36+.
+Asynchronous [SaltyRTC][saltyrtc] client implementation for Rust.
 
 SaltyRTC is an end-to-end encrypted signalling protocol. It offers to freely
 choose from a range of signalling tasks, such as setting up a WebRTC or ORTC
@@ -178,4 +177,3 @@ be dual licensed as above, without any additional terms or conditions.
 [circle-ci]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/master
 [circle-ci-badge]: https://circleci.com/gh/saltyrtc/saltyrtc-client-rs/tree/master.svg?style=shield
 [github]: https://github.com/saltyrtc/saltyrtc-client-rs
-[rust-badge]: https://img.shields.io/badge/rust-1.36%2B-blue.svg?maxAge=3600
