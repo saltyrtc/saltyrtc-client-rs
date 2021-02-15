@@ -71,18 +71,6 @@ Then run the fuzzer against a target:
 
 You can list all targets with `cargo fuzz list`.
 
-### Linting
-
-To run clippy lints, first get the latest clippy version:
-
-    $ rustup update
-    $ rustup install nightly
-    $ rustup component add clippy-preview --toolchain=nightly
-
-Then run `clippy` through nightly cargo:
-
-    $ cargo +nightly clippy
-
 
 ## Example Client
 
