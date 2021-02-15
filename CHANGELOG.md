@@ -12,6 +12,14 @@ Possible log types:
 - `[security]` to invite users to upgrade in case of vulnerabilities.
 
 
+### v0.7.0 (Unreleased)
+
+- [fix] Handle connection closing by server (#70)
+- [fix] Ignore unknown responders (#59)
+- [fix] Handle all OwnedMessage types explicitly and don't warn on pong (#58)
+- [changed] Many dependency upgrades
+- [changed] Switch to Rust 2018 edition (#62)
+
 ### v0.6.0 (2018-09-06)
 
 - [added] New close code: 3008 timeout
