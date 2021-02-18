@@ -1518,6 +1518,20 @@ impl InitiatorSignaling {
     }
 
     fn process_new_responder(&mut self, address: Address) -> SignalingResult<Option<HandleAction>> {
+        // Drop a new responder after a handshake with one responder has already
+        // completed.
+        //
+        // Note: This deviates from the intention of the specification to allow
+        //       for more than one connection towards a responder over the same
+        //       WebSocket connection.
+        let signaling_state = self.common().signaling_state();
+        if signaling_state == SignalingState::Task {
+            debug!("Dropping responder {:?} in state {:?}", address, signaling_state);
+            return self
+                .send_drop_responder(address, DropReason::DroppedByInitiator)
+                .map(Option::Some);
+        }
+
         // If a responder with the same id already exists,
         // all currently cached information about and for the previous responder
         // (such as cookies and the sequence number) MUST be deleted first.
@@ -1788,7 +1802,16 @@ impl Signaling for ResponderSignaling {
     fn handle_new_initiator(&mut self, _msg: NewInitiator) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received new-initiator from server");
 
-        let mut actions: Vec<HandleAction> = vec![];
+        // Close when a new initiator has connected.
+        //
+        // Note: This deviates from the intention of the specification to allow
+        //       for more than one connection towards an initiator over the same
+        //       WebSocket connection.
+        let signaling_state = self.common().signaling_state();
+        if signaling_state == SignalingState::Task {
+            debug!("Received new-initiator message in state {:?}, closing", signaling_state);
+            return Ok(vec![HandleAction::Close(CloseCode::WsClosingNormal)])
+        }
 
         // A responder who receives a 'new-initiator' message MUST proceed by
         // deleting all currently cached information about and for the previous
@@ -1809,6 +1832,7 @@ impl Signaling for ResponderSignaling {
                 return Err(SignalingError::Crash("No auth provider set".into()));
             },
         }
+        let mut actions: Vec<HandleAction> = vec![];
         if send_token {
             let old_auth_provider = mem::replace(&mut self.common_mut().auth_provider, None);
             if let Some(AuthProvider::Token(token)) = old_auth_provider {
