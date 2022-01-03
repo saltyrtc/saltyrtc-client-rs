@@ -3,15 +3,14 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::{Arc, Mutex};
 
-use failure::{Error, bail};
-use futures::{Future, Stream, Sink, future};
-use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
+use failure::{bail, Error};
+use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::sync::oneshot::Sender as OneshotSender;
-use saltyrtc_client::{BoxedFuture, CloseCode};
-use saltyrtc_client::tasks::{Task, TaskMessage};
+use futures::{future, Future, Sink, Stream};
 use saltyrtc_client::dep::rmpv::Value;
+use saltyrtc_client::tasks::{Task, TaskMessage};
+use saltyrtc_client::{BoxedFuture, CloseCode};
 use tokio_core::reactor::Remote;
-
 
 // Message types
 const TYPE_MSG: &'static str = "msg";
@@ -20,14 +19,12 @@ const KEY_TYPE: &'static str = "type";
 const KEY_TEXT: &'static str = "text";
 const KEY_NICK: &'static str = "nick";
 
-
 /// Wrap future in a box with type erasure.
 macro_rules! boxed {
     ($future:expr) => {{
         Box::new($future) as BoxedFuture<_, _>
-    }}
+    }};
 }
-
 
 /// The chat task is used for a simple 1-to-1 chat.
 ///
@@ -48,7 +45,7 @@ pub(crate) struct ChatTask {
 pub enum ChatMessage {
     Msg(String),
     NickChange(String),
-    Disconnect(CloseCode)
+    Disconnect(CloseCode),
 }
 
 impl ChatTask {
@@ -59,7 +56,11 @@ impl ChatTask {
     /// * `our_name`: Our local chat nickname.
     /// * `remote` A remote reference to a Tokio reactor core.
     /// * `incoming_tx`: The futures channel sender through which incoming chat messages are sent.
-    pub fn new<S: Into<String>>(our_name: S, remote: Remote, incoming_tx: UnboundedSender<ChatMessage>) -> Self {
+    pub fn new<S: Into<String>>(
+        our_name: S,
+        remote: Remote,
+        incoming_tx: UnboundedSender<ChatMessage>,
+    ) -> Self {
         ChatTask {
             our_name: our_name.into(),
             peer_name: Arc::new(Mutex::new(None)),
@@ -79,8 +80,7 @@ impl ChatTask {
 
         // Send message through channel
         let tx = self.outgoing_tx.clone().expect("outgoing_tx is None");
-        tx
-            .unbounded_send(TaskMessage::Value(map))
+        tx.unbounded_send(TaskMessage::Value(map))
             .map_err(|e| format!("Could not send message: {}", e))
     }
 
@@ -104,7 +104,6 @@ impl ChatTask {
 }
 
 impl Task for ChatTask {
-
     /// Initialize the task with the task data from the peer, sent in the `Auth` message.
     ///
     /// The task should keep track internally whether it has been initialized or not.

@@ -2,13 +2,12 @@
 
 use std::sync::RwLock;
 
-use crate::crypto::{PublicKey, KeyPair};
+use crate::crypto::{KeyPair, PublicKey};
 
-use super::cookie::{CookiePair};
-use super::csn::{CombinedSequencePair};
-use super::state::{ServerHandshakeState, InitiatorHandshakeState, ResponderHandshakeState};
-use super::types::{Identity, Address};
-
+use super::cookie::CookiePair;
+use super::csn::CombinedSequencePair;
+use super::state::{InitiatorHandshakeState, ResponderHandshakeState, ServerHandshakeState};
+use super::types::{Address, Identity};
 
 pub(crate) trait PeerContext {
     /// Return the peer identity.
@@ -33,7 +32,6 @@ pub(crate) trait PeerContext {
     /// Return our mutable cookie pair with this peer.
     fn cookie_pair_mut(&mut self) -> &mut CookiePair;
 }
-
 
 #[derive(Debug)]
 pub(crate) struct ServerContext {
@@ -72,7 +70,11 @@ impl ServerContext {
 
     /// Update the server handshake state.
     pub fn set_handshake_state(&mut self, new_state: ServerHandshakeState) {
-        trace!("Server handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
+        trace!(
+            "Server handshake state transition: {:?} -> {:?}",
+            self.handshake_state,
+            new_state
+        );
         // TODO (#22): Validate state transitions
         self.handshake_state = new_state;
     }
@@ -107,7 +109,6 @@ impl PeerContext for ServerContext {
         &mut self.cookie_pair
     }
 }
-
 
 #[derive(Debug)]
 pub(crate) struct InitiatorContext {
@@ -149,7 +150,11 @@ impl InitiatorContext {
 
     /// Update the initiator handshake state.
     pub fn set_handshake_state(&mut self, new_state: InitiatorHandshakeState) {
-        trace!("Initiator handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
+        trace!(
+            "Initiator handshake state transition: {:?} -> {:?}",
+            self.handshake_state,
+            new_state
+        );
         // TODO (#22): Validate state transitions
         self.handshake_state = new_state;
     }
@@ -184,7 +189,6 @@ impl PeerContext for InitiatorContext {
         &mut self.cookie_pair
     }
 }
-
 
 #[derive(Debug)]
 pub(crate) struct ResponderContext {
@@ -235,7 +239,11 @@ impl ResponderContext {
 
     /// Update the responder handshake state.
     pub fn set_handshake_state(&mut self, new_state: ResponderHandshakeState) {
-        trace!("Responder handshake state transition: {:?} -> {:?}", self.handshake_state, new_state);
+        trace!(
+            "Responder handshake state transition: {:?} -> {:?}",
+            self.handshake_state,
+            new_state
+        );
         // TODO (#22): Validate state transitions
         self.handshake_state = new_state;
     }

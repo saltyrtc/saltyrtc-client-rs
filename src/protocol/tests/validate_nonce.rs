@@ -60,7 +60,10 @@ fn wrong_source_initiator() {
     // Handling messages from the server is always valid
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
     let actions = s.handle_message(make_msg(0x00, 0x00)).unwrap();
-    assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+    assert_eq!(
+        s.server().handshake_state(),
+        ServerHandshakeState::ClientInfoSent
+    );
     // Send only client-auth
     assert_eq!(actions.len(), 1);
 }
@@ -86,21 +89,30 @@ fn wrong_source_responder() {
 
     // Handling messages from a responder is always invalid (messages are ignored)
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
-    let actions = s.handle_message(make_msg(0x03, 0x00)).expect("handle_message 1");
+    let actions = s
+        .handle_message(make_msg(0x03, 0x00))
+        .expect("handle_message 1");
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
     assert_eq!(actions, vec![]);
 
     // Handling messages from initiator is invalid as long as identity
     // hasn't been assigned (messages are ignored)
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
-    let actions = s.handle_message(make_msg(0x01, 0x00)).expect("handle_message 2");
+    let actions = s
+        .handle_message(make_msg(0x01, 0x00))
+        .expect("handle_message 2");
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
     assert_eq!(actions, vec![]);
 
     // Handling messages from the server is always valid
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
-    let actions = s.handle_message(make_msg(0x00, 0x00)).expect("handle_message 3");
-    assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+    let actions = s
+        .handle_message(make_msg(0x00, 0x00))
+        .expect("handle_message 3");
+    assert_eq!(
+        s.server().handshake_state(),
+        ServerHandshakeState::ClientInfoSent
+    );
     // Send client-hello and client-auth
     assert_eq!(actions.len(), 2);
 }
@@ -127,9 +139,10 @@ fn first_message_bad_overflow_number() {
     );
 }
 
-fn _test_sequence_number(first: CombinedSequenceSnapshot,
-                         second: CombinedSequenceSnapshot)
-                         -> SignalingResult<Vec<HandleAction>> {
+fn _test_sequence_number(
+    first: CombinedSequenceSnapshot,
+    second: CombinedSequenceSnapshot,
+) -> SignalingResult<Vec<HandleAction>> {
     let ks = KeyPair::new();
     let mut s = InitiatorSignaling::new(ks, Tasks(vec![]), None, None, None);
 
@@ -143,11 +156,15 @@ fn _test_sequence_number(first: CombinedSequenceSnapshot,
     assert!(actions.is_ok());
 
     // Process ServerAuth
-    let msg = ServerAuth::for_initiator(s.server().cookie_pair().ours.clone(), None, vec![]).into_message();
+    let msg = ServerAuth::for_initiator(s.server().cookie_pair().ours.clone(), None, vec![])
+        .into_message();
     let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), second);
     let obox = OpenBox::<Message>::new(msg, nonce);
     let bbox = obox.encode();
-    assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+    assert_eq!(
+        s.server().handshake_state(),
+        ServerHandshakeState::ClientInfoSent
+    );
     s.handle_message(bbox)
 }
 
@@ -158,8 +175,12 @@ fn sequence_number_not_incremented() {
     let err = _test_sequence_number(
         CombinedSequenceSnapshot::new(0, 1234),
         CombinedSequenceSnapshot::new(0, 1234),
-    ).unwrap_err();
-    assert_eq!(err, SignalingError::InvalidNonce("The server CSN hasn't been incremented".into()));
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        SignalingError::InvalidNonce("The server CSN hasn't been incremented".into())
+    );
 }
 
 /// The peer MUST check that the combined sequence number of the source
@@ -169,8 +190,12 @@ fn sequence_number_decremented() {
     let err = _test_sequence_number(
         CombinedSequenceSnapshot::new(0, 1234),
         CombinedSequenceSnapshot::new(0, 1233),
-    ).unwrap_err();
-    assert_eq!(err, SignalingError::InvalidNonce("The server CSN is lower than last time".into()));
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        SignalingError::InvalidNonce("The server CSN is lower than last time".into())
+    );
 }
 
 /// The peer MUST check that the combined sequence number of the source
@@ -180,8 +205,12 @@ fn sequence_number_reset() {
     let err = _test_sequence_number(
         CombinedSequenceSnapshot::new(0, 1234),
         CombinedSequenceSnapshot::new(0, 0),
-    ).unwrap_err();
-    assert_eq!(err, SignalingError::InvalidNonce("The server CSN is lower than last time".into()));
+    )
+    .unwrap_err();
+    assert_eq!(
+        err,
+        SignalingError::InvalidNonce("The server CSN is lower than last time".into())
+    );
 }
 
 /// In case this is the first message received from the sender, the
@@ -194,7 +223,12 @@ fn cookie_differs_from_own() {
 
     let msg = ServerHello::random().into_message();
     let cookie = s.server().cookie_pair.ours.clone();
-    let nonce = Nonce::new(cookie, Address(0), Address(0), CombinedSequenceSnapshot::random());
+    let nonce = Nonce::new(
+        cookie,
+        Address(0),
+        Address(0),
+        CombinedSequenceSnapshot::random(),
+    );
     let obox = OpenBox::<Message>::new(msg, nonce);
     let bbox = obox.encode();
 
@@ -216,17 +250,31 @@ fn cookie_did_not_change() {
 
     // Prepare 'server-hello' message
     let msg = ServerHello::random().into_message();
-    let nonce = Nonce::new(Cookie::random(), Address(0), Address(0), CombinedSequenceSnapshot::new(0, 123));
+    let nonce = Nonce::new(
+        Cookie::random(),
+        Address(0),
+        Address(0),
+        CombinedSequenceSnapshot::new(0, 123),
+    );
     let bbox = OpenBox::<Message>::new(msg, nonce).encode();
 
     // Handle 'server-hello' message
     assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
     assert!(s.handle_message(bbox).is_ok());
-    assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+    assert_eq!(
+        s.server().handshake_state(),
+        ServerHandshakeState::ClientInfoSent
+    );
 
     // Prepare 'server-auth' message, use a different cookie than before
-    let msg = ServerAuth::for_initiator(s.server().cookie_pair.ours.clone(), None, vec![]).into_message();
-    let nonce = Nonce::new(Cookie::random(), Address(0), Address(1), CombinedSequenceSnapshot::new(0, 124));
+    let msg =
+        ServerAuth::for_initiator(s.server().cookie_pair.ours.clone(), None, vec![]).into_message();
+    let nonce = Nonce::new(
+        Cookie::random(),
+        Address(0),
+        Address(1),
+        CombinedSequenceSnapshot::new(0, 124),
+    );
     let bbox = OpenBox::<Message>::new(msg, nonce).encrypt(
         &s.common().permanent_keypair,
         &s.server().session_key.unwrap(),
@@ -235,6 +283,8 @@ fn cookie_did_not_change() {
     // Handle 'server-auth' message
     assert_eq!(
         s.handle_message(bbox),
-        Err(SignalingError::InvalidNonce("Cookie from server has changed".into())),
+        Err(SignalingError::InvalidNonce(
+            "Cookie from server has changed".into()
+        )),
     );
 }

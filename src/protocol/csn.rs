@@ -11,7 +11,6 @@ use rust_sodium::randombytes::randombytes;
 use crate::errors::{SignalingError, SignalingResult};
 use crate::helpers::libsodium_init_or_panic;
 
-
 /// This type handles the overflow checking of the 48 bit combined sequence
 /// number (CSN) consisting of the sequence number and the overflow number.
 ///
@@ -25,7 +24,6 @@ pub(crate) struct CombinedSequence {
 }
 
 impl CombinedSequence {
-
     /// Create a new `CombinedSequence` from the specified parts.
     pub(crate) fn new(overflow: u16, sequence: u32) -> Self {
         CombinedSequence { overflow, sequence }
@@ -45,9 +43,9 @@ impl CombinedSequence {
         // Create combined sequence from that data
         let overflow = 0u16;
         let sequence = (u32::from(rand[0]) << 24)
-                     + (u32::from(rand[1]) << 16)
-                     + (u32::from(rand[2]) << 8)
-                     +  u32::from(rand[3]);
+            + (u32::from(rand[1]) << 16)
+            + (u32::from(rand[2]) << 8)
+            + u32::from(rand[3]);
 
         CombinedSequence { overflow, sequence }
     }
@@ -67,13 +65,12 @@ impl CombinedSequence {
             None => match self.overflow.checked_add(1) {
                 Some(incremented) => CombinedSequence::new(incremented, 0),
                 None => return Err(SignalingError::CsnOverflow),
-            }
+            },
         };
         let snapshot = (&next).into();
         *self = next;
         Ok(snapshot)
     }
-
 }
 
 impl<'a> From<&'a CombinedSequenceSnapshot> for CombinedSequence {
@@ -87,16 +84,19 @@ impl<'a> From<&'a CombinedSequenceSnapshot> for CombinedSequence {
 
 impl cmp::PartialEq<CombinedSequenceSnapshot> for CombinedSequence {
     fn eq(&self, other: &CombinedSequenceSnapshot) -> bool {
-        self.combined_sequence_number().eq(&other.combined_sequence_number())
+        self.combined_sequence_number()
+            .eq(&other.combined_sequence_number())
     }
 }
 
 impl cmp::PartialOrd<CombinedSequenceSnapshot> for CombinedSequence {
     fn partial_cmp(&self, other: &CombinedSequenceSnapshot) -> Option<cmp::Ordering> {
-        Some(self.combined_sequence_number().cmp(&other.combined_sequence_number()))
+        Some(
+            self.combined_sequence_number()
+                .cmp(&other.combined_sequence_number()),
+        )
     }
 }
-
 
 /// An immutable snapshot of a [`CombinedSequence`](struct.CombinedSequence.html).
 ///
@@ -139,7 +139,6 @@ impl CombinedSequenceSnapshot {
     pub fn combined_sequence_number(&self) -> u64 {
         (u64::from(self.overflow) << 32) + u64::from(self.sequence)
     }
-
 }
 
 impl<'a> From<&'a CombinedSequence> for CombinedSequenceSnapshot {
@@ -153,7 +152,8 @@ impl<'a> From<&'a CombinedSequence> for CombinedSequenceSnapshot {
 
 impl cmp::Ord for CombinedSequenceSnapshot {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
-        self.combined_sequence_number().cmp(&other.combined_sequence_number())
+        self.combined_sequence_number()
+            .cmp(&other.combined_sequence_number())
     }
 }
 
@@ -165,16 +165,19 @@ impl cmp::PartialOrd for CombinedSequenceSnapshot {
 
 impl cmp::PartialEq<CombinedSequence> for CombinedSequenceSnapshot {
     fn eq(&self, other: &CombinedSequence) -> bool {
-        self.combined_sequence_number().eq(&other.combined_sequence_number())
+        self.combined_sequence_number()
+            .eq(&other.combined_sequence_number())
     }
 }
 
 impl cmp::PartialOrd<CombinedSequence> for CombinedSequenceSnapshot {
     fn partial_cmp(&self, other: &CombinedSequence) -> Option<cmp::Ordering> {
-        Some(self.combined_sequence_number().cmp(&other.combined_sequence_number()))
+        Some(
+            self.combined_sequence_number()
+                .cmp(&other.combined_sequence_number()),
+        )
     }
 }
-
 
 /// A pair of a [`CombinedSequence`](struct.CombinedSequence.html) and a
 /// [`CombinedSequenceSnapshot`](struct.CombinedSequenceSnapshot.html).
@@ -194,7 +197,6 @@ impl CombinedSequencePair {
     }
 }
 
-
 /// A snapshot of the incoming and outgoing sequence numbers between the
 /// SaltyRTC client and the peer.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -204,7 +206,6 @@ pub struct PeerSequenceNumbers {
     /// Sequence number for outgoing messages.
     pub outgoing: u64,
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -271,7 +272,7 @@ mod tests {
         let new = old.increment();
         assert!(new.is_err());
         match new.unwrap_err() {
-            SignalingError::CsnOverflow => {},
+            SignalingError::CsnOverflow => {}
             ref other => panic!("Wrong error type: {:?}", other),
         };
     }

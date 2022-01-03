@@ -14,9 +14,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::boxes::{ByteBox, OpenBox};
-use crate::crypto::{KeyPair, AuthToken, PublicKey};
-use crate::errors::{SignalingError, SignalingResult, SaltyError, ValidationError};
-use rmpv::{Value};
+use crate::crypto::{AuthToken, KeyPair, PublicKey};
+use crate::errors::{SaltyError, SignalingError, SignalingResult, ValidationError};
+use rmpv::Value;
 use rust_sodium::crypto::box_;
 
 pub(crate) mod context;
@@ -28,26 +28,25 @@ pub(crate) mod send_error;
 pub(crate) mod state;
 pub(crate) mod types;
 
-#[cfg(test)] mod tests;
+#[cfg(test)]
+mod tests;
 
-use crate::{Event, CloseCode};
-use crate::tasks::{Tasks, BoxedTask, TaskMessage};
-use self::context::{PeerContext, ServerContext, InitiatorContext, ResponderContext};
-pub(crate) use self::cookie::{Cookie};
+use self::context::{InitiatorContext, PeerContext, ResponderContext, ServerContext};
+pub(crate) use self::cookie::Cookie;
 use self::messages::{
-    Message, ServerHello, ServerAuth, ClientHello, ClientAuth,
-    NewInitiator, NewResponder, DropResponder, DropReason, Disconnected,
-    SendError, Token, Key, Auth, InitiatorAuthBuilder, ResponderAuthBuilder, Close,
+    Auth, ClientAuth, ClientHello, Close, Disconnected, DropReason, DropResponder,
+    InitiatorAuthBuilder, Key, Message, NewInitiator, NewResponder, ResponderAuthBuilder,
+    SendError, ServerAuth, ServerHello, Token,
 };
-pub(crate) use self::nonce::{Nonce};
-pub use self::types::Role;
-pub(crate) use self::types::{HandleAction};
-use self::types::{Identity, ClientIdentity, Address};
+pub(crate) use self::nonce::Nonce;
 use self::state::{
-    SignalingState, ServerHandshakeState,
-    InitiatorHandshakeState, ResponderHandshakeState,
+    InitiatorHandshakeState, ResponderHandshakeState, ServerHandshakeState, SignalingState,
 };
-
+pub(crate) use self::types::HandleAction;
+pub use self::types::Role;
+use self::types::{Address, ClientIdentity, Identity};
+use crate::tasks::{BoxedTask, TaskMessage, Tasks};
+use crate::{CloseCode, Event};
 
 /// The main signaling trait.
 ///
@@ -104,15 +103,19 @@ pub(crate) trait Signaling {
     }
 
     /// Validate the repeated cookie from the `Auth` message.
-    fn validate_repeated_cookie(&self, repeated_cookie: &Cookie,
-                                our_cookie: &Cookie, identity: Identity)
-                                -> Result<(), SignalingError> {
+    fn validate_repeated_cookie(
+        &self,
+        repeated_cookie: &Cookie,
+        our_cookie: &Cookie,
+        identity: Identity,
+    ) -> Result<(), SignalingError> {
         if repeated_cookie != our_cookie {
             debug!("Our cookie: {:?}", our_cookie);
             debug!("Their cookie: {:?}", repeated_cookie);
-            return Err(SignalingError::Protocol(
-                format!("Repeated cookie in auth message from {} does not match our cookie", identity)
-            ))
+            return Err(SignalingError::Protocol(format!(
+                "Repeated cookie in auth message from {} does not match our cookie",
+                identity
+            )));
         }
         Ok(())
     }
@@ -171,14 +174,21 @@ pub(crate) trait Signaling {
         // * MUST check that the combined sequence number of the source peer
         //   has been increased by 1 and has not reset to 0.
         let role = self.role();
-        let peer: &mut dyn PeerContext = self.get_peer_with_address_mut(nonce.source()).ok_or_else(|| {
-            if role == Role::Initiator && nonce.source().is_responder() {
-                // Note: This can happen since a message from a responder may still be in flight.
-                ValidationError::DropMsg(format!("Could not find responder with address {}", nonce.source()))
-            } else {
-                ValidationError::Crash("Got message from invalid sender that wasn't dropped".into())
-            }
-        })?;
+        let peer: &mut dyn PeerContext = self
+            .get_peer_with_address_mut(nonce.source())
+            .ok_or_else(|| {
+                if role == Role::Initiator && nonce.source().is_responder() {
+                    // Note: This can happen since a message from a responder may still be in flight.
+                    ValidationError::DropMsg(format!(
+                        "Could not find responder with address {}",
+                        nonce.source()
+                    ))
+                } else {
+                    ValidationError::Crash(
+                        "Got message from invalid sender that wasn't dropped".into(),
+                    )
+                }
+            })?;
 
         let peer_identity = peer.identity();
         let mut csn_pair = peer.csn_pair().try_write()?;
@@ -203,7 +213,10 @@ pub(crate) trait Signaling {
         if csn_pair.theirs.is_none() {
             // Validate the overflow number...
             if nonce.csn().overflow_number() != 0 {
-                let msg = format!("First message from {} must have set the overflow number to 0", peer.identity());
+                let msg = format!(
+                    "First message from {} must have set the overflow number to 0",
+                    peer.identity()
+                );
                 return Err(ValidationError::Fail(msg));
             }
             // ...and store the CSN.
@@ -229,14 +242,21 @@ pub(crate) trait Signaling {
         //
         // * MUST ensure that the 16 byte cookie of the sender has not changed
         let role = self.role();
-        let peer: &mut dyn PeerContext = self.get_peer_with_address_mut(nonce.source()).ok_or_else(|| {
-            if role == Role::Initiator && nonce.source().is_responder() {
-                // Note: This can happen since a message from a responder may still be in flight.
-                ValidationError::DropMsg(format!("Could not find responder with address {}", nonce.source()))
-            } else {
-                ValidationError::Crash("Got message from invalid sender that wasn't dropped".into())
-            }
-        })?;
+        let peer: &mut dyn PeerContext = self
+            .get_peer_with_address_mut(nonce.source())
+            .ok_or_else(|| {
+                if role == Role::Initiator && nonce.source().is_responder() {
+                    // Note: This can happen since a message from a responder may still be in flight.
+                    ValidationError::DropMsg(format!(
+                        "Could not find responder with address {}",
+                        nonce.source()
+                    ))
+                } else {
+                    ValidationError::Crash(
+                        "Got message from invalid sender that wasn't dropped".into(),
+                    )
+                }
+            })?;
 
         let peer_identity = peer.identity();
         let cookie_pair = peer.cookie_pair_mut();
@@ -246,25 +266,27 @@ pub(crate) trait Signaling {
                 // This is the first message from that peer,
                 if *nonce.cookie() == cookie_pair.ours {
                     // validate the cookie...
-                    Err(ValidationError::Fail(
-                        format!("Cookie from {} is identical to our own cookie", peer_identity)
-                    ))
-                } else  {
+                    Err(ValidationError::Fail(format!(
+                        "Cookie from {} is identical to our own cookie",
+                        peer_identity
+                    )))
+                } else {
                     // ...and store it.
                     cookie_pair.theirs = Some(nonce.cookie().clone());
                     Ok(())
                 }
-            },
+            }
             Some(ref cookie) => {
                 // Ensure that the cookie has not changed
                 if nonce.cookie() != cookie {
-                    Err(ValidationError::Fail(
-                        format!("Cookie from {} has changed", peer_identity)
-                    ))
+                    Err(ValidationError::Fail(format!(
+                        "Cookie from {} has changed",
+                        peer_identity
+                    )))
                 } else {
                     Ok(())
                 }
-            },
+            }
         }
     }
 
@@ -275,21 +297,19 @@ pub(crate) trait Signaling {
         // Validate the nonce
         match self.validate_nonce(&bbox.nonce) {
             // It's valid! Carry on.
-            Ok(_) => {},
+            Ok(_) => {}
 
             // Drop and ignore some of the messages
             Err(ValidationError::DropMsg(warning)) => {
                 warn!("Invalid nonce: {}", warning);
                 return Ok(vec![]);
-            },
+            }
 
             // Nonce is invalid, fail the signaling
-            Err(ValidationError::Fail(reason)) =>
-                return Err(SignalingError::InvalidNonce(reason)),
+            Err(ValidationError::Fail(reason)) => return Err(SignalingError::InvalidNonce(reason)),
 
             // A critical error occurred
-            Err(ValidationError::Crash(reason)) =>
-                return Err(SignalingError::Crash(reason)),
+            Err(ValidationError::Crash(reason)) => return Err(SignalingError::Crash(reason)),
         };
 
         if bbox.nonce.source().is_server() {
@@ -321,13 +341,16 @@ pub(crate) trait Signaling {
     }
 
     /// Handle an incoming handshake message from a peer.
-    fn handle_handshake_peer_message(&mut self, bbox: ByteBox) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_handshake_peer_message(
+        &mut self,
+        bbox: ByteBox,
+    ) -> SignalingResult<Vec<HandleAction>> {
         trace!("handle_handshake_peer_message");
 
         // Sanity check
         if bbox.nonce.source().is_server() {
             return Err(SignalingError::Crash(
-                "Message in handle_handshake_peer_message is from server!".into()
+                "Message in handle_handshake_peer_message is from server!".into(),
             ));
         }
 
@@ -341,9 +364,12 @@ pub(crate) trait Signaling {
                         source_address,
                         DropReason::InitiatorCouldNotDecrypt,
                     )?;
-                    debug!("<-- Enqueuing drop-responder to {}", self.server().identity());
+                    debug!(
+                        "<-- Enqueuing drop-responder to {}",
+                        self.server().identity()
+                    );
                     return Ok(vec![drop_responder]);
-                },
+                }
                 Err(e) => return Err(e),
             }
         };
@@ -351,18 +377,20 @@ pub(crate) trait Signaling {
         // Handle message depending on state
         match self.common().signaling_state() {
             // Server handshake
-            SignalingState::ServerHandshake =>
-                Err(SignalingError::Crash("Illegal signaling state: ServerHandshake".into())),
+            SignalingState::ServerHandshake => Err(SignalingError::Crash(
+                "Illegal signaling state: ServerHandshake".into(),
+            )),
 
             // Peer handshake
-            SignalingState::PeerHandshake if obox.nonce.source().is_server() =>
-                self.handle_server_message(obox, None),
-            SignalingState::PeerHandshake =>
-                self.handle_peer_message(obox),
+            SignalingState::PeerHandshake if obox.nonce.source().is_server() => {
+                self.handle_server_message(obox, None)
+            }
+            SignalingState::PeerHandshake => self.handle_peer_message(obox),
 
             // Task
-            SignalingState::Task =>
-                Err(SignalingError::Crash("Illegal signaling state: Task".into())),
+            SignalingState::Task => Err(SignalingError::Crash(
+                "Illegal signaling state: Task".into(),
+            )),
         }
     }
 
@@ -373,7 +401,7 @@ pub(crate) trait Signaling {
         // Sanity check
         if bbox.nonce.source().is_server() {
             return Err(SignalingError::Crash(
-                "Message in handle_task_peer_message is from server!".into()
+                "Message in handle_task_peer_message is from server!".into(),
             ));
         }
 
@@ -385,40 +413,67 @@ pub(crate) trait Signaling {
         match obox.message {
             Value::Map(pairs) => {
                 for (k, v) in pairs {
-                    let key = k.as_str().ok_or_else(|| SignalingError::InvalidMessage(
-                        "Task message map contains non-hashable key".into()
-                    ))?;
+                    let key = k.as_str().ok_or_else(|| {
+                        SignalingError::InvalidMessage(
+                            "Task message map contains non-hashable key".into(),
+                        )
+                    })?;
                     map.insert(key.into(), v);
                 }
-            },
-            _ => return Err(SignalingError::InvalidMessage("Task message is not a map".into())),
+            }
+            _ => {
+                return Err(SignalingError::InvalidMessage(
+                    "Task message is not a map".into(),
+                ))
+            }
         };
 
         // Check msg type
-        let msg_type = map.get("type")
-            .ok_or_else(|| SignalingError::InvalidMessage("Task message does not contain type field".into()))?
+        let msg_type = map
+            .get("type")
+            .ok_or_else(|| {
+                SignalingError::InvalidMessage("Task message does not contain type field".into())
+            })?
             .as_str()
-            .ok_or_else(|| SignalingError::InvalidMessage("Task message type is not a string".into()))?
+            .ok_or_else(|| {
+                SignalingError::InvalidMessage("Task message type is not a string".into())
+            })?
             .to_owned();
         debug!("Received {} message from peer", msg_type);
 
         // Handle application messages
         if msg_type == "application" {
-            let data: Value = map.get("data")
-                .ok_or_else(|| SignalingError::InvalidMessage("Application message does not contain a data field".into()))?
+            let data: Value = map
+                .get("data")
+                .ok_or_else(|| {
+                    SignalingError::InvalidMessage(
+                        "Application message does not contain a data field".into(),
+                    )
+                })?
                 .to_owned();
-            return Ok(vec![HandleAction::TaskMessage(TaskMessage::Application(data))]);
+            return Ok(vec![HandleAction::TaskMessage(TaskMessage::Application(
+                data,
+            ))]);
         }
 
         // Handle close messages
         if msg_type == "close" {
-            let reason: CloseCode = map.get("reason")
-                .ok_or_else(|| SignalingError::InvalidMessage("Close message does not contain a reason field".into()))?
+            let reason: CloseCode = map
+                .get("reason")
+                .ok_or_else(|| {
+                    SignalingError::InvalidMessage(
+                        "Close message does not contain a reason field".into(),
+                    )
+                })?
                 .as_u64()
-                .ok_or_else(|| SignalingError::InvalidMessage("Close message reason is not an integer".into()))
+                .ok_or_else(|| {
+                    SignalingError::InvalidMessage("Close message reason is not an integer".into())
+                })
                 .and_then(|val: u64| {
                     if val > u64::from(::std::u16::MAX) {
-                        Err(SignalingError::InvalidMessage("Close message reason code is too large".into()))
+                        Err(SignalingError::InvalidMessage(
+                            "Close message reason code is too large".into(),
+                        ))
                     } else {
                         Ok(val as u16)
                     }
@@ -428,17 +483,20 @@ pub(crate) trait Signaling {
         }
 
         // Pass supported task message to task
-        let task_supported_types = self.common()
+        let task_supported_types = self
+            .common()
             .task_supported_types
             .ok_or_else(|| SignalingError::Crash("Task supported types not set".into()))?;
         if task_supported_types.iter().any(|t| *t == msg_type) {
-            return Ok(vec![HandleAction::TaskMessage(TaskMessage::Value(map))])
+            return Ok(vec![HandleAction::TaskMessage(TaskMessage::Value(map))]);
         }
 
-        warn!("Received task message with unsupported type: {}. Ignoring.", msg_type);
+        warn!(
+            "Received task message with unsupported type: {}. Ignoring.",
+            msg_type
+        );
         Ok(vec![])
     }
-
 
     // Message decoding
 
@@ -446,13 +504,16 @@ pub(crate) trait Signaling {
     fn decode_server_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Message>> {
         // The very first message from the server is unencrypted
         if self.common().signaling_state() == SignalingState::ServerHandshake
-        && self.server_handshake_state() == ServerHandshakeState::New {
+            && self.server_handshake_state() == ServerHandshakeState::New
+        {
             return OpenBox::decode(bbox);
         }
 
         // Otherwise, decrypt with server key
         match self.server().session_key {
-            Some(ref pubkey) => OpenBox::<Message>::decrypt(bbox, &self.common().permanent_keypair, pubkey),
+            Some(ref pubkey) => {
+                OpenBox::<Message>::decrypt(bbox, &self.common().permanent_keypair, pubkey)
+            }
             None => Err(SignalingError::Crash("Missing server session key".into())),
         }
     }
@@ -462,17 +523,20 @@ pub(crate) trait Signaling {
 
     /// Decrypt a binary message after the handshake has been finished.
     fn decode_task_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Value>> {
-        let peer = self.get_peer()
+        let peer = self
+            .get_peer()
             .ok_or_else(|| SignalingError::Crash("Peer not set".into()))?;
-        let session_key = peer.session_key()
+        let session_key = peer
+            .session_key()
             .ok_or_else(|| SignalingError::Crash("Peer session key not set".into()))?;
         OpenBox::<Value>::decrypt(
             bbox,
-            peer.keypair().ok_or_else(|| SignalingError::Crash("Peer session keypair not available".into()))?,
+            peer.keypair().ok_or_else(|| {
+                SignalingError::Crash("Peer session keypair not available".into())
+            })?,
             session_key,
         )
     }
-
 
     // Message encoding
 
@@ -481,13 +545,15 @@ pub(crate) trait Signaling {
         // Check state
         let signaling_state = self.common().signaling_state();
         if signaling_state != SignalingState::Task {
-            return Err(SignalingError::Crash(
-                format!("Called encode_task_message in state {:?}", signaling_state)
-            ));
+            return Err(SignalingError::Crash(format!(
+                "Called encode_task_message in state {:?}",
+                signaling_state
+            )));
         }
 
         // Get peer
-        let peer = self.get_peer()
+        let peer = self
+            .get_peer()
             .ok_or_else(|| SignalingError::Crash("Peer not set".into()))?;
 
         // Create and encrypt message
@@ -503,8 +569,10 @@ pub(crate) trait Signaling {
         );
         let obox = OpenBox::<Value>::new(value, nonce);
         let bbox = obox.encrypt(
-            peer.keypair().ok_or_else(|| SignalingError::Crash("Session keypair not available".into()))?,
-            peer.session_key().ok_or_else(|| SignalingError::Crash("Peer session key not set".into()))?,
+            peer.keypair()
+                .ok_or_else(|| SignalingError::Crash("Session keypair not available".into()))?,
+            peer.session_key()
+                .ok_or_else(|| SignalingError::Crash("Peer session key not set".into()))?,
         );
 
         Ok(bbox)
@@ -525,14 +593,15 @@ pub(crate) trait Signaling {
                 // Check state
                 let signaling_state = self.common().signaling_state();
                 if signaling_state != SignalingState::Task {
-                    return Err(SignalingError::Crash(
-                        format!("Called encode_close_message in state {:?}", signaling_state)
-                    ));
+                    return Err(SignalingError::Crash(format!(
+                        "Called encode_close_message in state {:?}",
+                        signaling_state
+                    )));
                 }
 
                 self.get_peer()
                     .ok_or_else(|| SignalingError::Crash("Peer not set".into()))?
-            },
+            }
         };
 
         // Create and encrypt message
@@ -549,13 +618,14 @@ pub(crate) trait Signaling {
         let msg = Close::from_close_code(reason).into_message();
         let obox = OpenBox::<Message>::new(msg, nonce);
         let bbox = obox.encrypt(
-            peer.keypair().ok_or_else(|| SignalingError::Crash("Session keypair not available".into()))?,
-            peer.session_key().ok_or_else(|| SignalingError::Crash("Peer session key not set".into()))?,
+            peer.keypair()
+                .ok_or_else(|| SignalingError::Crash("Session keypair not available".into()))?,
+            peer.session_key()
+                .ok_or_else(|| SignalingError::Crash("Peer session key not set".into()))?,
         );
 
         Ok(bbox)
     }
-
 
     // Message handling: Dispatching
 
@@ -568,29 +638,38 @@ pub(crate) trait Signaling {
     /// Note: The `nonce_clone` parameter is only set to a value if needed to
     /// verify the signed keys inside the `server-auth` message. Otherwise it's
     /// `None`.
-    fn handle_server_message(&mut self, obox: OpenBox<Message>, nonce_clone: Option<Nonce>) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_server_message(
+        &mut self,
+        obox: OpenBox<Message>,
+        nonce_clone: Option<Nonce>,
+    ) -> SignalingResult<Vec<HandleAction>> {
         let old_state = self.server_handshake_state();
         match (old_state, obox.message) {
             // Valid state transitions
-            (ServerHandshakeState::New, Message::ServerHello(msg)) =>
-                self.handle_server_hello(msg),
-            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) =>
-                self.handle_server_auth(msg, nonce_clone),
-            (ServerHandshakeState::Done, Message::NewInitiator(msg)) =>
-                self.handle_new_initiator(msg),
-            (ServerHandshakeState::Done, Message::NewResponder(msg)) =>
-                self.handle_new_responder(msg),
-            (ServerHandshakeState::Done, Message::DropResponder(_msg)) =>
-                unimplemented!("TODO (#36): Handling DropResponder messages not yet implemented"),
-            (ServerHandshakeState::Done, Message::SendError(msg)) =>
-                self.handle_send_error(msg),
-            (ServerHandshakeState::Done, Message::Disconnected(msg)) =>
-                self.handle_disconnected(msg),
+            (ServerHandshakeState::New, Message::ServerHello(msg)) => self.handle_server_hello(msg),
+            (ServerHandshakeState::ClientInfoSent, Message::ServerAuth(msg)) => {
+                self.handle_server_auth(msg, nonce_clone)
+            }
+            (ServerHandshakeState::Done, Message::NewInitiator(msg)) => {
+                self.handle_new_initiator(msg)
+            }
+            (ServerHandshakeState::Done, Message::NewResponder(msg)) => {
+                self.handle_new_responder(msg)
+            }
+            (ServerHandshakeState::Done, Message::DropResponder(_msg)) => {
+                unimplemented!("TODO (#36): Handling DropResponder messages not yet implemented")
+            }
+            (ServerHandshakeState::Done, Message::SendError(msg)) => self.handle_send_error(msg),
+            (ServerHandshakeState::Done, Message::Disconnected(msg)) => {
+                self.handle_disconnected(msg)
+            }
 
             // Any undefined state transition results in an error
-            (s, message) => Err(SignalingError::InvalidStateTransition(
-                format!("Got '{}' message from server in {:?} state", message.get_type(), s)
-            )),
+            (s, message) => Err(SignalingError::InvalidStateTransition(format!(
+                "Got '{}' message from server in {:?} state",
+                message.get_type(),
+                s
+            ))),
         }
     }
 
@@ -599,8 +678,8 @@ pub(crate) trait Signaling {
     ///
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
-    fn handle_peer_message(&mut self, obox: OpenBox<Message>) -> SignalingResult<Vec<HandleAction>>;
-
+    fn handle_peer_message(&mut self, obox: OpenBox<Message>)
+        -> SignalingResult<Vec<HandleAction>>;
 
     // Message handling: Handling
 
@@ -614,7 +693,7 @@ pub(crate) trait Signaling {
         trace!("Server session key is {:?}", msg.key);
         if self.server().session_key.is_some() {
             return Err(SignalingError::Protocol(
-                "Got a server-hello message, but server session key is already set".to_string()
+                "Got a server-hello message, but server session key is already set".to_string(),
             ));
         }
         self.common_mut().server.session_key = Some(msg.key);
@@ -641,14 +720,20 @@ pub(crate) trait Signaling {
         }
 
         // Send client-auth message
-        let ping_interval = self.common()
+        let ping_interval = self
+            .common()
             .ping_interval
             .map(|duration| duration.as_secs())
-            .map(|secs| if secs > u64::from(::std::u32::MAX) {
-                warn!("Ping interval is too large. Truncating it to {} seconds.", ::std::u32::MAX);
-                ::std::u32::MAX
-            } else {
-                secs as u32
+            .map(|secs| {
+                if secs > u64::from(::std::u32::MAX) {
+                    warn!(
+                        "Ping interval is too large. Truncating it to {} seconds.",
+                        ::std::u32::MAX
+                    );
+                    ::std::u32::MAX
+                } else {
+                    secs as u32
+                }
             })
             .unwrap_or(0u32);
         match ping_interval {
@@ -660,7 +745,8 @@ pub(crate) trait Signaling {
             subprotocols: vec![crate::SUBPROTOCOL.into()],
             ping_interval,
             your_key: self.server().permanent_key().cloned(),
-        }.into_message();
+        }
+        .into_message();
         let client_auth_nonce = Nonce::new(
             self.server().cookie_pair().ours.clone(),
             self.identity().into(),
@@ -671,18 +757,25 @@ pub(crate) trait Signaling {
         match self.server().session_key {
             Some(ref pubkey) => {
                 debug!("<-- Enqueuing client-auth to server");
-                actions.push(HandleAction::Reply(reply.encrypt(&self.common().permanent_keypair, pubkey)));
-            },
+                actions.push(HandleAction::Reply(
+                    reply.encrypt(&self.common().permanent_keypair, pubkey),
+                ));
+            }
             None => return Err(SignalingError::Crash("Missing server permanent key".into())),
         };
 
         // TODO (#13): Can we prevent confusing an incoming and an outgoing nonce?
-        self.server_mut().set_handshake_state(ServerHandshakeState::ClientInfoSent);
+        self.server_mut()
+            .set_handshake_state(ServerHandshakeState::ClientInfoSent);
         Ok(actions)
     }
 
     /// Handle an incoming [`ServerAuth`](messages/struct.ServerAuth.html) message.
-    fn handle_server_auth(&mut self, msg: ServerAuth, nonce_clone: Option<Nonce>) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_server_auth(
+        &mut self,
+        msg: ServerAuth,
+        nonce_clone: Option<Nonce>,
+    ) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received server-auth from server");
 
         // When the client receives a 'server-auth' message, it MUST
@@ -690,7 +783,7 @@ pub(crate) trait Signaling {
         // Receiving a Signalling Message section.
         if self.identity() == ClientIdentity::Unknown {
             return Err(SignalingError::Crash(
-                "No identity assigned when receiving server-auth message".into()
+                "No identity assigned when receiving server-auth message".into(),
             ));
         }
 
@@ -708,12 +801,17 @@ pub(crate) trait Signaling {
             // key, it SHALL decrypt the signed_keys field by using the
             // message's nonce, the client's private permanent key and the
             // server's public permanent key.
-            let nonce = nonce_clone.ok_or_else(|| SignalingError::Crash(
-                "This is a server-auth message, but no nonce clone was passed in".into()
-            ))?;
-            let signed_keys = msg.signed_keys.as_ref().ok_or_else(|| SignalingError::Protocol(
-                "Server's public permanent key is known, but server did not send signed keys".into()
-            ))?;
+            let nonce = nonce_clone.ok_or_else(|| {
+                SignalingError::Crash(
+                    "This is a server-auth message, but no nonce clone was passed in".into(),
+                )
+            })?;
+            let signed_keys = msg.signed_keys.as_ref().ok_or_else(|| {
+                SignalingError::Protocol(
+                    "Server's public permanent key is known, but server did not send signed keys"
+                        .into(),
+                )
+            })?;
             let decrypted = signed_keys.decrypt(
                 &self.common().permanent_keypair,
                 server_public_permanent_key,
@@ -723,13 +821,21 @@ pub(crate) trait Signaling {
             // The decrypted message MUST match the concatenation of the
             // server's public session key and the client's public permanent
             // key (in that order).
-            let server_public_session_key = self.server().session_key()
+            let server_public_session_key = self
+                .server()
+                .session_key()
                 .ok_or_else(|| SignalingError::Crash("Server session key not set".into()))?;
             if &decrypted.server_public_session_key != server_public_session_key {
-                return Err(SignalingError::Protocol("Server public session key sent in `signed_keys` is not valid".into()));
+                return Err(SignalingError::Protocol(
+                    "Server public session key sent in `signed_keys` is not valid".into(),
+                ));
             }
-            if &decrypted.client_public_permanent_key != self.common().permanent_keypair.public_key() {
-                return Err(SignalingError::Protocol("Our public permanent key sent in `signed_keys` is not valid".into()));
+            if &decrypted.client_public_permanent_key
+                != self.common().permanent_keypair.public_key()
+            {
+                return Err(SignalingError::Protocol(
+                    "Our public permanent key sent in `signed_keys` is not valid".into(),
+                ));
             }
         } else if msg.signed_keys.is_some() {
             // If the signed_keys is present but the client does not have
@@ -742,8 +848,10 @@ pub(crate) trait Signaling {
         let actions = self.handle_server_auth_impl(&msg)?;
 
         info!("Server handshake completed");
-        self.server_mut().set_handshake_state(ServerHandshakeState::Done);
-        self.common_mut().set_signaling_state(SignalingState::PeerHandshake)?;
+        self.server_mut()
+            .set_handshake_state(ServerHandshakeState::Done);
+        self.common_mut()
+            .set_signaling_state(SignalingState::PeerHandshake)?;
         Ok(actions)
     }
 
@@ -769,7 +877,11 @@ pub(crate) trait Signaling {
     // Helper methods
 
     /// Encode and return a DropResponder message.
-    fn send_drop_responder(&self, addr: Address, reason: DropReason) -> SignalingResult<HandleAction> {
+    fn send_drop_responder(
+        &self,
+        addr: Address,
+        reason: DropReason,
+    ) -> SignalingResult<HandleAction> {
         // Note: We need to define this method here instead of in the
         // `InitiatorSignaling` impl because the `handle_handshake_peer_message`
         // method on the `Signaling` trait needs to be able to call it.
@@ -777,7 +889,7 @@ pub(crate) trait Signaling {
         // Sanity check
         if self.role() != Role::Initiator {
             return Err(SignalingError::Crash(
-                "Non-initiator should never need to encode a DropResponder message".into()
+                "Non-initiator should never need to encode a DropResponder message".into(),
             ));
         }
 
@@ -794,8 +906,9 @@ pub(crate) trait Signaling {
         let obox = OpenBox::<Message>::new(drop, drop_nonce);
         let bbox = obox.encrypt(
             &self.common().permanent_keypair,
-            self.server().session_key()
-                .ok_or_else(|| SignalingError::Crash("Server session key not set".into()))?
+            self.server()
+                .session_key()
+                .ok_or_else(|| SignalingError::Crash("Server session key not set".into()))?,
         );
 
         Ok(HandleAction::Reply(bbox))
@@ -807,41 +920,60 @@ pub(crate) trait Signaling {
     ///
     /// If this function is called before the peer has been established,
     /// it will return a `SignalingError::NoPeer`.
-    fn encrypt_raw_with_session_keys(&self, data: &[u8], nonce: &box_::Nonce) -> SignalingResult<Vec<u8>> {
-        let peer = self.get_peer()
-            .ok_or_else(|| SignalingError::NoPeer)?;
-        let peer_session_public_key = peer.session_key()
+    fn encrypt_raw_with_session_keys(
+        &self,
+        data: &[u8],
+        nonce: &box_::Nonce,
+    ) -> SignalingResult<Vec<u8>> {
+        let peer = self.get_peer().ok_or_else(|| SignalingError::NoPeer)?;
+        let peer_session_public_key = peer
+            .session_key()
             .ok_or_else(|| SignalingError::Crash("Peer session public key not set".into()))?;
-        let our_session_private_key = peer.keypair()
+        let our_session_private_key = peer
+            .keypair()
             .map(|keypair: &KeyPair| keypair.private_key())
             .ok_or_else(|| SignalingError::Crash("Our session private key not set".into()))?;
-        Ok(box_::seal(data, nonce, peer_session_public_key, our_session_private_key))
+        Ok(box_::seal(
+            data,
+            nonce,
+            peer_session_public_key,
+            our_session_private_key,
+        ))
     }
 
     /// Decrypt raw bytes for the peer using the session keys.
     ///
     /// If this function is called before the peer has been established,
     /// it will return a `SignalingError::NoPeer`.
-    fn decrypt_raw_with_session_keys(&self, data: &[u8], nonce: &box_::Nonce) -> SignalingResult<Vec<u8>> {
-        let peer = self.get_peer()
-            .ok_or_else(|| SignalingError::NoPeer)?;
-        let peer_session_public_key = peer.session_key()
+    fn decrypt_raw_with_session_keys(
+        &self,
+        data: &[u8],
+        nonce: &box_::Nonce,
+    ) -> SignalingResult<Vec<u8>> {
+        let peer = self.get_peer().ok_or_else(|| SignalingError::NoPeer)?;
+        let peer_session_public_key = peer
+            .session_key()
             .ok_or_else(|| SignalingError::Crash("Peer session public key not set".into()))?;
-        let our_session_private_key = peer.keypair()
+        let our_session_private_key = peer
+            .keypair()
             .map(|keypair: &KeyPair| keypair.private_key())
             .ok_or_else(|| SignalingError::Crash("Our session private key not set".into()))?;
-        box_::open(data, nonce, peer_session_public_key, our_session_private_key)
-            .map_err(|_| SignalingError::Crypto("Could not decrypt bytes".into()))
+        box_::open(
+            data,
+            nonce,
+            peer_session_public_key,
+            our_session_private_key,
+        )
+        .map_err(|_| SignalingError::Crypto("Could not decrypt bytes".into()))
     }
 }
-
 
 /// A peer can be authenticated either through a one-time auth token, or
 /// through a trusted peer public key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AuthProvider {
     Token(AuthToken),
-    TrustedKey(PublicKey)
+    TrustedKey(PublicKey),
 }
 
 /// Common functionality and state for all signaling types.
@@ -891,15 +1023,25 @@ impl Common {
     /// Set the current signaling state.
     fn set_signaling_state(&mut self, state: SignalingState) -> SignalingResult<()> {
         if self.signaling_state == state {
-            trace!("Ignoring signaling state transition: {:?} -> {:?}", self.signaling_state(), state);
-            return Ok(())
+            trace!(
+                "Ignoring signaling state transition: {:?} -> {:?}",
+                self.signaling_state(),
+                state
+            );
+            return Ok(());
         }
         if !self.signaling_state.may_transition_to(state) {
-            return Err(SignalingError::InvalidStateTransition(
-                format!("Signaling state: {:?} -> {:?}", self.signaling_state(), state)
-            ));
+            return Err(SignalingError::InvalidStateTransition(format!(
+                "Signaling state: {:?} -> {:?}",
+                self.signaling_state(),
+                state
+            )));
         }
-        trace!("Signaling state transition: {:?} -> {:?}", self.signaling_state(), state);
+        trace!(
+            "Signaling state transition: {:?} -> {:?}",
+            self.signaling_state(),
+            state
+        );
         self.signaling_state = state;
         Ok(())
     }
@@ -912,7 +1054,6 @@ impl Common {
         Ok(())
     }
 }
-
 
 /// This struct is used to give each responder a unique incrementing serial.
 /// This helps identifying the oldest responder when doing path cleaning.
@@ -927,8 +1068,9 @@ impl ResponderCounter {
     /// Get the current counter and increment it.
     fn increment(&mut self) -> SignalingResult<u32> {
         let old_val = self.0;
-        self.0 = self.0.checked_add(1)
-            .ok_or_else(|| SignalingError::Crash("Overflow when incrementing responder counter".into()))?;
+        self.0 = self.0.checked_add(1).ok_or_else(|| {
+            SignalingError::Crash("Overflow when incrementing responder counter".into())
+        })?;
         Ok(old_val)
     }
 }
@@ -984,7 +1126,7 @@ impl Signaling for InitiatorSignaling {
                         Some(ref p) => {
                             let peer_addr: Address = p.identity().into();
                             peer_addr == addr
-                        },
+                        }
                         None => false,
                     };
                     if valid {
@@ -994,7 +1136,9 @@ impl Signaling for InitiatorSignaling {
                     }
                 } else {
                     // Otherwise look in the list of known responders.
-                    self.responders.get_mut(&addr).map(|r| r as &mut dyn PeerContext)
+                    self.responders
+                        .get_mut(&addr)
+                        .map(|r| r as &mut dyn PeerContext)
                 }
             }
         }
@@ -1008,8 +1152,9 @@ impl Signaling for InitiatorSignaling {
         // A client MUST check that the destination address targets its
         // assigned identity (or `0x00` during authentication).
         if self.identity() == ClientIdentity::Unknown
-        && !nonce.destination().is_unknown()
-        && self.server_handshake_state() != ServerHandshakeState::New {
+            && !nonce.destination().is_unknown()
+            && self.server_handshake_state() != ServerHandshakeState::New
+        {
             // The first message received with a destination address different
             // to `0x00` SHALL be accepted as the client's assigned identity.
             // However, the client MUST validate that the identity fits its
@@ -1019,15 +1164,18 @@ impl Signaling for InitiatorSignaling {
                 self.common.identity = ClientIdentity::Initiator;
                 debug!("Assigned identity: {}", self.identity());
             } else {
-                return Err(ValidationError::Fail(
-                    format!("cannot assign address {} to initiator", nonce.destination())
-                ));
+                return Err(ValidationError::Fail(format!(
+                    "cannot assign address {} to initiator",
+                    nonce.destination()
+                )));
             };
         }
         if nonce.destination() != self.identity().into() {
-            return Err(ValidationError::Fail(
-                format!("Bad destination: {} (our identity is {})", nonce.destination(), self.identity())
-            ));
+            return Err(ValidationError::Fail(format!(
+                "Bad destination: {} (our identity is {})",
+                nonce.destination(),
+                self.identity()
+            )));
         }
 
         Ok(())
@@ -1043,50 +1191,63 @@ impl Signaling for InitiatorSignaling {
             Address(0x00) => Ok(()),
 
             // From initiator
-            Address(0x01) => Err(ValidationError::DropMsg(
-                format!("Bad source: {} (our identity is {})", nonce.source(), self.identity())
-            )),
+            Address(0x01) => Err(ValidationError::DropMsg(format!(
+                "Bad source: {} (our identity is {})",
+                nonce.source(),
+                self.identity()
+            ))),
 
             // From responder
             Address(0x02..=0xff) => {
                 if self.identity() == ClientIdentity::Initiator {
                     Ok(())
                 } else {
-                    Err(ValidationError::DropMsg(
-                        format!("Bad source: {} (our identity is {})", nonce.source(), self.identity())
-                    ))
+                    Err(ValidationError::DropMsg(format!(
+                        "Bad source: {} (our identity is {})",
+                        nonce.source(),
+                        self.identity()
+                    )))
                 }
-            },
+            }
         }
     }
 
     fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Message>> {
         // Validate source again
         if !bbox.nonce.source().is_responder() {
-            return Err(SignalingError::Crash("Received message from an initiator".to_string()));
+            return Err(SignalingError::Crash(
+                "Received message from an initiator".to_string(),
+            ));
         }
 
         // Find responder
         let source = bbox.nonce.source();
         let responder = match self.responders.get(&source) {
             Some(responder) => responder,
-            None => return Err(SignalingError::Crash(
-                format!("Did not find responder with address {}", source)
-            )),
+            None => {
+                return Err(SignalingError::Crash(format!(
+                    "Did not find responder with address {}",
+                    source
+                )))
+            }
         };
 
         // Helper functions
         fn responder_permanent_key(responder: &ResponderContext) -> SignalingResult<&PublicKey> {
-            responder.permanent_key.as_ref()
-                .ok_or_else(|| SignalingError::Crash(
-                    format!("Did not find public permanent key for responder {}", responder.address.0)
+            responder.permanent_key.as_ref().ok_or_else(|| {
+                SignalingError::Crash(format!(
+                    "Did not find public permanent key for responder {}",
+                    responder.address.0
                 ))
+            })
         }
         fn responder_session_key(responder: &ResponderContext) -> SignalingResult<&PublicKey> {
-            responder.session_key.as_ref()
-                .ok_or_else(|| SignalingError::Crash(
-                    format!("Did not find public session key for responder {}", responder.address.0)
+            responder.session_key.as_ref().ok_or_else(|| {
+                SignalingError::Crash(format!(
+                    "Did not find public session key for responder {}",
+                    responder.address.0
                 ))
+            })
         }
 
         // Decrypt depending on state
@@ -1097,13 +1258,13 @@ impl Signaling for InitiatorSignaling {
                 match self.common.auth_provider {
                     Some(AuthProvider::Token(ref token)) => OpenBox::decrypt_token(bbox, token),
                     Some(AuthProvider::TrustedKey(_)) => Err(SignalingError::Crash(
-                        "Handshake state is \"New\" even though a trusted key is available".into()
+                        "Handshake state is \"New\" even though a trusted key is available".into(),
                     )),
                     None => Err(SignalingError::Crash(
-                        "Handshake state is \"New\" without an auth provider available".into()
+                        "Handshake state is \"New\" without an auth provider available".into(),
                     )),
                 }
-            },
+            }
             ResponderHandshakeState::TokenReceived => {
                 // Expect key message, encrypted with our public permanent key
                 // and responder private permanent key
@@ -1111,24 +1272,32 @@ impl Signaling for InitiatorSignaling {
                 OpenBox::<Message>::decrypt(
                     bbox,
                     &self.common.permanent_keypair,
-                    responder_permanent_key(&responder)?
-                ).map_err(|e| match e {
+                    responder_permanent_key(&responder)?,
+                )
+                .map_err(|e| match e {
                     SignalingError::Decode(_) => {
                         warn!("Could not decrypt key message");
                         SignalingError::InitiatorCouldNotDecrypt
-                    },
+                    }
                     e => e,
                 })
-            },
+            }
             ResponderHandshakeState::KeySent => {
                 // Expect auth message, encrypted with our public session key
                 // and responder private session key
-                OpenBox::<Message>::decrypt(bbox, &responder.keypair, responder_session_key(&responder)?)
-            },
+                OpenBox::<Message>::decrypt(
+                    bbox,
+                    &responder.keypair,
+                    responder_session_key(&responder)?,
+                )
+            }
             other => {
                 // TODO (#14): Maybe remove these states?
-                Err(SignalingError::Crash(format!("Invalid responder handshake state: {:?}", other)))
-            },
+                Err(SignalingError::Crash(format!(
+                    "Invalid responder handshake state: {:?}",
+                    other
+                )))
+            }
         }
     }
 
@@ -1137,13 +1306,15 @@ impl Signaling for InitiatorSignaling {
     ///
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
-    fn handle_peer_message(&mut self, obox: OpenBox<Message>) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_peer_message(
+        &mut self,
+        obox: OpenBox<Message>,
+    ) -> SignalingResult<Vec<HandleAction>> {
         let source = obox.nonce.source();
         let old_state = {
-            let responder = self.responders.get(&source)
-                .ok_or_else(|| SignalingError::Crash(
-                    format!("Did not find responder with address {}", source)
-                ))?;
+            let responder = self.responders.get(&source).ok_or_else(|| {
+                SignalingError::Crash(format!("Did not find responder with address {}", source))
+            })?;
             responder.handshake_state()
         };
 
@@ -1151,13 +1322,18 @@ impl Signaling for InitiatorSignaling {
         match (old_state, obox.message) {
             // Valid state transitions
             (ResponderHandshakeState::New, Message::Token(msg)) => self.handle_token(msg, source),
-            (ResponderHandshakeState::TokenReceived, Message::Key(msg)) => self.handle_key(msg, source),
+            (ResponderHandshakeState::TokenReceived, Message::Key(msg)) => {
+                self.handle_key(msg, source)
+            }
             (ResponderHandshakeState::KeySent, Message::Auth(msg)) => self.handle_auth(msg, source),
 
             // Any undefined state transition results in an error
-            (s, message) => Err(SignalingError::InvalidStateTransition(
-                format!("Got {} message from responder {} in {:?} state", message.get_type(), obox.nonce.source().0, s)
-            )),
+            (s, message) => Err(SignalingError::InvalidStateTransition(format!(
+                "Got {} message from responder {} in {:?} state",
+                message.get_type(),
+                obox.nonce.source().0,
+                s
+            ))),
         }
     }
 
@@ -1172,9 +1348,11 @@ impl Signaling for InitiatorSignaling {
         }
         let responders = match msg.responders {
             Some(ref responders) => responders,
-            None => return Err(SignalingError::InvalidMessage(
-                "`responders` field in server-auth message not set".into()
-            )),
+            None => {
+                return Err(SignalingError::InvalidMessage(
+                    "`responders` field in server-auth message not set".into(),
+                ))
+            }
         };
 
         // The responder identities MUST be validated and SHALL neither contain
@@ -1182,14 +1360,14 @@ impl Signaling for InitiatorSignaling {
         let responders_set: HashSet<Address> = responders.iter().cloned().collect();
         if responders_set.contains(&Address(0x00)) || responders_set.contains(&Address(0x01)) {
             return Err(SignalingError::InvalidMessage(
-                "`responders` field in server-auth message may not contain addresses <0x02".into()
+                "`responders` field in server-auth message may not contain addresses <0x02".into(),
             ));
         }
 
         // ...nor SHALL an address be repeated in the Array.
         if responders.len() != responders_set.len() {
             return Err(SignalingError::InvalidMessage(
-                "`responders` field in server-auth message may not contain duplicates".into()
+                "`responders` field in server-auth message may not contain duplicates".into(),
             ));
         }
 
@@ -1207,13 +1385,17 @@ impl Signaling for InitiatorSignaling {
             }
         }
 
-        actions.push(HandleAction::Event(Event::ServerHandshakeDone(responders.is_empty())));
+        actions.push(HandleAction::Event(Event::ServerHandshakeDone(
+            responders.is_empty(),
+        )));
         Ok(actions)
     }
 
     /// Handle an incoming [`NewInitiator`](messages/struct.Initiator.html) message.
     fn handle_new_initiator(&mut self, _msg: NewInitiator) -> SignalingResult<Vec<HandleAction>> {
-        Err(SignalingError::Protocol("Received 'new-responder' message as initiator".into()))
+        Err(SignalingError::Protocol(
+            "Received 'new-responder' message as initiator".into(),
+        ))
     }
 
     /// Handle an incoming [`NewResponder`](messages/struct.NewResponder.html) message.
@@ -1224,7 +1406,7 @@ impl Signaling for InitiatorSignaling {
         // that the id field contains a valid responder address (0x02..0xff).
         if !msg.id.is_responder() {
             return Err(SignalingError::InvalidMessage(
-                "`id` field in new-responder message is not a valid responder address".into()
+                "`id` field in new-responder message is not a valid responder address".into(),
             ));
         }
 
@@ -1243,7 +1425,7 @@ impl Signaling for InitiatorSignaling {
         // that the id field contains a valid responder address (0x02..0xff).
         if !msg.id.is_responder() {
             return Err(SignalingError::Protocol(
-                "Received 'disconnected' message with non-responder id".into()
+                "Received 'disconnected' message with non-responder id".into(),
             ));
         }
 
@@ -1252,11 +1434,13 @@ impl Signaling for InitiatorSignaling {
 }
 
 impl InitiatorSignaling {
-    pub(crate) fn new(permanent_keypair: KeyPair,
-                      tasks: Tasks,
-                      responder_trusted_pubkey: Option<PublicKey>,
-                      server_public_permanent_key: Option<PublicKey>,
-                      ping_interval: Option<Duration>) -> Self {
+    pub(crate) fn new(
+        permanent_keypair: KeyPair,
+        tasks: Tasks,
+        responder_trusted_pubkey: Option<PublicKey>,
+        server_public_permanent_key: Option<PublicKey>,
+        ping_interval: Option<Duration>,
+    ) -> Self {
         InitiatorSignaling {
             common: Common {
                 signaling_state: SignalingState::ServerHandshake,
@@ -1284,20 +1468,21 @@ impl InitiatorSignaling {
     }
 
     /// Handle an incoming [`Token`](messages/struct.Token.html) message.
-    #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
+    #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
     fn handle_token(&mut self, msg: Token, source: Address) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received token from {}", Identity::from(source));
 
         {
             // Find responder instance
-            let responder = self.responders.get_mut(&source)
-                .ok_or_else(|| SignalingError::Crash(
-                    format!("Did not find responder with address {}", source)
-                ))?;
+            let responder = self.responders.get_mut(&source).ok_or_else(|| {
+                SignalingError::Crash(format!("Did not find responder with address {}", source))
+            })?;
 
             // Sanity check
             if responder.permanent_key.is_some() {
-                return Err(SignalingError::Crash("Responder already has a permanent key set!".into()));
+                return Err(SignalingError::Crash(
+                    "Responder already has a permanent key set!".into(),
+                ));
             }
 
             // Set public permanent key
@@ -1305,12 +1490,11 @@ impl InitiatorSignaling {
 
             // State transition
             responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
-
         } // Waiting for NLL
 
         // Invalidate auth token
         match self.common().auth_provider {
-            Some(AuthProvider::Token(_)) => {},
+            Some(AuthProvider::Token(_)) => {}
             _ => return Err(SignalingError::Crash("Auth provider is not a token".into())),
         }
         self.common_mut().auth_provider = None;
@@ -1319,30 +1503,35 @@ impl InitiatorSignaling {
     }
 
     /// Handle an incoming [`Key`](messages/struct.Key.html) message.
-    #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
+    #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
     fn handle_key(&mut self, msg: Key, source: Address) -> SignalingResult<Vec<HandleAction>> {
         let source_identity = Identity::from(source);
         debug!("--> Received key from {}", source_identity);
 
         // Find responder instance
-        let responder = self.responders.get_mut(&source)
-            .ok_or_else(|| SignalingError::Crash(
-                format!("Did not find responder with address {}", source)
-            ))?;
+        let responder = self.responders.get_mut(&source).ok_or_else(|| {
+            SignalingError::Crash(format!("Did not find responder with address {}", source))
+        })?;
 
         // Sanity check
         if responder.session_key.is_some() {
-            return Err(SignalingError::Crash("Responder already has a session key set!".into()));
+            return Err(SignalingError::Crash(
+                "Responder already has a session key set!".into(),
+            ));
         }
 
         // Ensure that session key != permanent key
         match responder.permanent_key {
             Some(pk) if pk == msg.key => {
-                return Err(SignalingError::Protocol("Responder session key and permanent key are equal".into()));
-            },
-            Some(_) => {},
+                return Err(SignalingError::Protocol(
+                    "Responder session key and permanent key are equal".into(),
+                ));
+            }
+            Some(_) => {}
             None => {
-                return Err(SignalingError::Crash("Responder permanent key not set".into()));
+                return Err(SignalingError::Crash(
+                    "Responder permanent key not set".into(),
+                ));
             }
         };
 
@@ -1353,7 +1542,10 @@ impl InitiatorSignaling {
         responder.set_handshake_state(ResponderHandshakeState::KeyReceived);
 
         // Reply with our own key msg
-        let key: Message = Key { key: *responder.keypair.public_key() }.into_message();
+        let key: Message = Key {
+            key: *responder.keypair.public_key(),
+        }
+        .into_message();
         let key_nonce = Nonce::new(
             responder.cookie_pair().ours.clone(),
             self.common.identity.into(),
@@ -1363,7 +1555,9 @@ impl InitiatorSignaling {
         let obox = OpenBox::<Message>::new(key, key_nonce);
         let bbox = obox.encrypt(
             &self.common.permanent_keypair,
-            responder.permanent_key.as_ref()
+            responder
+                .permanent_key
+                .as_ref()
                 .ok_or_else(|| SignalingError::Crash("Responder permanent key not set".into()))?,
         );
 
@@ -1381,10 +1575,9 @@ impl InitiatorSignaling {
         let mut actions = vec![];
 
         // Find responder instance
-        let mut responder = self.responders.remove(&source)
-            .ok_or_else(|| SignalingError::Crash(
-                format!("Did not find responder with address {}", source)
-            ))?;
+        let mut responder = self.responders.remove(&source).ok_or_else(|| {
+            SignalingError::Crash(format!("Did not find responder with address {}", source))
+        })?;
 
         // The cookie provided in the `your_cookie` field SHALL contain the cookie
         // we have used in our previous messages to the responder.
@@ -1396,11 +1589,21 @@ impl InitiatorSignaling {
 
         // An initiator SHALL validate that the tasks field contains an array with at least one element.
         if msg.task.is_some() {
-            return Err(SignalingError::InvalidMessage("We're an initiator, but the `task` field in the auth message is set".into()));
+            return Err(SignalingError::InvalidMessage(
+                "We're an initiator, but the `task` field in the auth message is set".into(),
+            ));
         }
         let proposed_tasks = match msg.tasks {
-            None => return Err(SignalingError::InvalidMessage("The `tasks` field in the auth message is not set".into())),
-            Some(ref tasks) if tasks.is_empty() => return Err(SignalingError::InvalidMessage("The `tasks` field in the auth message is empty".into())),
+            None => {
+                return Err(SignalingError::InvalidMessage(
+                    "The `tasks` field in the auth message is not set".into(),
+                ))
+            }
+            Some(ref tasks) if tasks.is_empty() => {
+                return Err(SignalingError::InvalidMessage(
+                    "The `tasks` field in the auth message is empty".into(),
+                ))
+            }
             Some(tasks) => tasks,
         };
 
@@ -1413,7 +1616,10 @@ impl InitiatorSignaling {
         };
         for task in &proposed_tasks {
             if !msg.data.contains_key(task) {
-                return Err(SignalingError::InvalidMessage(format!("The task \"{}\" in the auth message does not have a corresponding data entry", task)));
+                return Err(SignalingError::InvalidMessage(format!(
+                    "The task \"{}\" in the auth message does not have a corresponding data entry",
+                    task
+                )));
             }
         }
 
@@ -1443,17 +1649,20 @@ impl InitiatorSignaling {
                 };
                 actions.push(HandleAction::HandshakeError(SaltyError::NoSharedTask));
                 return Ok(actions);
-            },
+            }
         };
 
         // Both initiator an responder SHALL verify that the data field contains a Map
         // and SHALL look up the chosen task's data value.
-        let task_data = msg.data.get(&*chosen_task.name())
+        let task_data = msg
+            .data
+            .get(&*chosen_task.name())
             .ok_or_else(|| SignalingError::Crash("Task data not found".into()))?;
 
         // The value MUST be handed over to the corresponding task
         // after processing this message is complete.
-        chosen_task.init(task_data)
+        chosen_task
+            .init(task_data)
             .map_err(|e| SignalingError::TaskInitialization(format!("{}", e)))?;
 
         // After the above procedure has been followed, the other client has successfully
@@ -1466,8 +1675,12 @@ impl InitiatorSignaling {
         if !self.responders.is_empty() {
             info!("Dropping {} other responders", self.responders.len());
             for addr in self.responders.keys() {
-                let drop_responder = self.send_drop_responder(*addr, DropReason::DroppedByInitiator)?;
-                debug!("<-- Enqueuing drop-responder to {}", self.server().identity());
+                let drop_responder =
+                    self.send_drop_responder(*addr, DropReason::DroppedByInitiator)?;
+                debug!(
+                    "<-- Enqueuing drop-responder to {}",
+                    self.server().identity()
+                );
                 actions.push(drop_responder);
             }
 
@@ -1482,7 +1695,11 @@ impl InitiatorSignaling {
         responder.set_handshake_state(ResponderHandshakeState::AuthReceived);
 
         // Respond with auth message
-        let responder_cookie = responder.cookie_pair.theirs.as_ref().cloned()
+        let responder_cookie = responder
+            .cookie_pair
+            .theirs
+            .as_ref()
+            .cloned()
             .ok_or_else(|| SignalingError::Crash("Responder cookie not set".into()))?;
         let auth: Message = InitiatorAuthBuilder::new(responder_cookie)
             .set_task(chosen_task.name(), chosen_task.data())
@@ -1497,7 +1714,9 @@ impl InitiatorSignaling {
         let obox = OpenBox::<Message>::new(auth, auth_nonce);
         let bbox = obox.encrypt(
             &responder.keypair,
-            responder.session_key.as_ref()
+            responder
+                .session_key
+                .as_ref()
                 .ok_or_else(|| SignalingError::Crash("Responder session key not set".into()))?,
         );
         debug!("<-- Enqueuing auth to {}", &responder.identity());
@@ -1534,8 +1753,11 @@ impl InitiatorSignaling {
         // If we trust the responder…
         if let Some(AuthProvider::TrustedKey(key)) = self.common.auth_provider {
             // …set the public permanent key
-            if responder.permanent_key.is_some() { // Sanity check
-                return Err(SignalingError::Crash("Responder already has a permanent key set!".into()));
+            if responder.permanent_key.is_some() {
+                // Sanity check
+                return Err(SignalingError::Crash(
+                    "Responder already has a permanent key set!".into(),
+                ));
             }
             responder.permanent_key = Some(key);
 
@@ -1555,7 +1777,10 @@ impl InitiatorSignaling {
         // drop the oldest responder that hasn't sent any valid data so far.
         if self.responders.len() > (254 - 2) {
             if let Some(drop_action) = self.drop_oldest_inactive_responder()? {
-                debug!("<-- Enqueuing drop-responder to {}", self.server().identity());
+                debug!(
+                    "<-- Enqueuing drop-responder to {}",
+                    self.server().identity()
+                );
                 action = Some(drop_action);
             }
         }
@@ -1570,7 +1795,8 @@ impl InitiatorSignaling {
         debug!("Path almost full, dropping the oldest inactive responder.");
 
         // Find address of drop candidate
-        let address = self.responders
+        let address = self
+            .responders
             .values()
             .filter(|r| r.handshake_state() == ResponderHandshakeState::New)
             .min_by_key(|r| r.counter)
@@ -1578,11 +1804,11 @@ impl InitiatorSignaling {
 
         // Remove responder from internal list of responders
         let responder: ResponderContext = match address {
-            Some(ref addr) => {
-                self.responders
-                    .remove(addr)
-                    .ok_or_else(|| SignalingError::Crash("Inactive responder not found anymore in responders list".into()))?
-            },
+            Some(ref addr) => self.responders.remove(addr).ok_or_else(|| {
+                SignalingError::Crash(
+                    "Inactive responder not found anymore in responders list".into(),
+                )
+            })?,
             None => {
                 warn!("Did not find a valid responder candidate to drop!");
                 return Ok(None);
@@ -1590,12 +1816,10 @@ impl InitiatorSignaling {
         };
 
         // Enqueue a drop-responder message
-        self
-            .send_drop_responder(responder.address, DropReason::DroppedByInitiator)
+        self.send_drop_responder(responder.address, DropReason::DroppedByInitiator)
             .map(Option::Some)
     }
 }
-
 
 /// Signaling data for the responder.
 pub(crate) struct ResponderSignaling {
@@ -1638,8 +1862,9 @@ impl Signaling for ResponderSignaling {
         // A client MUST check that the destination address targets its
         // assigned identity (or `0x00` during authentication).
         if self.identity() == ClientIdentity::Unknown
-        && !nonce.destination().is_unknown()
-        && self.server_handshake_state() != ServerHandshakeState::New {
+            && !nonce.destination().is_unknown()
+            && self.server_handshake_state() != ServerHandshakeState::New
+        {
             // The first message received with a destination address different
             // to `0x00` SHALL be accepted as the client's assigned identity.
             // However, the client MUST validate that the identity fits its
@@ -1650,15 +1875,18 @@ impl Signaling for ResponderSignaling {
                 self.common.identity = ClientIdentity::Responder(nonce.destination().0);
                 debug!("Assigned identity: {}", self.identity());
             } else {
-                return Err(ValidationError::Fail(
-                    format!("cannot assign address {} to a responder", nonce.destination())
-                ));
+                return Err(ValidationError::Fail(format!(
+                    "cannot assign address {} to a responder",
+                    nonce.destination()
+                )));
             };
         }
         if nonce.destination() != self.identity().into() {
-            return Err(ValidationError::Fail(
-                format!("Bad destination: {} (our identity is {})", nonce.destination(), self.identity())
-            ));
+            return Err(ValidationError::Fail(format!(
+                "Bad destination: {} (our identity is {})",
+                nonce.destination(),
+                self.identity()
+            )));
         }
 
         Ok(())
@@ -1678,23 +1906,29 @@ impl Signaling for ResponderSignaling {
                 if let ClientIdentity::Responder(_) = self.identity() {
                     Ok(())
                 } else {
-                    Err(ValidationError::DropMsg(
-                        format!("Bad source: {} (our identity is {})", nonce.source(), self.identity())
-                    ))
+                    Err(ValidationError::DropMsg(format!(
+                        "Bad source: {} (our identity is {})",
+                        nonce.source(),
+                        self.identity()
+                    )))
                 }
-            },
+            }
 
             // From responder
-            Address(0x02..=0xff) => Err(ValidationError::DropMsg(
-                format!("Bad source: {} (our identity is {})", nonce.source(), self.identity())
-            )),
+            Address(0x02..=0xff) => Err(ValidationError::DropMsg(format!(
+                "Bad source: {} (our identity is {})",
+                nonce.source(),
+                self.identity()
+            ))),
         }
     }
 
     fn decode_peer_message(&self, bbox: ByteBox) -> SignalingResult<OpenBox<Message>> {
         // Validate source again
         if !bbox.nonce.source().is_initiator() {
-            return Err(SignalingError::Crash("Received message from a responder".to_string()));
+            return Err(SignalingError::Crash(
+                "Received message from a responder".to_string(),
+            ));
         }
 
         // Decrypt depending on state
@@ -1702,19 +1936,28 @@ impl Signaling for ResponderSignaling {
             InitiatorHandshakeState::KeySent => {
                 // Expect key message, encrypted with our public permanent key
                 // and initiator private permanent key
-                OpenBox::<Message>::decrypt(bbox, &self.common.permanent_keypair, &self.initiator.permanent_key)
-            },
+                OpenBox::<Message>::decrypt(
+                    bbox,
+                    &self.common.permanent_keypair,
+                    &self.initiator.permanent_key,
+                )
+            }
             InitiatorHandshakeState::AuthSent => {
                 // Expect an auth message, encrypted with our public session
                 // key and initiator private session key
-                let initiator_session_key = self.initiator.session_key.as_ref()
-                    .ok_or_else(|| SignalingError::Crash("Initiator session key not set".into()))?;
+                let initiator_session_key =
+                    self.initiator.session_key.as_ref().ok_or_else(|| {
+                        SignalingError::Crash("Initiator session key not set".into())
+                    })?;
                 OpenBox::<Message>::decrypt(bbox, &self.initiator.keypair, initiator_session_key)
-            },
+            }
             other => {
                 // TODO (#14): Maybe remove these states?
-                Err(SignalingError::Crash(format!("Invalid initiator handshake state: {:?}", other)))
-            },
+                Err(SignalingError::Crash(format!(
+                    "Invalid initiator handshake state: {:?}",
+                    other
+                )))
+            }
         }
     }
 
@@ -1723,18 +1966,29 @@ impl Signaling for ResponderSignaling {
     ///
     /// This method call may have some side effects, like updates in the peer
     /// context (cookie, CSN, etc).
-    fn handle_peer_message(&mut self, obox: OpenBox<Message>) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_peer_message(
+        &mut self,
+        obox: OpenBox<Message>,
+    ) -> SignalingResult<Vec<HandleAction>> {
         let old_state = self.initiator.handshake_state();
         match (old_state, obox.message) {
             // Valid state transitions
-            (InitiatorHandshakeState::KeySent, Message::Key(msg)) => self.handle_key(msg, &obox.nonce),
-            (InitiatorHandshakeState::AuthSent, Message::Auth(msg)) => self.handle_auth(msg, obox.nonce.source()),
-            (InitiatorHandshakeState::AuthSent, Message::Close(msg)) => self.handle_peer_handshake_close(msg),
+            (InitiatorHandshakeState::KeySent, Message::Key(msg)) => {
+                self.handle_key(msg, &obox.nonce)
+            }
+            (InitiatorHandshakeState::AuthSent, Message::Auth(msg)) => {
+                self.handle_auth(msg, obox.nonce.source())
+            }
+            (InitiatorHandshakeState::AuthSent, Message::Close(msg)) => {
+                self.handle_peer_handshake_close(msg)
+            }
 
             // Any undefined state transition results in an error
-            (s, message) => Err(SignalingError::InvalidStateTransition(
-                format!("Got {} message from initiator in {:?} state", message.get_type(), s)
-            )),
+            (s, message) => Err(SignalingError::InvalidStateTransition(format!(
+                "Got {} message from initiator in {:?} state",
+                message.get_type(),
+                s
+            ))),
         }
     }
 
@@ -1744,7 +1998,8 @@ impl Signaling for ResponderSignaling {
         // boolean value.
         if msg.responders.is_some() {
             return Err(SignalingError::InvalidMessage(
-                "We're a responder, but the `responders` field in the server-auth message is set".into()
+                "We're a responder, but the `responders` field in the server-auth message is set"
+                    .into(),
             ));
         }
         let mut actions: Vec<HandleAction> = vec![];
@@ -1801,13 +2056,13 @@ impl Signaling for ResponderSignaling {
         match self.common().auth_provider {
             Some(AuthProvider::Token(_)) => {
                 send_token = true;
-            },
+            }
             Some(AuthProvider::TrustedKey(_)) => {
                 debug!("Trusted key available, skipping token message");
-            },
+            }
             None => {
                 return Err(SignalingError::Crash("No auth provider set".into()));
-            },
+            }
         }
         if send_token {
             let old_auth_provider = mem::replace(&mut self.common_mut().auth_provider, None);
@@ -1818,13 +2073,16 @@ impl Signaling for ResponderSignaling {
             }
         }
         actions.push(self.send_key()?);
-        self.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
+        self.initiator
+            .set_handshake_state(InitiatorHandshakeState::KeySent);
 
         Ok(actions)
     }
 
     fn handle_new_responder(&mut self, _msg: NewResponder) -> SignalingResult<Vec<HandleAction>> {
-        Err(SignalingError::Protocol("Received 'new-responder' message as responder".into()))
+        Err(SignalingError::Protocol(
+            "Received 'new-responder' message as responder".into(),
+        ))
     }
 
     /// Handle an incoming [`Disconnected`](messages/struct.Disconnected.html) message.
@@ -1835,7 +2093,7 @@ impl Signaling for ResponderSignaling {
         // that the id field contains a valid initiator address (0x01).
         if !msg.id.is_initiator() {
             return Err(SignalingError::Protocol(
-                "Received 'disconnected' message with non-initiator id".into()
+                "Received 'disconnected' message with non-initiator id".into(),
             ));
         }
 
@@ -1844,12 +2102,14 @@ impl Signaling for ResponderSignaling {
 }
 
 impl ResponderSignaling {
-    pub(crate) fn new(permanent_keypair: KeyPair,
-                      initiator_pubkey: PublicKey,
-                      auth_token: Option<AuthToken>,
-                      server_public_permanent_key: Option<PublicKey>,
-                      tasks: Tasks,
-                      ping_interval: Option<Duration>) -> Self {
+    pub(crate) fn new(
+        permanent_keypair: KeyPair,
+        initiator_pubkey: PublicKey,
+        auth_token: Option<AuthToken>,
+        server_public_permanent_key: Option<PublicKey>,
+        tasks: Tasks,
+        ping_interval: Option<Duration>,
+    ) -> Self {
         ResponderSignaling {
             common: Common {
                 signaling_state: SignalingState::ServerHandshake,
@@ -1877,13 +2137,14 @@ impl ResponderSignaling {
     /// Build a `Token` message.
     ///
     /// The token is consumed to avoid accidentally reusing it.
-    #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
+    #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
     fn send_token(&self, token: AuthToken) -> SignalingResult<HandleAction> {
         // The responder MUST set the public key (32 bytes) of the permanent
         // key pair in the key field of this message.
         let msg: Message = Token {
             key: self.common().permanent_keypair.public_key().to_owned(),
-        }.into_message();
+        }
+        .into_message();
         let nonce = Nonce::new(
             self.initiator.cookie_pair().ours.clone(),
             self.identity().into(),
@@ -1905,7 +2166,8 @@ impl ResponderSignaling {
         // It MUST set the public key (32 bytes) of that key pair in the key field.
         let msg: Message = Key {
             key: self.initiator.keypair.public_key().to_owned(),
-        }.into_message();
+        }
+        .into_message();
         let nonce = Nonce::new(
             self.initiator.cookie_pair().ours.clone(),
             self.identity().into(),
@@ -1916,32 +2178,40 @@ impl ResponderSignaling {
 
         // The message SHALL be NaCl public-key encrypted by the client's
         // permanent key pair and the other client's permanent key pair.
-        let bbox = obox.encrypt(&self.common().permanent_keypair, &self.initiator.permanent_key);
+        let bbox = obox.encrypt(
+            &self.common().permanent_keypair,
+            &self.initiator.permanent_key,
+        );
 
         debug!("<-- Enqueuing key to {}", self.initiator.identity());
         Ok(HandleAction::Reply(bbox))
     }
 
     /// Handle an incoming [`Key`](messages/struct.Key.html) message.
-    #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
+    #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
     fn handle_key(&mut self, msg: Key, nonce: &Nonce) -> SignalingResult<Vec<HandleAction>> {
         debug!("--> Received key from {}", nonce.source_identity());
 
         // Sanity check
         if self.initiator.session_key.is_some() {
-            return Err(SignalingError::Crash("Initiator already has a session key set!".into()));
+            return Err(SignalingError::Crash(
+                "Initiator already has a session key set!".into(),
+            ));
         }
 
         // Ensure that session key != permanent key
         if msg.key == self.initiator.permanent_key {
-            return Err(SignalingError::Protocol("Responder session key and permanent key are equal".into()));
+            return Err(SignalingError::Protocol(
+                "Responder session key and permanent key are equal".into(),
+            ));
         }
 
         // Set public session key
         self.initiator.session_key = Some(msg.key);
 
         // State transition
-        self.initiator.set_handshake_state(InitiatorHandshakeState::KeyReceived);
+        self.initiator
+            .set_handshake_state(InitiatorHandshakeState::KeyReceived);
 
         // Reply with auth msg
         let auth: Message = ResponderAuthBuilder::new(nonce.cookie().clone())
@@ -1949,7 +2219,7 @@ impl ResponderSignaling {
                 self.common()
                     .tasks
                     .as_ref()
-                    .ok_or_else(|| SignalingError::Crash("Tasks are not set".into()))?
+                    .ok_or_else(|| SignalingError::Crash("Tasks are not set".into()))?,
             )
             .build()?
             .into_message();
@@ -1962,12 +2232,15 @@ impl ResponderSignaling {
         let obox = OpenBox::<Message>::new(auth, auth_nonce);
         let bbox = obox.encrypt(
             &self.initiator.keypair,
-            self.initiator.session_key.as_ref()
+            self.initiator
+                .session_key
+                .as_ref()
                 .ok_or_else(|| SignalingError::Crash("Initiator session key not set".into()))?,
         );
 
         // State transition
-        self.initiator.set_handshake_state(InitiatorHandshakeState::AuthSent);
+        self.initiator
+            .set_handshake_state(InitiatorHandshakeState::AuthSent);
 
         debug!("<-- Enqueuing auth to {}", self.initiator.identity());
         Ok(vec![HandleAction::Reply(bbox)])
@@ -1987,7 +2260,9 @@ impl ResponderSignaling {
 
         // A responder SHALL validate that the task field is present and contains one of the tasks it has previously offered to the initiator.
         if msg.tasks.is_some() {
-            return Err(SignalingError::InvalidMessage("We're a responder, but the `tasks` field in the auth message is set".into()));
+            return Err(SignalingError::InvalidMessage(
+                "We're a responder, but the `tasks` field in the auth message is set".into(),
+            ));
         }
         let mut chosen_task: BoxedTask = match msg.task {
             Some(task) => {
@@ -1996,37 +2271,43 @@ impl ResponderSignaling {
                 our_tasks
                     .into_iter()
                     .find(|t: &BoxedTask| t.name() == task)
-                    .ok_or_else(|| SignalingError::Protocol(
-                        "The `task` field in the auth message contains an unknown task".into()
-                    ))?
-            },
-            None => return Err(SignalingError::InvalidMessage(
-                "The `task` field in the auth message is not set".into()
-            )),
+                    .ok_or_else(|| {
+                        SignalingError::Protocol(
+                            "The `task` field in the auth message contains an unknown task".into(),
+                        )
+                    })?
+            }
+            None => {
+                return Err(SignalingError::InvalidMessage(
+                    "The `task` field in the auth message is not set".into(),
+                ))
+            }
         };
 
         // Make sure that there is only one data entry.
         if msg.data.is_empty() {
             return Err(SignalingError::Protocol(
-                "The `data` field in the auth message is empty".into()
+                "The `data` field in the auth message is empty".into(),
             ));
         }
         if msg.data.len() > 1 {
             return Err(SignalingError::Protocol(
-                "The `data` field in the auth message contains more than one entry".into()
+                "The `data` field in the auth message contains more than one entry".into(),
             ));
         }
 
         // Both initiator an responder SHALL verify that the data field contains a Map
         // and SHALL look up the chosen task's data value.
-        let task_data = msg.data.get(&*chosen_task.name())
-            .ok_or_else(|| SignalingError::Protocol(
-                "The task in the auth message does not have a corresponding data entry".into()
-            ))?;
+        let task_data = msg.data.get(&*chosen_task.name()).ok_or_else(|| {
+            SignalingError::Protocol(
+                "The task in the auth message does not have a corresponding data entry".into(),
+            )
+        })?;
 
         // The value MUST be handed over to the corresponding task
         // after processing this message is complete.
-        chosen_task.init(task_data)
+        chosen_task
+            .init(task_data)
             .map_err(|e| SignalingError::TaskInitialization(format!("{}", e)))?;
 
         // After the above procedure has been followed, the other client has successfully
@@ -2039,7 +2320,8 @@ impl ResponderSignaling {
         self.common_mut().task = Some(Arc::new(Mutex::new(chosen_task)));
 
         // State transitions
-        self.initiator.set_handshake_state(InitiatorHandshakeState::AuthReceived);
+        self.initiator
+            .set_handshake_state(InitiatorHandshakeState::AuthReceived);
         self.common.set_signaling_state(SignalingState::Task)?;
         info!("Peer handshake completed");
 
@@ -2047,14 +2329,15 @@ impl ResponderSignaling {
     }
 
     /// Handle an incoming [`Close`](messages/struct.Close.html) message during peer handshake.
-    #[cfg_attr(feature="cargo-clippy", allow(needless_pass_by_value))]
+    #[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
     fn handle_peer_handshake_close(&mut self, msg: Close) -> SignalingResult<Vec<HandleAction>> {
         let close_code = CloseCode::from_number(msg.reason);
         match close_code {
             CloseCode::NoSharedTask => Err(SignalingError::NoSharedTask),
-            _ => Err(SignalingError::Protocol(
-                format!("Received unexpected close message with code {} during peer handshake", msg.reason)
-            )),
+            _ => Err(SignalingError::Protocol(format!(
+                "Received unexpected close message with code {} during peer handshake",
+                msg.reason
+            ))),
         }
     }
 }

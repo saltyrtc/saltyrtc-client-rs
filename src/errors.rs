@@ -10,11 +10,9 @@ use failure::Fail;
 use rmp_serde::decode::Error as SerdeDecodeError;
 use tokio_timer::TimeoutError;
 
-
 /// Re-exported [`Error`](../../failure/struct.Error.html) type from the
 /// [failure crate](https://crates.io/crates/failure).
 pub type Error = ::failure::Error;
-
 
 /// Errors that are exposed to the user of the library.
 #[derive(Fail, Debug, PartialEq)]
@@ -49,7 +47,10 @@ pub enum SaltyError {
 
     /// An unexpected error. This should never happen and indicates a bug in
     /// the implementation.
-    #[fail(display = "An unexpected error occurred: {}. This indicates a bug and should be reported!", _0)]
+    #[fail(
+        display = "An unexpected error occurred: {}. This indicates a bug and should be reported!",
+        _0
+    )]
     Crash(String),
 
     /// A future timed out.
@@ -91,7 +92,6 @@ impl<T> From<TryLockError<T>> for SaltyError {
 
 /// A result with [`SaltyError`](enum.SaltyError.html) as error type.
 pub type SaltyResult<T> = ::std::result::Result<T, SaltyError>;
-
 
 /// Internal errors that occur during signaling and that will probably result
 /// in the connection being closed.
@@ -154,7 +154,10 @@ pub(crate) enum SignalingError {
 
     /// An unexpected error. This should never happen and indicates a bug in
     /// the implementation.
-    #[fail(display = "An unexpected error occurred: {}. This indicates a bug and should be reported!", _0)]
+    #[fail(
+        display = "An unexpected error occurred: {}. This indicates a bug and should be reported!",
+        _0
+    )]
     Crash(String),
 }
 
@@ -173,7 +176,6 @@ impl<T> From<TryLockError<T>> for SignalingError {
     }
 }
 
-
 /// Errors that may be returned by the [`SaltyClientBuilder`](../struct.SaltyClientBuilder.html).
 #[derive(Fail, Debug, PartialEq)]
 pub enum BuilderError {
@@ -181,7 +183,6 @@ pub enum BuilderError {
     #[fail(display = "No task specified")]
     MissingTask,
 }
-
 
 /// Result of the nonce validation.
 pub(crate) enum ValidationError {

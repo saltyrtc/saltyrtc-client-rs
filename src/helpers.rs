@@ -1,4 +1,4 @@
-use crate::errors::{SaltyResult, SaltyError};
+use crate::errors::{SaltyError, SaltyResult};
 
 /// Initialize libsodium. Return an error if initialization failed.
 ///
@@ -7,9 +7,7 @@ use crate::errors::{SaltyResult, SaltyError};
 /// See [`rust_sodium::init` docs](https://docs.rs/rust_sodium/0.9.0/rust_sodium/fn.init.html)
 /// for more information.
 pub fn libsodium_init() -> SaltyResult<()> {
-    ::rust_sodium::init().map_err(
-        |()| SaltyError::Crypto("Could not initialize libsodium".into())
-    )
+    ::rust_sodium::init().map_err(|()| SaltyError::Crypto("Could not initialize libsodium".into()))
 }
 
 /// Initialize libsodium. Panic if initialization fails.

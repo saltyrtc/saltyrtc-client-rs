@@ -1,10 +1,10 @@
 use crate::crypto_types::UnsignedKeys;
 use crate::test_helpers::{DummyTask, TestRandom};
 
-use super::*;
 use super::cookie::{Cookie, CookiePair};
 use super::csn::{CombinedSequence, CombinedSequenceSnapshot};
 use super::messages::*;
+use super::*;
 
 struct TestContext<S: Signaling> {
     /// Our permanent keypair.
@@ -21,10 +21,10 @@ struct TestContext<S: Signaling> {
 
 impl TestContext<InitiatorSignaling> {
     fn initiator(
-            identity: ClientIdentity,
-            peer_trusted_pubkey: Option<PublicKey>,
-            signaling_state: SignalingState,
-            server_handshake_state: ServerHandshakeState,
+        identity: ClientIdentity,
+        peer_trusted_pubkey: Option<PublicKey>,
+        signaling_state: SignalingState,
+        server_handshake_state: ServerHandshakeState,
     ) -> TestContext<InitiatorSignaling> {
         let our_ks = KeyPair::new();
         let server_ks = KeyPair::new();
@@ -34,13 +34,17 @@ impl TestContext<InitiatorSignaling> {
         let tasks = Tasks::new(Box::new(DummyTask::new(42)));
         let mut signaling = InitiatorSignaling::new(ks, tasks, peer_trusted_pubkey, None, None);
         signaling.common_mut().identity = identity;
-        signaling.server_mut().set_handshake_state(server_handshake_state);
+        signaling
+            .server_mut()
+            .set_handshake_state(server_handshake_state);
         signaling.server_mut().cookie_pair = CookiePair {
             ours: our_cookie.clone(),
             theirs: Some(server_cookie.clone()),
         };
         signaling.server_mut().session_key = Some(server_ks.public_key().clone());
-        signaling.common_mut().set_signaling_state_forced(signaling_state)
+        signaling
+            .common_mut()
+            .set_signaling_state_forced(signaling_state)
             .expect("Could not set test signaling state");
         TestContext {
             our_ks,
@@ -53,11 +57,11 @@ impl TestContext<InitiatorSignaling> {
 }
 impl TestContext<ResponderSignaling> {
     fn responder(
-            identity: ClientIdentity,
-            signaling_state: SignalingState,
-            server_handshake_state: ServerHandshakeState,
-            initiator_pubkey: Option<PublicKey>,
-            auth_token: Option<AuthToken>,
+        identity: ClientIdentity,
+        signaling_state: SignalingState,
+        server_handshake_state: ServerHandshakeState,
+        initiator_pubkey: Option<PublicKey>,
+        auth_token: Option<AuthToken>,
     ) -> TestContext<ResponderSignaling> {
         let our_ks = KeyPair::new();
         let server_ks = KeyPair::new();
@@ -74,13 +78,17 @@ impl TestContext<ResponderSignaling> {
             ResponderSignaling::new(ks, pk, auth_token, None, tasks, None)
         };
         signaling.common_mut().identity = identity;
-        signaling.server_mut().set_handshake_state(server_handshake_state);
+        signaling
+            .server_mut()
+            .set_handshake_state(server_handshake_state);
         signaling.server_mut().cookie_pair = CookiePair {
             ours: our_cookie.clone(),
             theirs: Some(server_cookie.clone()),
         };
         signaling.server_mut().session_key = Some(server_ks.public_key().clone());
-        signaling.common_mut().set_signaling_state_forced(signaling_state)
+        signaling
+            .common_mut()
+            .set_signaling_state_forced(signaling_state)
             .expect("Could not set test signaling state");
         TestContext {
             our_ks,
@@ -101,7 +109,11 @@ struct TestMsgBuilder {
 
 impl TestMsgBuilder {
     pub fn new(msg: Message) -> Self {
-        TestMsgBuilder { msg, src: None, dest: None }
+        TestMsgBuilder {
+            msg,
+            src: None,
+            dest: None,
+        }
     }
 
     pub fn from(mut self, addr: u8) -> Self {
@@ -114,12 +126,7 @@ impl TestMsgBuilder {
         self
     }
 
-    pub fn build(
-        self,
-        cookie: Cookie,
-        kp: &KeyPair,
-        pubkey: &PublicKey,
-    ) -> ByteBox {
+    pub fn build(self, cookie: Cookie, kp: &KeyPair, pubkey: &PublicKey) -> ByteBox {
         self.build_with_csn(cookie, kp, pubkey, CombinedSequenceSnapshot::random())
     }
 
@@ -130,10 +137,12 @@ impl TestMsgBuilder {
         pubkey: &PublicKey,
         csn: CombinedSequenceSnapshot,
     ) -> ByteBox {
-        let nonce = Nonce::new(cookie,
-                               self.src.expect("Source not set"),
-                               self.dest.expect("Destination not set"),
-                               csn);
+        let nonce = Nonce::new(
+            cookie,
+            self.src.expect("Source not set"),
+            self.dest.expect("Destination not set"),
+            csn,
+        );
         let obox = OpenBox::<Message>::new(self.msg, nonce);
         obox.encrypt(kp, pubkey)
     }
@@ -144,7 +153,7 @@ impl TestMsgBuilder {
         self.build(
             ctx.server_cookie.clone(),
             &ctx.server_ks,
-            ctx.our_ks.public_key()
+            ctx.our_ks.public_key(),
         )
     }
 }
@@ -154,8 +163,15 @@ mod server_auth {
 
     /// Assert that handling the specified byte box fails in ClientInfoSent
     /// state with the specified error.
-    fn assert_client_info_sent_fail<S: Signaling>(ctx: &mut TestContext<S>, bbox: ByteBox, error: SignalingError) {
-        assert_eq!(ctx.signaling.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+    fn assert_client_info_sent_fail<S: Signaling>(
+        ctx: &mut TestContext<S>,
+        bbox: ByteBox,
+        error: SignalingError,
+    ) {
+        assert_eq!(
+            ctx.signaling.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
         assert_eq!(ctx.signaling.handle_message(bbox), Err(error))
     }
 
@@ -167,17 +183,25 @@ mod server_auth {
         // Initialize signaling class
         let ctx = TestContext::responder(
             ClientIdentity::Unknown,
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
-            None, None
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
+            None,
+            None,
         );
 
         // Prepare a ServerAuth message
         let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, false).into_message();
-        let bbox = TestMsgBuilder::new(msg).from(0).to(13).build_from_server(&ctx);
+        let bbox = TestMsgBuilder::new(msg)
+            .from(0)
+            .to(13)
+            .build_from_server(&ctx);
 
         // Handle message
         let mut s = ctx.signaling;
-        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
         let _actions = s.handle_message(bbox).unwrap();
         assert_eq!(s.identity(), ClientIdentity::Responder(13));
     }
@@ -189,31 +213,45 @@ mod server_auth {
     fn your_cookie() {
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
         );
 
         // Prepare a ServerAuth message
         let msg = ServerAuth::for_initiator(Cookie::random(), None, vec![]).into_message();
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build_from_server(&ctx);
+        let bbox = TestMsgBuilder::new(msg)
+            .from(0)
+            .to(1)
+            .build_from_server(&ctx);
 
         // Handle message
-        assert_client_info_sent_fail(&mut ctx, bbox,
-                                     SignalingError::Protocol(
-                                         "Repeated cookie in auth message from server does not match our cookie".into()));
+        assert_client_info_sent_fail(
+            &mut ctx,
+            bbox,
+            SignalingError::Protocol(
+                "Repeated cookie in auth message from server does not match our cookie".into(),
+            ),
+        );
     }
 
     #[test]
     fn initiator_wrong_fields() {
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
         );
 
         // Prepare a ServerAuth message
         let msg = ServerAuth::for_responder(ctx.our_cookie.clone(), None, true).into_message();
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build_from_server(&ctx);
+        let bbox = TestMsgBuilder::new(msg)
+            .from(0)
+            .to(1)
+            .build_from_server(&ctx);
 
         // Handle message
         assert_client_info_sent_fail(&mut ctx, bbox,
@@ -225,8 +263,10 @@ mod server_auth {
     fn initiator_missing_fields() {
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
         );
 
         // Prepare a ServerAuth message
@@ -235,49 +275,85 @@ mod server_auth {
             signed_keys: None,
             responders: None,
             initiator_connected: None,
-        }.into_message();
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build_from_server(&ctx);
+        }
+        .into_message();
+        let bbox = TestMsgBuilder::new(msg)
+            .from(0)
+            .to(1)
+            .build_from_server(&ctx);
 
         // Handle message
-        assert_client_info_sent_fail(&mut ctx, bbox,
-                                     SignalingError::InvalidMessage(
-                                         "`responders` field in server-auth message not set".into()));
+        assert_client_info_sent_fail(
+            &mut ctx,
+            bbox,
+            SignalingError::InvalidMessage(
+                "`responders` field in server-auth message not set".into(),
+            ),
+        );
     }
 
     #[test]
     fn initiator_duplicate_fields() {
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
         );
 
         // Prepare a ServerAuth message
-        let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3), Address(3)]).into_message();
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build_from_server(&ctx);
+        let msg = ServerAuth::for_initiator(
+            ctx.our_cookie.clone(),
+            None,
+            vec![Address(2), Address(3), Address(3)],
+        )
+        .into_message();
+        let bbox = TestMsgBuilder::new(msg)
+            .from(0)
+            .to(1)
+            .build_from_server(&ctx);
 
         // Handle message
-        assert_client_info_sent_fail(&mut ctx, bbox,
-                                     SignalingError::InvalidMessage(
-                                         "`responders` field in server-auth message may not contain duplicates".into()));
+        assert_client_info_sent_fail(
+            &mut ctx,
+            bbox,
+            SignalingError::InvalidMessage(
+                "`responders` field in server-auth message may not contain duplicates".into(),
+            ),
+        );
     }
 
     #[test]
     fn initiator_invalid_fields() {
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
         );
 
         // Prepare a ServerAuth message
-        let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(1), Address(2), Address(3)]).into_message();
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build_from_server(&ctx);
+        let msg = ServerAuth::for_initiator(
+            ctx.our_cookie.clone(),
+            None,
+            vec![Address(1), Address(2), Address(3)],
+        )
+        .into_message();
+        let bbox = TestMsgBuilder::new(msg)
+            .from(0)
+            .to(1)
+            .build_from_server(&ctx);
 
         // Handle message
-        assert_client_info_sent_fail(&mut ctx, bbox,
-                                     SignalingError::InvalidMessage(
-                                         "`responders` field in server-auth message may not contain addresses <0x02".into()));
+        assert_client_info_sent_fail(
+            &mut ctx,
+            bbox,
+            SignalingError::InvalidMessage(
+                "`responders` field in server-auth message may not contain addresses <0x02".into(),
+            ),
+        );
     }
 
     /// The client SHOULD store the responder's identities in its internal
@@ -286,17 +362,27 @@ mod server_auth {
     fn initiator_stored_responder() {
         // Initialize signaling class
         let ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
         );
 
         // Prepare a ServerAuth message
-        let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3)]).into_message();
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build_from_server(&ctx);
+        let msg =
+            ServerAuth::for_initiator(ctx.our_cookie.clone(), None, vec![Address(2), Address(3)])
+                .into_message();
+        let bbox = TestMsgBuilder::new(msg)
+            .from(0)
+            .to(1)
+            .build_from_server(&ctx);
 
         // Handle message
         let mut s = ctx.signaling;
-        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
         assert_eq!(s.responders.len(), 0);
         let _actions = s.handle_message(bbox).unwrap();
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
@@ -310,8 +396,10 @@ mod server_auth {
         // Initialize signaling class
         let mut ctx = TestContext::responder(
             ClientIdentity::Responder(4),
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
-            None, None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
+            None,
+            None,
         );
 
         // Prepare a ServerAuth message
@@ -320,8 +408,12 @@ mod server_auth {
             signed_keys: None,
             responders: None,
             initiator_connected: None,
-        }.into_message();
-        let bbox = TestMsgBuilder::new(msg).from(0).to(4).build_from_server(&ctx);
+        }
+        .into_message();
+        let bbox = TestMsgBuilder::new(msg)
+            .from(0)
+            .to(4)
+            .build_from_server(&ctx);
 
         // Handle message
         assert_client_info_sent_fail(&mut ctx, bbox,
@@ -341,18 +433,28 @@ mod server_auth {
             signed_keys: None,
             responders: None,
             initiator_connected: Some(true),
-        }.into_message();
-        let bbox = TestMsgBuilder::new(msg).from(0).to(7).build_from_server(&ctx);
+        }
+        .into_message();
+        let bbox = TestMsgBuilder::new(msg)
+            .from(0)
+            .to(7)
+            .build_from_server(&ctx);
 
         // Signaling ref
         let mut s = ctx.signaling;
 
         // Handle message
-        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
         assert_eq!(s.initiator.handshake_state(), InitiatorHandshakeState::New);
         let actions = s.handle_message(bbox).unwrap();
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
-        assert_eq!(s.initiator.handshake_state(), InitiatorHandshakeState::KeySent);
+        assert_eq!(
+            s.initiator.handshake_state(),
+            InitiatorHandshakeState::KeySent
+        );
 
         actions
     }
@@ -361,24 +463,34 @@ mod server_auth {
     fn respond_initiator_with_token() {
         let ctx = TestContext::responder(
             ClientIdentity::Responder(7),
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
-            None, Some(AuthToken::new()),
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
+            None,
+            Some(AuthToken::new()),
         );
         let actions = _server_auth_respond(ctx);
         assert_eq!(actions.len(), 3);
-        assert_eq!(actions[2], HandleAction::Event(Event::ServerHandshakeDone(true)));
+        assert_eq!(
+            actions[2],
+            HandleAction::Event(Event::ServerHandshakeDone(true))
+        );
     }
 
     #[test]
     fn respond_initiator_without_token() {
         let ctx = TestContext::responder(
             ClientIdentity::Responder(7),
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
-            None, None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
+            None,
+            None,
         );
         let actions = _server_auth_respond(ctx);
         assert_eq!(actions.len(), 2);
-        assert_eq!(actions[1], HandleAction::Event(Event::ServerHandshakeDone(true)));
+        assert_eq!(
+            actions[1],
+            HandleAction::Event(Event::ServerHandshakeDone(true))
+        );
     }
 
     /// If processing the server auth message succeeds, the signaling state
@@ -387,8 +499,10 @@ mod server_auth {
     fn signaling_state_transition() {
         let ctx = TestContext::responder(
             ClientIdentity::Responder(7),
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
-            None, None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
+            None,
+            None,
         );
 
         // Prepare a ServerAuth message
@@ -397,39 +511,59 @@ mod server_auth {
             signed_keys: None,
             responders: None,
             initiator_connected: Some(false),
-        }.into_message();
-        let bbox = TestMsgBuilder::new(msg).from(0).to(7).build_from_server(&ctx);
+        }
+        .into_message();
+        let bbox = TestMsgBuilder::new(msg)
+            .from(0)
+            .to(7)
+            .build_from_server(&ctx);
 
         // Signaling ref
         let mut s = ctx.signaling;
 
         // Handle message
-        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
-        assert_eq!(s.common().signaling_state(), SignalingState::ServerHandshake);
+        assert_eq!(
+            s.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
+        assert_eq!(
+            s.common().signaling_state(),
+            SignalingState::ServerHandshake
+        );
         let actions = s.handle_message(bbox).unwrap();
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
         assert_eq!(s.common().signaling_state(), SignalingState::PeerHandshake);
-        assert_eq!(actions, vec![
-            HandleAction::Event(Event::ServerHandshakeDone(false)),
-        ]);
+        assert_eq!(
+            actions,
+            vec![HandleAction::Event(Event::ServerHandshakeDone(false)),]
+        );
     }
 
     // Helper function for server permanent key tests.
     // Set `correct_content` to false for a correctly encrypted `signed_keys`
     // field with wrong content.
-    fn _server_public_permanent_key_validate(correct_content: bool) -> (TestContext<InitiatorSignaling>, ByteBox) {
+    fn _server_public_permanent_key_validate(
+        correct_content: bool,
+    ) -> (TestContext<InitiatorSignaling>, ByteBox) {
         // Create server public permanent key
         let server_permanent_ks1 = KeyPair::new();
 
         // Initialize signaling class
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
         );
         ctx.signaling.server_mut().permanent_key = Some(server_permanent_ks1.public_key().clone());
 
         // Create nonce for ServerAuth message
-        let nonce = Nonce::new(ctx.server_cookie.clone(), Address(0), Address(1), CombinedSequenceSnapshot::random());
+        let nonce = Nonce::new(
+            ctx.server_cookie.clone(),
+            Address(0),
+            Address(1),
+            CombinedSequenceSnapshot::random(),
+        );
 
         // Prepare signed keys
         let unsigned_keys = UnsignedKeys::new(
@@ -440,12 +574,20 @@ mod server_auth {
                 PublicKey::from_slice(&[1; 32]).unwrap()
             },
         );
-        let signed_keys = unsigned_keys.sign(&server_permanent_ks1, ctx.our_ks.public_key(), unsafe { nonce.clone() });
+        let signed_keys =
+            unsigned_keys.sign(&server_permanent_ks1, ctx.our_ks.public_key(), unsafe {
+                nonce.clone()
+            });
 
         // Prepare a ServerAuth message.
-        let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), Some(signed_keys), vec![]).into_message();
+        let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), Some(signed_keys), vec![])
+            .into_message();
         let msg_bytes = msg.to_msgpack();
-        let encrypted = ctx.our_ks.encrypt(&msg_bytes, unsafe { nonce.clone() }, ctx.server_ks.public_key());
+        let encrypted = ctx.our_ks.encrypt(
+            &msg_bytes,
+            unsafe { nonce.clone() },
+            ctx.server_ks.public_key(),
+        );
         let bbox = ByteBox::new(encrypted, nonce);
 
         (ctx, bbox)
@@ -461,12 +603,20 @@ mod server_auth {
 
         // Handle message
         let mut s = ctx.signaling;
-        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
         assert_eq!(
             s.handle_message(bbox),
-            Err(SignalingError::Crypto("Could not decrypt signed keys".into()))
+            Err(SignalingError::Crypto(
+                "Could not decrypt signed keys".into()
+            ))
         );
-        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
     }
 
     #[test]
@@ -475,12 +625,20 @@ mod server_auth {
 
         // Handle message
         let mut s = ctx.signaling;
-        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
         assert_eq!(
             s.handle_message(bbox),
-            Err(SignalingError::Protocol("Our public permanent key sent in `signed_keys` is not valid".into()))
+            Err(SignalingError::Protocol(
+                "Our public permanent key sent in `signed_keys` is not valid".into()
+            ))
         );
-        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
     }
 
     #[test]
@@ -489,7 +647,10 @@ mod server_auth {
 
         // Handle message
         let mut s = ctx.signaling;
-        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
         assert!(s.handle_message(bbox).is_ok());
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::Done);
     }
@@ -519,7 +680,10 @@ mod client_auth {
         // Handle message
         assert_eq!(s.server().handshake_state(), ServerHandshakeState::New);
         let mut actions = s.handle_message(bbox).unwrap();
-        assert_eq!(s.server().handshake_state(), ServerHandshakeState::ClientInfoSent);
+        assert_eq!(
+            s.server().handshake_state(),
+            ServerHandshakeState::ClientInfoSent
+        );
         assert_eq!(actions.len(), 1); // Reply with client-auth
 
         // Action contains ClientAuth message, encrypted with our permanent key
@@ -533,12 +697,12 @@ mod client_auth {
             HandleAction::Event(_) => panic!("Unexpected Event"),
         };
 
-        let decrypted = OpenBox::<Message>::decrypt(
-            bytes, &s.common().permanent_keypair, &server_pubkey
-        ).unwrap();
+        let decrypted =
+            OpenBox::<Message>::decrypt(bytes, &s.common().permanent_keypair, &server_pubkey)
+                .unwrap();
         match decrypted.message {
             Message::ClientAuth(client_auth) => client_auth,
-            other => panic!("Expected ClientAuth, got {:?}", other)
+            other => panic!("Expected ClientAuth, got {:?}", other),
         }
     }
 
@@ -579,8 +743,10 @@ mod token {
     #[test]
     fn token_initiator_validate_public_key() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
         );
 
         // Create new responder context
@@ -591,24 +757,26 @@ mod token {
         // Prepare a token message
         let msg_bytes = [
             // Fixmap with two entries
-            0x82,
-            // Key: type
-            0xa4, 0x74, 0x79, 0x70, 0x65,
-            // Val: send-error
-            0xa5, 0x74, 0x6f, 0x6b, 0x65, 0x6e,
-            // Key: key
-            0xa3, 0x6b, 0x65, 0x79,
-            // Val: 3 bytes
+            0x82, // Key: type
+            0xa4, 0x74, 0x79, 0x70, 0x65, // Val: send-error
+            0xa5, 0x74, 0x6f, 0x6b, 0x65, 0x6e, // Key: key
+            0xa3, 0x6b, 0x65, 0x79, // Val: 3 bytes
             0xc4, 0x03, 0x00, 0x01, 0x02,
         ];
 
         // The token message is encrypted with the auth token,
         // so we can't use the `TestMsgBuilder` here.
         let cookie = Cookie::random();
-        let nonce = Nonce::new(cookie, Address(3), Address(1),
-                               CombinedSequenceSnapshot::random());
-        let encrypted = ctx.signaling
-            .auth_token().expect("Could not get auth token")
+        let nonce = Nonce::new(
+            cookie,
+            Address(3),
+            Address(1),
+            CombinedSequenceSnapshot::random(),
+        );
+        let encrypted = ctx
+            .signaling
+            .auth_token()
+            .expect("Could not get auth token")
             .encrypt(&msg_bytes, unsafe { nonce.clone() });
         let bbox = ByteBox::new(encrypted, nonce);
 
@@ -633,8 +801,10 @@ mod token {
     #[test]
     fn token_initiator_set_public_key() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
         );
 
         // Create new responder context
@@ -652,14 +822,21 @@ mod token {
         // The token message is encrypted with the auth token,
         // so we can't use the `TestMsgBuilder` here.
         let cookie = Cookie::random();
-        let nonce = Nonce::new(cookie, Address(3), Address(1),
-                               CombinedSequenceSnapshot::random());
-        let encrypted = ctx.signaling
-            .auth_token().expect("Could not get auth token")
+        let nonce = Nonce::new(
+            cookie,
+            Address(3),
+            Address(1),
+            CombinedSequenceSnapshot::random(),
+        );
+        let encrypted = ctx
+            .signaling
+            .auth_token()
+            .expect("Could not get auth token")
             .encrypt(&msg_bytes, unsafe { nonce.clone() });
         let bbox = ByteBox::new(encrypted, nonce);
 
-        { // Waiting for NLL
+        {
+            // Waiting for NLL
             let responder = ctx.signaling.responders.get(&addr).unwrap();
             assert_eq!(responder.handshake_state(), ResponderHandshakeState::New);
             assert!(responder.permanent_key.is_none());
@@ -668,7 +845,10 @@ mod token {
         let actions = ctx.signaling.handle_message(bbox).unwrap();
         {
             let responder = ctx.signaling.responders.get(&addr).unwrap();
-            assert_eq!(responder.handshake_state(), ResponderHandshakeState::TokenReceived);
+            assert_eq!(
+                responder.handshake_state(),
+                ResponderHandshakeState::TokenReceived
+            );
             assert_eq!(responder.permanent_key, Some(pk));
             assert_eq!(actions, vec![]);
         }
@@ -679,15 +859,17 @@ mod key {
     use super::*;
 
     /// The client MUST generate a session key pair (a new NaCl key pair
-/// for public key authenticated encryption) for further communication
-/// with the other client. The client's session key pair SHALL NOT be
-/// identical to the client's permanent key pair. It MUST set the
-/// public key (32 bytes) of that key pair in the key field.
+    /// for public key authenticated encryption) for further communication
+    /// with the other client. The client's session key pair SHALL NOT be
+    /// identical to the client's permanent key pair. It MUST set the
+    /// public key (32 bytes) of that key pair in the key field.
     #[test]
     fn key_initiator_success() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
         );
 
         // Peer crypto
@@ -704,24 +886,36 @@ mod key {
         // Prepare a key message
         let msg: Message = Key {
             key: peer_session_pk.clone(),
-        }.into_message();
+        }
+        .into_message();
 
         // Encrypt message
-        let bbox = TestMsgBuilder::new(msg).from(3).to(1).build(cookie, &ctx.our_ks, &peer_permanent_pk);
+        let bbox =
+            TestMsgBuilder::new(msg)
+                .from(3)
+                .to(1)
+                .build(cookie, &ctx.our_ks, &peer_permanent_pk);
 
         // Store responder in signaling instance
         ctx.signaling.responders.insert(addr, responder);
 
-        { // Waiting for NLL
+        {
+            // Waiting for NLL
             let responder = ctx.signaling.responders.get(&addr).unwrap();
-            assert_eq!(responder.handshake_state(), ResponderHandshakeState::TokenReceived);
+            assert_eq!(
+                responder.handshake_state(),
+                ResponderHandshakeState::TokenReceived
+            );
             assert!(responder.session_key.is_none());
         }
         // Handle message. This should result in a state transition.
         let actions = ctx.signaling.handle_message(bbox).unwrap();
         {
             let responder = ctx.signaling.responders.get(&addr).unwrap();
-            assert_eq!(responder.handshake_state(), ResponderHandshakeState::KeySent);
+            assert_eq!(
+                responder.handshake_state(),
+                ResponderHandshakeState::KeySent
+            );
             assert_eq!(responder.session_key, Some(peer_session_pk));
             assert_eq!(actions.len(), 1); // Reply with key msg
         }
@@ -742,24 +936,39 @@ mod key {
         // Context
         let mut ctx = TestContext::responder(
             ClientIdentity::Responder(6),
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
-            Some(peer_permanent_pk), None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
+            Some(peer_permanent_pk),
+            None,
         );
         assert_eq!(ctx.signaling.initiator.permanent_key, peer_permanent_pk);
-        ctx.signaling.initiator.set_handshake_state(InitiatorHandshakeState::KeySent);
+        ctx.signaling
+            .initiator
+            .set_handshake_state(InitiatorHandshakeState::KeySent);
 
         // Prepare a key message
         let msg: Message = Key {
             key: peer_session_pk.clone(),
-        }.into_message();
+        }
+        .into_message();
 
         // Encrypt message
-        let bbox = TestMsgBuilder::new(msg).from(1).to(6).build(cookie, &ctx.our_ks, &peer_permanent_pk);
+        let bbox =
+            TestMsgBuilder::new(msg)
+                .from(1)
+                .to(6)
+                .build(cookie, &ctx.our_ks, &peer_permanent_pk);
 
-        assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::KeySent);
+        assert_eq!(
+            ctx.signaling.initiator.handshake_state(),
+            InitiatorHandshakeState::KeySent
+        );
         assert_eq!(ctx.signaling.initiator.session_key, None);
         let actions = ctx.signaling.handle_message(bbox).unwrap();
-        assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::AuthSent);
+        assert_eq!(
+            ctx.signaling.initiator.handshake_state(),
+            InitiatorHandshakeState::AuthSent
+        );
         assert_eq!(ctx.signaling.initiator.session_key, Some(peer_session_pk));
         assert_eq!(actions.len(), 1); // Reply with auth msg
     }
@@ -771,8 +980,10 @@ mod auth {
     /// Prepare context and responder for auth message validation tests.
     fn _auth_msg_prepare_initiator() -> (TestContext<InitiatorSignaling>, ResponderContext) {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
         );
 
         // Create new main responder context
@@ -789,8 +1000,13 @@ mod auth {
         }
 
         // Add some additional responders
-        ctx.signaling.responders.insert(Address(4), make_responder(4, ResponderHandshakeState::New));
-        ctx.signaling.responders.insert(Address(7), make_responder(7, ResponderHandshakeState::KeySent));
+        ctx.signaling
+            .responders
+            .insert(Address(4), make_responder(4, ResponderHandshakeState::New));
+        ctx.signaling.responders.insert(
+            Address(7),
+            make_responder(7, ResponderHandshakeState::KeySent),
+        );
 
         (ctx, responder)
     }
@@ -799,43 +1015,54 @@ mod auth {
     fn _auth_msg_prepare_responder() -> TestContext<ResponderSignaling> {
         let mut ctx = TestContext::responder(
             ClientIdentity::Responder(3),
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
             Some(PublicKey::random()),
             Some(AuthToken::new()),
         );
 
         // Create new initiator context
-        ctx.signaling.initiator.set_handshake_state(InitiatorHandshakeState::AuthSent);
+        ctx.signaling
+            .initiator
+            .set_handshake_state(InitiatorHandshakeState::AuthSent);
         ctx.signaling.initiator.session_key = Some(PublicKey::random());
 
         ctx
     }
 
     /// Handle a message for auth message validation tests.
-    fn _auth_msg_handle_initiator(msg: Message,
-                                  ctx: &mut TestContext<InitiatorSignaling>,
-                                  responder: ResponderContext)
-                                  -> SignalingResult<Vec<HandleAction>> {
+    fn _auth_msg_handle_initiator(
+        msg: Message,
+        ctx: &mut TestContext<InitiatorSignaling>,
+        responder: ResponderContext,
+    ) -> SignalingResult<Vec<HandleAction>> {
         // Encrypt message
-        let bbox = TestMsgBuilder::new(msg).from(3).to(1)
-            .build(Cookie::random(), &responder.keypair, responder.session_key.as_ref().unwrap());
+        let bbox = TestMsgBuilder::new(msg).from(3).to(1).build(
+            Cookie::random(),
+            &responder.keypair,
+            responder.session_key.as_ref().unwrap(),
+        );
 
         // Store responder in signaling instance
-        ctx.signaling.responders.insert(responder.address, responder);
+        ctx.signaling
+            .responders
+            .insert(responder.address, responder);
 
         // Handle message
         ctx.signaling.handle_message(bbox)
     }
 
     /// Handle a message for auth message validation tests.
-    fn _auth_msg_handle_responder(msg: Message,
-                                  ctx: &mut TestContext<ResponderSignaling>)
-                                  -> SignalingResult<Vec<HandleAction>> {
+    fn _auth_msg_handle_responder(
+        msg: Message,
+        ctx: &mut TestContext<ResponderSignaling>,
+    ) -> SignalingResult<Vec<HandleAction>> {
         // Encrypt message
-        let bbox = TestMsgBuilder::new(msg).from(1).to(3)
-            .build(Cookie::random(),
-                   &ctx.signaling.initiator.keypair,
-                   ctx.signaling.initiator.session_key.as_ref().unwrap());
+        let bbox = TestMsgBuilder::new(msg).from(1).to(3).build(
+            Cookie::random(),
+            &ctx.signaling.initiator.keypair,
+            ctx.signaling.initiator.session_key.as_ref().unwrap(),
+        );
 
         // Handle message
         ctx.signaling.handle_message(bbox)
@@ -853,7 +1080,13 @@ mod auth {
             .into_message();
 
         let err = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap_err();
-        assert_eq!(err, SignalingError::Protocol("Repeated cookie in auth message from responder 0x03 does not match our cookie".into()));
+        assert_eq!(
+            err,
+            SignalingError::Protocol(
+                "Repeated cookie in auth message from responder 0x03 does not match our cookie"
+                    .into()
+            )
+        );
     }
 
     /// The cookie provided in the your_cookie field SHALL contain the cookie it has used in its previous messages to the other client.
@@ -868,7 +1101,12 @@ mod auth {
             .into_message();
 
         let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
-        assert_eq!(err, SignalingError::Protocol("Repeated cookie in auth message from initiator does not match our cookie".into()));
+        assert_eq!(
+            err,
+            SignalingError::Protocol(
+                "Repeated cookie in auth message from initiator does not match our cookie".into()
+            )
+        );
     }
 
     /// An initiator SHALL validate that the tasks field contains an array with at least one element.
@@ -881,10 +1119,16 @@ mod auth {
             task: Some("foo".into()),
             tasks: None,
             data: HashMap::new(),
-        }.into_message();
+        }
+        .into_message();
 
         let err = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap_err();
-        assert_eq!(err, SignalingError::InvalidMessage("We're an initiator, but the `task` field in the auth message is set".into()));
+        assert_eq!(
+            err,
+            SignalingError::InvalidMessage(
+                "We're an initiator, but the `task` field in the auth message is set".into()
+            )
+        );
     }
 
     /// An initiator SHALL validate that the tasks field contains an array with at least one element.
@@ -897,10 +1141,16 @@ mod auth {
             task: None,
             tasks: None,
             data: HashMap::new(),
-        }.into_message();
+        }
+        .into_message();
 
         let err = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap_err();
-        assert_eq!(err, SignalingError::InvalidMessage("The `tasks` field in the auth message is not set".into()));
+        assert_eq!(
+            err,
+            SignalingError::InvalidMessage(
+                "The `tasks` field in the auth message is not set".into()
+            )
+        );
     }
 
     /// An initiator SHALL validate that the tasks field contains an array with at least one element.
@@ -913,12 +1163,15 @@ mod auth {
             task: None,
             tasks: Some(vec![]),
             data: HashMap::new(),
-        }.into_message();
+        }
+        .into_message();
 
         let err = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap_err();
-        assert_eq!(err, SignalingError::InvalidMessage("The `tasks` field in the auth message is empty".into()));
+        assert_eq!(
+            err,
+            SignalingError::InvalidMessage("The `tasks` field in the auth message is empty".into())
+        );
     }
-
 
     /// A responder SHALL validate that the tasks field contains an array with at least one element.
     #[test]
@@ -930,10 +1183,16 @@ mod auth {
             task: None,
             tasks: Some(vec!["asjk".into()]),
             data: HashMap::new(),
-        }.into_message();
+        }
+        .into_message();
 
         let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
-        assert_eq!(err, SignalingError::InvalidMessage("We're a responder, but the `tasks` field in the auth message is set".into()));
+        assert_eq!(
+            err,
+            SignalingError::InvalidMessage(
+                "We're a responder, but the `tasks` field in the auth message is set".into()
+            )
+        );
     }
 
     /// Make sure that the `task` field is a known task.
@@ -946,10 +1205,16 @@ mod auth {
             task: None,
             tasks: None,
             data: HashMap::new(),
-        }.into_message();
+        }
+        .into_message();
 
         let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
-        assert_eq!(err, SignalingError::InvalidMessage("The `task` field in the auth message is not set".into()));
+        assert_eq!(
+            err,
+            SignalingError::InvalidMessage(
+                "The `task` field in the auth message is not set".into()
+            )
+        );
     }
 
     /// Make sure that the `task` field is a known task.
@@ -962,10 +1227,16 @@ mod auth {
             task: Some("unknown".into()),
             tasks: None,
             data: HashMap::new(),
-        }.into_message();
+        }
+        .into_message();
 
         let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
-        assert_eq!(err, SignalingError::Protocol("The `task` field in the auth message contains an unknown task".into()));
+        assert_eq!(
+            err,
+            SignalingError::Protocol(
+                "The `task` field in the auth message contains an unknown task".into()
+            )
+        );
     }
 
     /// Validate that the number of data items matches the number of tasks
@@ -977,8 +1248,13 @@ mod auth {
             your_cookie: responder.cookie_pair.ours.clone(),
             task: None,
             tasks: Some(vec!["a".into(), "b".into()]),
-            data: { let mut m = HashMap::new(); m.insert("a".into(), None); m },
-        }.into_message();
+            data: {
+                let mut m = HashMap::new();
+                m.insert("a".into(), None);
+                m
+            },
+        }
+        .into_message();
 
         let err = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap_err();
         assert_eq!(err, SignalingError::InvalidMessage(
@@ -995,9 +1271,13 @@ mod auth {
             task: Some("dummy.42".into()),
             tasks: None,
             data: HashMap::new(),
-        }.into_message();
+        }
+        .into_message();
         let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
-        assert_eq!(err, SignalingError::Protocol("The `data` field in the auth message is empty".into()));
+        assert_eq!(
+            err,
+            SignalingError::Protocol("The `data` field in the auth message is empty".into())
+        );
     }
 
     /// Validate that there is exactly one data entry
@@ -1009,10 +1289,21 @@ mod auth {
             your_cookie: ctx.signaling.initiator.cookie_pair.ours.clone(),
             task: Some("dummy.42".into()),
             tasks: None,
-            data: { let mut m = HashMap::new(); m.insert("a".into(), None); m.insert("b".into(), None); m },
-        }.into_message();
+            data: {
+                let mut m = HashMap::new();
+                m.insert("a".into(), None);
+                m.insert("b".into(), None);
+                m
+            },
+        }
+        .into_message();
         let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
-        assert_eq!(err, SignalingError::Protocol("The `data` field in the auth message contains more than one entry".into()));
+        assert_eq!(
+            err,
+            SignalingError::Protocol(
+                "The `data` field in the auth message contains more than one entry".into()
+            )
+        );
     }
 
     /// Validate that all tasks have corresponding data entries.
@@ -1024,12 +1315,23 @@ mod auth {
             your_cookie: responder.cookie_pair.ours.clone(),
             task: None,
             tasks: Some(vec!["a".into(), "b".into()]),
-            data: { let mut m = HashMap::new(); m.insert("a".into(), None); m.insert("c".into(), None); m },
-        }.into_message();
+            data: {
+                let mut m = HashMap::new();
+                m.insert("a".into(), None);
+                m.insert("c".into(), None);
+                m
+            },
+        }
+        .into_message();
 
         let err = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap_err();
-        assert_eq!(err, SignalingError::InvalidMessage(
-            "The task \"b\" in the auth message does not have a corresponding data entry".into()));
+        assert_eq!(
+            err,
+            SignalingError::InvalidMessage(
+                "The task \"b\" in the auth message does not have a corresponding data entry"
+                    .into()
+            )
+        );
     }
 
     /// Validate that the task has a corresponding data entry.
@@ -1041,10 +1343,20 @@ mod auth {
             your_cookie: ctx.signaling.initiator.cookie_pair.ours.clone(),
             task: Some(DummyTask::name_for(42)),
             tasks: None,
-            data: { let mut m = HashMap::new(); m.insert("a".into(), None); m },
-        }.into_message();
+            data: {
+                let mut m = HashMap::new();
+                m.insert("a".into(), None);
+                m
+            },
+        }
+        .into_message();
         let err = _auth_msg_handle_responder(msg, &mut ctx).unwrap_err();
-        assert_eq!(err, SignalingError::Protocol("The task in the auth message does not have a corresponding data entry".into()));
+        assert_eq!(
+            err,
+            SignalingError::Protocol(
+                "The task in the auth message does not have a corresponding data entry".into()
+            )
+        );
     }
 
     #[test]
@@ -1061,7 +1373,8 @@ mod auth {
                 m.insert(DummyTask::name_for(42), None);
                 m
             },
-        }.into_message();
+        }
+        .into_message();
 
         // No task set so far
         assert!(ctx.signaling.common().task.is_none());
@@ -1070,13 +1383,26 @@ mod auth {
         assert_eq!(ctx.signaling.common().tasks.as_ref().unwrap().len(), 1);
 
         // Signaling state is peer handshake
-        assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::PeerHandshake);
+        assert_eq!(
+            ctx.signaling.common().signaling_state(),
+            SignalingState::PeerHandshake
+        );
 
         let actions = _auth_msg_handle_initiator(msg, &mut ctx, responder).unwrap();
 
         // Task was set!
         assert!(ctx.signaling.common().task.is_some());
-        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().lock().unwrap().name(), DummyTask::name_for(42));
+        assert_eq!(
+            ctx.signaling
+                .common()
+                .task
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .name(),
+            DummyTask::name_for(42)
+        );
 
         // Tasks list was removed
         assert!(ctx.signaling.common().tasks.is_none());
@@ -1086,14 +1412,23 @@ mod auth {
 
         // Peer was set
         assert!(ctx.signaling.get_peer().is_some());
-        assert_eq!(ctx.signaling.get_peer().as_ref().unwrap().identity(), ctx.signaling.responder.as_ref().unwrap().identity());
+        assert_eq!(
+            ctx.signaling.get_peer().as_ref().unwrap().identity(),
+            ctx.signaling.responder.as_ref().unwrap().identity()
+        );
 
         // Number of reply messages
         assert_eq!(actions.len(), 4); // auth + drop-responder(5) + drop-responder(7) + HandshakeDone
 
         // State transitions
-        assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::Task);
-        assert_eq!(ctx.signaling.responder.unwrap().handshake_state(), ResponderHandshakeState::AuthSent);
+        assert_eq!(
+            ctx.signaling.common().signaling_state(),
+            SignalingState::Task
+        );
+        assert_eq!(
+            ctx.signaling.responder.unwrap().handshake_state(),
+            ResponderHandshakeState::AuthSent
+        );
     }
 
     #[test]
@@ -1109,7 +1444,8 @@ mod auth {
                 m.insert(DummyTask::name_for(42), None);
                 m
             },
-        }.into_message();
+        }
+        .into_message();
 
         // No task set so far
         assert!(ctx.signaling.common().task.is_none());
@@ -1118,27 +1454,49 @@ mod auth {
         assert_eq!(ctx.signaling.common().tasks.as_ref().unwrap().len(), 2);
 
         // Signaling state is peer handshake
-        assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::PeerHandshake);
+        assert_eq!(
+            ctx.signaling.common().signaling_state(),
+            SignalingState::PeerHandshake
+        );
 
         let actions = _auth_msg_handle_responder(msg, &mut ctx).unwrap();
 
         // Task was set!
         assert!(ctx.signaling.common().task.is_some());
-        assert_eq!(ctx.signaling.common().task.as_ref().unwrap().lock().unwrap().name(), DummyTask::name_for(42));
+        assert_eq!(
+            ctx.signaling
+                .common()
+                .task
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .name(),
+            DummyTask::name_for(42)
+        );
 
         // Tasks list was removed
         assert!(ctx.signaling.common().tasks.is_none());
 
         // Peer was set
         assert!(ctx.signaling.get_peer().is_some());
-        assert_eq!(ctx.signaling.get_peer().as_ref().unwrap().identity(), ctx.signaling.initiator.identity());
+        assert_eq!(
+            ctx.signaling.get_peer().as_ref().unwrap().identity(),
+            ctx.signaling.initiator.identity()
+        );
 
         // Number of actionsmessages
         assert_eq!(actions, vec![HandleAction::HandshakeDone]);
 
         // State transitions
-        assert_eq!(ctx.signaling.common().signaling_state(), SignalingState::Task);
-        assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::AuthReceived);
+        assert_eq!(
+            ctx.signaling.common().signaling_state(),
+            SignalingState::Task
+        );
+        assert_eq!(
+            ctx.signaling.initiator.handshake_state(),
+            InitiatorHandshakeState::AuthReceived
+        );
     }
 
     /// Ensure that duplicate names are not allowed when constructing a responder `Auth` message.
@@ -1150,7 +1508,9 @@ mod auth {
             .build();
         assert_eq!(
             simple,
-            Err(SignalingError::InvalidMessage("An `Auth` message may not contain duplicate tasks".into())),
+            Err(SignalingError::InvalidMessage(
+                "An `Auth` message may not contain duplicate tasks".into()
+            )),
         );
 
         let nonconsecutive = ResponderAuthBuilder::new(Cookie::random())
@@ -1160,18 +1520,27 @@ mod auth {
             .build();
         assert_eq!(
             nonconsecutive,
-            Err(SignalingError::InvalidMessage("An `Auth` message may not contain duplicate tasks".into())),
+            Err(SignalingError::InvalidMessage(
+                "An `Auth` message may not contain duplicate tasks".into()
+            )),
         );
 
         let different_data = ResponderAuthBuilder::new(Cookie::random())
             .add_task("dummy1", None)
-            .add_task("dummy1", Some({
-                let mut data = HashMap::new(); data.insert("a".into(), 1.into()); data
-            }))
+            .add_task(
+                "dummy1",
+                Some({
+                    let mut data = HashMap::new();
+                    data.insert("a".into(), 1.into());
+                    data
+                }),
+            )
             .build();
         assert_eq!(
             different_data,
-            Err(SignalingError::InvalidMessage("An `Auth` message may not contain duplicate tasks".into())),
+            Err(SignalingError::InvalidMessage(
+                "An `Auth` message may not contain duplicate tasks".into()
+            )),
         );
     }
 }
@@ -1183,16 +1552,19 @@ mod new_initiator {
     #[test]
     fn handle_as_initiator() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
         );
 
         // Encrypt message
         let msg = Message::NewInitiator(NewInitiator);
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
-            .build(ctx.server_cookie.clone(),
-                   &ctx.server_ks,
-                   ctx.our_ks.public_key());
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build(
+            ctx.server_cookie.clone(),
+            &ctx.server_ks,
+            ctx.our_ks.public_key(),
+        );
 
         // Handle message
         let err = ctx.signaling.handle_message(bbox).unwrap_err();
@@ -1205,23 +1577,35 @@ mod new_initiator {
     fn handle_as_responder() {
         let mut ctx = TestContext::responder(
             ClientIdentity::Responder(7),
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
             None,
             None,
         );
 
         // Encrypt message
         let msg = Message::NewInitiator(NewInitiator);
-        let bbox = TestMsgBuilder::new(msg).from(0).to(7)
-            .build(ctx.server_cookie.clone(),
-                   &ctx.server_ks,
-                   ctx.our_ks.public_key());
+        let bbox = TestMsgBuilder::new(msg).from(0).to(7).build(
+            ctx.server_cookie.clone(),
+            &ctx.server_ks,
+            ctx.our_ks.public_key(),
+        );
 
         // Old initiator context
         let old_cookie_pair = ctx.signaling.initiator.cookie_pair().clone();
-        assert!(ctx.signaling.initiator.csn_pair.read().unwrap().theirs.is_none());
-        ctx.signaling.initiator.csn_pair.write().unwrap().theirs = Some(CombinedSequenceSnapshot::new(0, 0));
-        ctx.signaling.initiator.set_handshake_state(InitiatorHandshakeState::AuthSent);
+        assert!(ctx
+            .signaling
+            .initiator
+            .csn_pair
+            .read()
+            .unwrap()
+            .theirs
+            .is_none());
+        ctx.signaling.initiator.csn_pair.write().unwrap().theirs =
+            Some(CombinedSequenceSnapshot::new(0, 0));
+        ctx.signaling
+            .initiator
+            .set_handshake_state(InitiatorHandshakeState::AuthSent);
 
         // Handle message
         let actions = ctx.signaling.handle_message(bbox).unwrap();
@@ -1231,13 +1615,26 @@ mod new_initiator {
         // (such as cookies and the sequence numbers)...
         let new_cookie_pair = ctx.signaling.initiator.cookie_pair().clone();
         assert_ne!(old_cookie_pair, new_cookie_pair);
-        assert!(ctx.signaling.initiator.csn_pair.read().unwrap().theirs.is_none());
-        assert_ne!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::AuthSent);
+        assert!(ctx
+            .signaling
+            .initiator
+            .csn_pair
+            .read()
+            .unwrap()
+            .theirs
+            .is_none());
+        assert_ne!(
+            ctx.signaling.initiator.handshake_state(),
+            InitiatorHandshakeState::AuthSent
+        );
 
         // ...and continue by sending a 'token' or 'key' client-to-client message
         // described in the Client-to-Client Messages section.
         assert_eq!(actions.len(), 1);
-        assert_eq!(ctx.signaling.initiator.handshake_state(), InitiatorHandshakeState::KeySent);
+        assert_eq!(
+            ctx.signaling.initiator.handshake_state(),
+            InitiatorHandshakeState::KeySent
+        );
     }
 }
 
@@ -1250,17 +1647,22 @@ mod new_responder {
     fn expect_no_token() {
         let peer_trusted_pk = PublicKey::random();
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, Some(peer_trusted_pk.clone()),
-            SignalingState::PeerHandshake, ServerHandshakeState::Done
+            ClientIdentity::Initiator,
+            Some(peer_trusted_pk.clone()),
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
         );
 
         // Encrypt new-responder message
         let address = Address::from(7);
-        let msg = Message::NewResponder(NewResponder { id: address.clone() });
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
-            .build(ctx.server_cookie.clone(),
-                   &ctx.server_ks,
-                   ctx.our_ks.public_key());
+        let msg = Message::NewResponder(NewResponder {
+            id: address.clone(),
+        });
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build(
+            ctx.server_cookie.clone(),
+            &ctx.server_ks,
+            ctx.our_ks.public_key(),
+        );
 
         // Handle message
         let _actions = ctx.signaling.handle_message(bbox).unwrap();
@@ -1269,13 +1671,17 @@ mod new_responder {
         // Encrypt token message
         let bbox = {
             let responder_cookie = Cookie::random();
-            let responder: &mut ResponderContext = ctx.signaling.responders.get_mut(&address).unwrap();
+            let responder: &mut ResponderContext =
+                ctx.signaling.responders.get_mut(&address).unwrap();
             responder.cookie_pair_mut().theirs = Some(responder_cookie.clone());
-            let msg = Message::Token(Token { key: peer_trusted_pk });
-            TestMsgBuilder::new(msg).from(7).to(1)
-                .build(responder_cookie,
-                       &responder.keypair().expect("No responder keypair"),
-                       ctx.our_ks.public_key())
+            let msg = Message::Token(Token {
+                key: peer_trusted_pk,
+            });
+            TestMsgBuilder::new(msg).from(7).to(1).build(
+                responder_cookie,
+                &responder.keypair().expect("No responder keypair"),
+                ctx.our_ks.public_key(),
+            )
         }; // Waiting for NLL
 
         // Handle message
@@ -1287,21 +1693,22 @@ mod new_responder {
     #[test]
     fn path_cleaning() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
         );
 
         let mut csn = CombinedSequence::random();
 
         let mut handle_message = |css: CombinedSequenceSnapshot, i: u8| {
             let msg = Message::NewResponder(NewResponder { id: i.into() });
-            let bbox = TestMsgBuilder::new(msg).from(0).to(1)
-                .build_with_csn(
-                    ctx.server_cookie.clone(),
-                    &ctx.server_ks,
-                    ctx.our_ks.public_key(),
-                    css,
-               );
+            let bbox = TestMsgBuilder::new(msg).from(0).to(1).build_with_csn(
+                ctx.server_cookie.clone(),
+                &ctx.server_ks,
+                ctx.our_ks.public_key(),
+                css,
+            );
             ctx.signaling.handle_message(bbox).unwrap()
         };
 
@@ -1315,7 +1722,6 @@ mod new_responder {
         let actions = handle_message(csn.increment().unwrap(), 255);
         assert_eq!(actions.len(), 1);
     }
-
 }
 
 mod disconnected {
@@ -1325,16 +1731,19 @@ mod disconnected {
     #[test]
     fn disconnected_during_server_auth() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::ServerHandshake, ServerHandshakeState::ClientInfoSent,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::ServerHandshake,
+            ServerHandshakeState::ClientInfoSent,
         );
 
         // Encrypt message
         let msg = Message::Disconnected(Disconnected::new(ClientIdentity::Responder(3).into()));
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
-            .build(ctx.server_cookie.clone(),
-                   &ctx.server_ks,
-                   ctx.our_ks.public_key());
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build(
+            ctx.server_cookie.clone(),
+            &ctx.server_ks,
+            ctx.our_ks.public_key(),
+        );
 
         // Handle message
         let err = ctx.signaling.handle_message(bbox).unwrap_err();
@@ -1347,16 +1756,19 @@ mod disconnected {
     #[test]
     fn disconnected_initiator_invalid_id() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
         );
 
         // Encrypt message
         let msg = Message::Disconnected(Disconnected::new(ClientIdentity::Initiator.into()));
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
-            .build(ctx.server_cookie.clone(),
-                   &ctx.server_ks,
-                   ctx.our_ks.public_key());
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build(
+            ctx.server_cookie.clone(),
+            &ctx.server_ks,
+            ctx.our_ks.public_key(),
+        );
 
         // Handle message
         let err = ctx.signaling.handle_message(bbox).unwrap_err();
@@ -1370,16 +1782,19 @@ mod disconnected {
     fn disconnected_responder_invalid_id() {
         let mut ctx = TestContext::responder(
             ClientIdentity::Responder(3),
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
-            None, None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
+            None,
+            None,
         );
 
         // Encrypt message
         let msg = Message::Disconnected(Disconnected::new(ClientIdentity::Responder(7).into()));
-        let bbox = TestMsgBuilder::new(msg).from(0).to(3)
-            .build(ctx.server_cookie.clone(),
-                   &ctx.server_ks,
-                   ctx.our_ks.public_key());
+        let bbox = TestMsgBuilder::new(msg).from(0).to(3).build(
+            ctx.server_cookie.clone(),
+            &ctx.server_ks,
+            ctx.our_ks.public_key(),
+        );
 
         // Handle message
         let err = ctx.signaling.handle_message(bbox).unwrap_err();
@@ -1392,16 +1807,19 @@ mod disconnected {
     #[test]
     fn disconnected_notify_user() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::PeerHandshake, ServerHandshakeState::Done,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
         );
 
         // Encrypt message
         let msg = Message::Disconnected(Disconnected::new(ClientIdentity::Responder(7).into()));
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
-            .build(ctx.server_cookie.clone(),
-                   &ctx.server_ks,
-                   ctx.our_ks.public_key());
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build(
+            ctx.server_cookie.clone(),
+            &ctx.server_ks,
+            ctx.our_ks.public_key(),
+        );
 
         // Handle message
         let actions = ctx.signaling.handle_message(bbox).unwrap();
@@ -1414,16 +1832,19 @@ mod disconnected {
     #[test]
     fn disconnected_in_task_signaling_state() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::Task, ServerHandshakeState::Done,
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::Task,
+            ServerHandshakeState::Done,
         );
 
         // Encrypt message
         let msg = Message::Disconnected(Disconnected::new(ClientIdentity::Responder(7).into()));
-        let bbox = TestMsgBuilder::new(msg).from(0).to(1)
-            .build(ctx.server_cookie.clone(),
-                   &ctx.server_ks,
-                   ctx.our_ks.public_key());
+        let bbox = TestMsgBuilder::new(msg).from(0).to(1).build(
+            ctx.server_cookie.clone(),
+            &ctx.server_ks,
+            ctx.our_ks.public_key(),
+        );
 
         // Handle message
         let actions = ctx.signaling.handle_message(bbox).unwrap();
@@ -1442,17 +1863,20 @@ mod regressions {
     #[test]
     fn ignore_in_flight_responder_message() {
         let mut ctx = TestContext::initiator(
-            ClientIdentity::Initiator, None,
-            SignalingState::PeerHandshake, ServerHandshakeState::Done
+            ClientIdentity::Initiator,
+            None,
+            SignalingState::PeerHandshake,
+            ServerHandshakeState::Done,
         );
 
         // Encrypt message
         let responder_ks = KeyPair::new();
         let msg = Message::Close(Close::from_close_code(CloseCode::NoSharedTask));
-        let bbox = TestMsgBuilder::new(msg).from(3).to(1)
-            .build(Cookie::random(),
-                   &responder_ks,
-                   ctx.our_ks.public_key());
+        let bbox = TestMsgBuilder::new(msg).from(3).to(1).build(
+            Cookie::random(),
+            &responder_ks,
+            ctx.our_ks.public_key(),
+        );
 
         // Handle message
         let actions = ctx.signaling.handle_message(bbox).unwrap();

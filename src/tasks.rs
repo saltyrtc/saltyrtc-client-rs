@@ -13,17 +13,15 @@ use std::fmt::Debug;
 use std::iter::IntoIterator;
 
 use failure::Error;
-use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
+use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::sync::oneshot::Sender as OneshotSender;
-use mopa::{Any, mopafy};
+use mopa::{mopafy, Any};
 use rmpv::Value;
 
 use crate::CloseCode;
 
-
 /// A type alias for a boxed task.
 pub type BoxedTask = Box<dyn Task + Send>;
-
 
 /// An interface that needs to be implemented by every signaling task.
 ///
@@ -46,8 +44,7 @@ pub type BoxedTask = Box<dyn Task + Send>;
 ///
 /// Depending on the task specification, application messages may be passed to
 /// the user or may be discarded.
-pub trait Task : Debug + Any {
-
+pub trait Task: Debug + Any {
     /// Initialize the task with the task data from the peer, sent in the `Auth` message.
     ///
     /// The task should keep track internally whether it has been initialized or not.
@@ -56,10 +53,12 @@ pub trait Task : Debug + Any {
     /// Used by the signaling class to notify task that the peer handshake is done.
     ///
     /// This is the point where the task can take over.
-    fn start(&mut self,
-             outgoing_tx: UnboundedSender<TaskMessage>,
-             incoming_rx: UnboundedReceiver<TaskMessage>,
-             disconnect_tx: OneshotSender<Option<CloseCode>>);
+    fn start(
+        &mut self,
+        outgoing_tx: UnboundedSender<TaskMessage>,
+        incoming_rx: UnboundedReceiver<TaskMessage>,
+        disconnect_tx: OneshotSender<Option<CloseCode>>,
+    );
 
     /// Return supported message types.
     ///
@@ -118,7 +117,10 @@ impl Tasks {
     #[allow(dead_code)]
     pub(crate) fn add_task(&mut self, task: BoxedTask) -> Result<&mut Self, String> {
         if self.0.iter().any(|t| t.name() == task.name()) {
-            return Err(format!("Task with name \"{}\" cannot be added twice", task.name()));
+            return Err(format!(
+                "Task with name \"{}\" cannot be added twice",
+                task.name()
+            ));
         }
         self.0.push(task);
         Ok(self)
@@ -152,7 +154,6 @@ impl IntoIterator for Tasks {
     }
 }
 
-
 /// A task may either send an arbitrary value, an `Application` message or a `Close` message.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TaskMessage {
@@ -169,7 +170,6 @@ pub enum TaskMessage {
     /// or by the signaling, when the peer sends a 'close' message.
     Close(CloseCode),
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -189,7 +189,10 @@ mod tests {
         assert_eq!(tasks.len(), 3);
 
         let err = tasks.add_task(t3).unwrap_err();
-        assert_eq!(err, "Task with name \"dummy.3\" cannot be added twice".to_string());
+        assert_eq!(
+            err,
+            "Task with name \"dummy.3\" cannot be added twice".to_string()
+        );
         assert_eq!(tasks.len(), 3);
     }
 
@@ -202,11 +205,15 @@ mod tests {
         };
 
         // Parameters as static string references
-        let chosen = make_tasks().choose_shared_task(&["dummy.1", "dummy.3"]).expect("No shared task found (1)");
+        let chosen = make_tasks()
+            .choose_shared_task(&["dummy.1", "dummy.3"])
+            .expect("No shared task found (1)");
         assert_eq!(chosen.name(), "dummy.1");
 
         // Parameters from owned strings
-        let chosen = make_tasks().choose_shared_task(&vec!["dummy.2".to_string()]).expect("No shared task found (2)");
+        let chosen = make_tasks()
+            .choose_shared_task(&vec!["dummy.2".to_string()])
+            .expect("No shared task found (2)");
         assert_eq!(chosen.name(), "dummy.2");
 
         // Return `None` if no common task is present
@@ -214,7 +221,9 @@ mod tests {
         assert!(chosen.is_none());
 
         // Our preference wins
-        let chosen = make_tasks().choose_shared_task(&["dummy.2", "dummy.1"]).expect("No shared task found (3)");
+        let chosen = make_tasks()
+            .choose_shared_task(&["dummy.2", "dummy.1"])
+            .expect("No shared task found (3)");
         assert_eq!(chosen.name(), "dummy.1");
     }
 }

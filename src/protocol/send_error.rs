@@ -3,13 +3,13 @@
 use std::fmt;
 
 use byteorder::{BigEndian, ByteOrder};
+use serde::de::{Deserialize, Deserializer, Error as SerdeError, Unexpected, Visitor};
 use serde::ser::{Serialize, Serializer};
-use serde::de::{Deserialize, Deserializer, Visitor, Unexpected, Error as SerdeError};
 
 use crate::errors::{SignalingError, SignalingResult};
 
-use super::Address;
 use super::csn::CombinedSequenceSnapshot;
+use super::Address;
 
 const SEND_ERROR_ID_BYTES: usize = 8;
 
@@ -37,22 +37,30 @@ impl SendErrorId {
     /// data.
     pub(crate) fn from_slice(bytes: &[u8]) -> SignalingResult<Self> {
         if bytes.len() != SEND_ERROR_ID_BYTES {
-            return Err(SignalingError::Decode(
-                format!("byte slice must be exactly {} bytes, not {}", SEND_ERROR_ID_BYTES, bytes.len())
-            ));
+            return Err(SignalingError::Decode(format!(
+                "byte slice must be exactly {} bytes, not {}",
+                SEND_ERROR_ID_BYTES,
+                bytes.len()
+            )));
         };
         let source = Address(bytes[0]);
         let destination = Address(bytes[1]);
         let overflow = BigEndian::read_u16(&bytes[2..4]);
         let sequence = BigEndian::read_u32(&bytes[4..8]);
         let csn = CombinedSequenceSnapshot::new(overflow, sequence);
-        Ok(SendErrorId { source, destination, csn })
+        Ok(SendErrorId {
+            source,
+            destination,
+            csn,
+        })
     }
 }
 
 impl Serialize for SendErrorId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where S: Serializer {
+    where
+        S: Serializer,
+    {
         serializer.serialize_bytes(&self.as_bytes())
     }
 }
@@ -66,7 +74,10 @@ impl<'de> Visitor<'de> for SendErrorIdVisitor {
         formatter.write_str("8 bytes of binary data")
     }
 
-    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E> where E: SerdeError {
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: SerdeError,
+    {
         if v.len() != 8 {
             return Err(SerdeError::invalid_length(v.len(), &self));
         }
@@ -74,14 +85,19 @@ impl<'de> Visitor<'de> for SendErrorIdVisitor {
             .map_err(|e| SerdeError::invalid_value(Unexpected::Other(&e.to_string()), &self))
     }
 
-    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> where E: SerdeError {
+    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+    where
+        E: SerdeError,
+    {
         self.visit_bytes(&v)
     }
 }
 
 impl<'de> Deserialize<'de> for SendErrorId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         deserializer.deserialize_bytes(SendErrorIdVisitor)
     }
 }

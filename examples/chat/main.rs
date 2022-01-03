@@ -1,6 +1,7 @@
 //! Connect to a server as initiator and print the connection info.
 
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 
 mod chat_task;
 
@@ -8,40 +9,40 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::process;
-use std::sync::{Arc, RwLock};
 use std::sync::mpsc as std_mpsc;
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use clap::{Arg, App, SubCommand};
-use cursive::{Cursive, CursiveExt, CbSink};
+use clap::{App, Arg, SubCommand};
 use cursive::traits::{Identifiable, Scrollable};
 use cursive::view::ScrollStrategy;
-use cursive::views::{TextView, EditView, ResizedView, LinearLayout};
-use data_encoding::{HEXLOWER};
-use futures::{Sink, Stream, future};
+use cursive::views::{EditView, LinearLayout, ResizedView, TextView};
+use cursive::{CbSink, Cursive, CursiveExt};
+use data_encoding::HEXLOWER;
 use futures::future::Future;
 use futures::sync::mpsc as futures_mpsc;
+use futures::{future, Sink, Stream};
 use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::append::file::FileAppender;
-use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Config, Logger, Root};
+use log4rs::encode::pattern::PatternEncoder;
 use log4rs::filter::threshold::ThresholdFilter;
-use saltyrtc_client::{SaltyClient, Role, WsClient, CloseCode, Event};
-use saltyrtc_client::crypto::{KeyPair, AuthToken, public_key_from_hex_str, private_key_from_hex_str};
-use saltyrtc_client::dep::native_tls::{TlsConnector, Certificate, Protocol};
+use saltyrtc_client::crypto::{
+    private_key_from_hex_str, public_key_from_hex_str, AuthToken, KeyPair,
+};
+use saltyrtc_client::dep::native_tls::{Certificate, Protocol, TlsConnector};
 use saltyrtc_client::errors::SaltyError;
 use saltyrtc_client::tasks::Task;
+use saltyrtc_client::{CloseCode, Event, Role, SaltyClient, WsClient};
 use tokio_core::reactor::Core;
 
-use crate::chat_task::{ChatTask, ChatMessage};
-
+use crate::chat_task::{ChatMessage, ChatTask};
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const VIEW_TEXT_ID: &'static str = "text";
 const VIEW_INPUT_ID: &'static str = "input";
-
 
 fn main() {
     const ARG_PATH: &'static str = "path";
@@ -62,56 +63,76 @@ fn main() {
         .version(VERSION)
         .author("Danilo Bargen <mail@dbrgn.ch>")
         .about("Test client for SaltyRTC.")
-        .subcommand(SubCommand::with_name("initiator")
-            .about("Start chat as initiator")
-            .arg(arg_ping_interval.clone()))
-        .subcommand(SubCommand::with_name("initiator_trusted")
-            .about("Start chat as initiator with a trusted responder key")
-            .arg(Arg::with_name(ARG_PRIVATE_KEY)
-                .long("private-key")
-                .takes_value(true)
-                .value_name("PRIVATE_KEY")
-                .required(true)
-                .help("The own private key (hex encoded)"))
-            .arg(Arg::with_name(ARG_RESPONDER_KEY)
-                .long("responder-key")
-                .takes_value(true)
-                .value_name("RESPONDER_KEY")
-                .required(true)
-                .help("The trusted responder public key (hex encoded)"))
-            .arg(arg_ping_interval.clone()))
-        .subcommand(SubCommand::with_name("responder")
-            .about("Start chat as responder")
-            .arg(Arg::with_name(ARG_PATH)
-                .long("path")
-                .takes_value(true)
-                .value_name("PATH")
-                .required(true)
-                .help("The websocket path (hex encoded public key of the initiator)"))
-            .arg(Arg::with_name(ARG_AUTHTOKEN)
-                .long("auth-token")
-                .alias("token")
-                .alias("authtoken")
-                .takes_value(true)
-                .value_name("AUTHTOKEN")
-                .required(true)
-                .help("The auth token (hex encoded)"))
-            .arg(arg_ping_interval.clone()))
-        .subcommand(SubCommand::with_name("responder_trusted")
-            .about("Start chat as responder with a trusted initiator key")
-            .arg(Arg::with_name(ARG_PATH)
-                .long("path")
-                .takes_value(true)
-                .value_name("PATH")
-                .required(true)
-                .help("The websocket path (hex encoded public key of the initiator)"))
-            .arg(Arg::with_name(ARG_PRIVATE_KEY)
-                .long("private-key")
-                .takes_value(true)
-                .value_name("PRIVATE_KEY")
-                .required(true)
-                .help("The own private key (hex encoded)"))
-            .arg(arg_ping_interval));
+        .subcommand(
+            SubCommand::with_name("initiator")
+                .about("Start chat as initiator")
+                .arg(arg_ping_interval.clone()),
+        )
+        .subcommand(
+            SubCommand::with_name("initiator_trusted")
+                .about("Start chat as initiator with a trusted responder key")
+                .arg(
+                    Arg::with_name(ARG_PRIVATE_KEY)
+                        .long("private-key")
+                        .takes_value(true)
+                        .value_name("PRIVATE_KEY")
+                        .required(true)
+                        .help("The own private key (hex encoded)"),
+                )
+                .arg(
+                    Arg::with_name(ARG_RESPONDER_KEY)
+                        .long("responder-key")
+                        .takes_value(true)
+                        .value_name("RESPONDER_KEY")
+                        .required(true)
+                        .help("The trusted responder public key (hex encoded)"),
+                )
+                .arg(arg_ping_interval.clone()),
+        )
+        .subcommand(
+            SubCommand::with_name("responder")
+                .about("Start chat as responder")
+                .arg(
+                    Arg::with_name(ARG_PATH)
+                        .long("path")
+                        .takes_value(true)
+                        .value_name("PATH")
+                        .required(true)
+                        .help("The websocket path (hex encoded public key of the initiator)"),
+                )
+                .arg(
+                    Arg::with_name(ARG_AUTHTOKEN)
+                        .long("auth-token")
+                        .alias("token")
+                        .alias("authtoken")
+                        .takes_value(true)
+                        .value_name("AUTHTOKEN")
+                        .required(true)
+                        .help("The auth token (hex encoded)"),
+                )
+                .arg(arg_ping_interval.clone()),
+        )
+        .subcommand(
+            SubCommand::with_name("responder_trusted")
+                .about("Start chat as responder with a trusted initiator key")
+                .arg(
+                    Arg::with_name(ARG_PATH)
+                        .long("path")
+                        .takes_value(true)
+                        .value_name("PATH")
+                        .required(true)
+                        .help("The websocket path (hex encoded public key of the initiator)"),
+                )
+                .arg(
+                    Arg::with_name(ARG_PRIVATE_KEY)
+                        .long("private-key")
+                        .takes_value(true)
+                        .value_name("PRIVATE_KEY")
+                        .required(true)
+                        .help("The own private key (hex encoded)"),
+                )
+                .arg(arg_ping_interval),
+        );
 
     // Parse arguments
     let subcommand = app.get_matches().subcommand.unwrap_or_else(|| {
@@ -130,7 +151,7 @@ fn main() {
         other => {
             println!("Invalid subcommand: {}", other);
             process::exit(1);
-        },
+        }
     };
 
     // Set up logging
@@ -147,10 +168,9 @@ fn main() {
         .expect("Could not read saltyrtc.crt");
 
     // Parse server certificate
-    let server_cert = Certificate::from_pem(&server_cert_bytes)
-        .unwrap_or_else(|e| {
-            panic!("Problem with CA cert: {}", e);
-        });
+    let server_cert = Certificate::from_pem(&server_cert_bytes).unwrap_or_else(|e| {
+        panic!("Problem with CA cert: {}", e);
+    });
 
     // Create TLS connector instance
     let tls_connector = TlsConnector::builder()
@@ -174,13 +194,19 @@ fn main() {
     // Determine websocket path
     let path: String = match role {
         Role::Initiator => own_pubkey_hex.clone(),
-        Role::Responder => args.value_of(ARG_PATH).expect("Path not supplied").to_lowercase(),
+        Role::Responder => args
+            .value_of(ARG_PATH)
+            .expect("Path not supplied")
+            .to_lowercase(),
     };
 
     // Determine ping interval
     let ping_interval = {
-        let seconds: u64 = args.value_of(ARG_PING_INTERVAL).expect("Ping interval not supplied")
-                               .parse().expect("Could not parse interval seconds to a number");
+        let seconds: u64 = args
+            .value_of(ARG_PING_INTERVAL)
+            .expect("Ping interval not supplied")
+            .parse()
+            .expect("Could not parse interval seconds to a number");
         Duration::from_secs(seconds)
     };
 
@@ -197,10 +223,13 @@ fn main() {
                 builder.initiator_trusted(public_key_from_hex_str(trusted_key).unwrap())
             } else {
                 builder.initiator()
-            }.expect("Could not create SaltyClient instance");
-            let auth_token_hex = salty.auth_token().map(|t| HEXLOWER.encode(t.secret_key_bytes()));
+            }
+            .expect("Could not create SaltyClient instance");
+            let auth_token_hex = salty
+                .auth_token()
+                .map(|t| HEXLOWER.encode(t.secret_key_bytes()));
             (salty, auth_token_hex)
-        },
+        }
         Role::Responder => {
             let task = ChatTask::new("r3spond3r", core.remote(), incoming_tx);
             let initiator_pubkey = public_key_from_hex_str(&path).unwrap();
@@ -211,14 +240,22 @@ fn main() {
                 (builder.responder_trusted(initiator_pubkey).unwrap(), None)
             } else {
                 let auth_token_hex = args.value_of(ARG_AUTHTOKEN).unwrap().to_string();
-                let auth_token = AuthToken::from_hex_str(&auth_token_hex).expect("Invalid auth token hex string");
-                (builder.responder(initiator_pubkey, auth_token).unwrap(), Some(auth_token_hex))
+                let auth_token = AuthToken::from_hex_str(&auth_token_hex)
+                    .expect("Invalid auth token hex string");
+                (
+                    builder.responder(initiator_pubkey, auth_token).unwrap(),
+                    Some(auth_token_hex),
+                )
             }
-        },
+        }
     };
 
     println!("\n\x1B[32m******************************");
-    println!("Connecting as {} ({})", role, if is_trusted { "trusted" } else { "not trusted" });
+    println!(
+        "Connecting as {} ({})",
+        role,
+        if is_trusted { "trusted" } else { "not trusted" }
+    );
     println!();
     println!("   Own permanent public key: {}", &own_pubkey_hex);
     println!("  Own permanent private key: {}", &own_privkey_hex);
@@ -243,49 +280,53 @@ fn main() {
 
     // Connect to server
     let (connect_future, event_channel) = saltyrtc_client::connect(
-            "localhost",
-            8765,
-            Some(tls_connector),
-            &core.handle(),
-            salty_arc.clone(),
-        )
-        .unwrap();
+        "localhost",
+        8765,
+        Some(tls_connector),
+        &core.handle(),
+        salty_arc.clone(),
+    )
+    .unwrap();
 
     // Do handshake
     let event_tx = event_channel.clone_tx();
     let handshake_future = connect_future
-        .map(|client| { println!("Connected to server"); client })
-        .and_then(|client| saltyrtc_client::do_handshake(
-            client,
-            salty_arc.clone(),
-            event_tx,
-            None,
-        ))
-        .map(|client| { println!("Handshake done"); client });
+        .map(|client| {
+            println!("Connected to server");
+            client
+        })
+        .and_then(|client| saltyrtc_client::do_handshake(client, salty_arc.clone(), event_tx, None))
+        .map(|client| {
+            println!("Handshake done");
+            client
+        });
 
     // Run future in reactor to process handshake
     let client: WsClient = match core.run(handshake_future) {
         Ok(client) => {
             println!("Handshake success.");
             client
-        },
+        }
         Err(e) => {
             println!("Handshake failed: {}", e);
             process::exit(1);
-        },
+        }
     };
 
     // Set up task loop
-    let (task, task_loop) = saltyrtc_client::task_loop(client, salty_arc.clone(), event_channel.clone_tx())
-        .unwrap_or_else(|e| {
-            println!("Creating task loop failed: {}", e);
-            process::exit(1);
-        });
+    let (task, task_loop) =
+        saltyrtc_client::task_loop(client, salty_arc.clone(), event_channel.clone_tx())
+            .unwrap_or_else(|e| {
+                println!("Creating task loop failed: {}", e);
+                process::exit(1);
+            });
 
     // Disable logging to stdout
     // (Causes errors in combination with TUI
-    println!("Starting TUI and disabling logging to stdout. See `chat.{}.log` for logs.",
-             role.to_string().to_lowercase());
+    println!(
+        "Starting TUI and disabling logging to stdout. See `chat.{}.log` for logs.",
+        role.to_string().to_lowercase()
+    );
     log_handle.set_config(setup_logging(role, false));
 
     // Launch TUI thread
@@ -317,7 +358,8 @@ fn main() {
                 // Clear input field
                 tui.call_on_name(VIEW_INPUT_ID, |view: &mut EditView| {
                     view.set_content("");
-                }).unwrap_or_else(|| error!("View with id {} not found", VIEW_INPUT_ID));
+                })
+                .unwrap_or_else(|| error!("View with id {} not found", VIEW_INPUT_ID));
             })
             .with_name(VIEW_INPUT_ID);
 
@@ -325,7 +367,7 @@ fn main() {
         let layout = ResizedView::with_full_screen(
             LinearLayout::vertical()
                 .child(ResizedView::with_full_height(text_view))
-                .child(input_view)
+                .child(input_view),
         );
         tui.add_fullscreen_layer(layout);
 
@@ -335,7 +377,9 @@ fn main() {
         // Launch TUI event loop
         tui.run();
     });
-    let tui_sender: CbSink = cb_sink_rx.recv().expect("Could not get sender from TUI thread");
+    let tui_sender: CbSink = cb_sink_rx
+        .recv()
+        .expect("Could not get sender from TUI thread");
 
     // Macro to write a text line to the TUI text view
     macro_rules! log_line {
@@ -384,33 +428,33 @@ fn main() {
                         log_line!("*** Exiting");
 
                         // Stop TUI
-                        tui_sender.send(Box::new(move |tui: &mut Cursive| {
-                            tui.quit();
-                        })).unwrap();
+                        tui_sender
+                            .send(Box::new(move |tui: &mut Cursive| {
+                                tui.quit();
+                            }))
+                            .unwrap();
 
                         // Disconnect
                         chat_task.close(CloseCode::WsGoingAway);
 
                         future::err(Ok(()))
                     }
-                    "/nick" => {
-                        match parts.next() {
-                            Some(nick) => {
-                                log_line!("*** Changing nickname to {}", nick);
-                                match chat_task.change_nick(&nick) {
-                                    Ok(_) => future::ok(()),
-                                    Err(e) => {
-                                        log_line!("*** Error: {}", e);
-                                        future::err(Err(()))
-                                    }
+                    "/nick" => match parts.next() {
+                        Some(nick) => {
+                            log_line!("*** Changing nickname to {}", nick);
+                            match chat_task.change_nick(&nick) {
+                                Ok(_) => future::ok(()),
+                                Err(e) => {
+                                    log_line!("*** Error: {}", e);
+                                    future::err(Err(()))
                                 }
                             }
-                            None => {
-                                log_line!("*** Usage: /nick <new-nickname>");
-                                future::ok(())
-                            }
                         }
-                    }
+                        None => {
+                            log_line!("*** Usage: /nick <new-nickname>");
+                            future::ok(())
+                        }
+                    },
                     other => {
                         log_line!("*** Unknown command: {}", other);
                         future::ok(())
@@ -429,7 +473,9 @@ fn main() {
         })
         .or_else(|res| match res {
             Ok(_) => future::ok(debug!("† Send loop future done")),
-            Err(_) => future::err(SaltyError::Crash("Something went wrong when forwarding messages to task".into()))
+            Err(_) => future::err(SaltyError::Crash(
+                "Something went wrong when forwarding messages to task".into(),
+            )),
         });
 
     // Chat message receive loop
@@ -442,32 +488,32 @@ fn main() {
     let receive_loop = incoming_rx
         .map_err(|_| Err(()))
         .for_each({
-            |msg: ChatMessage| {
-                match msg {
-                    ChatMessage::Msg(text) => {
-                        let pn = peer_name
-                            .lock()
-                            .ok()
-                            .and_then(|p| p.clone())
-                            .unwrap_or("?".to_string());
-                        log_line!("{}> {}", pn, text);
-                        future::ok(())
-                    },
-                    ChatMessage::NickChange(new_nick) => {
-                        log_line!("*** Partner nick changed to {}", new_nick);
-                        future::ok(())
-                    },
-                    ChatMessage::Disconnect(reason) => {
-                        log_line!("*** Connection with peer closed, reason: {}", reason);
-                        log_line!("*** Use Ctrl+C to exit");
-                        future::err(Ok(()))
-                    },
+            |msg: ChatMessage| match msg {
+                ChatMessage::Msg(text) => {
+                    let pn = peer_name
+                        .lock()
+                        .ok()
+                        .and_then(|p| p.clone())
+                        .unwrap_or("?".to_string());
+                    log_line!("{}> {}", pn, text);
+                    future::ok(())
+                }
+                ChatMessage::NickChange(new_nick) => {
+                    log_line!("*** Partner nick changed to {}", new_nick);
+                    future::ok(())
+                }
+                ChatMessage::Disconnect(reason) => {
+                    log_line!("*** Connection with peer closed, reason: {}", reason);
+                    log_line!("*** Use Ctrl+C to exit");
+                    future::err(Ok(()))
                 }
             }
         })
         .or_else(|res| match res {
             Ok(_) => future::ok(debug!("† Receive loop future done")),
-            Err(_) => future::err(SaltyError::Crash("Something went wrong in message receive loop".into())),
+            Err(_) => future::err(SaltyError::Crash(
+                "Something went wrong in message receive loop".into(),
+            )),
         });
 
     // Event receive loop
@@ -486,21 +532,23 @@ fn main() {
                     log_line!("*** Peer with address {} disconnected", addr);
                     log_line!("*** Use Ctrl+C to exit");
                     future::err(Ok(()))
-                },
-                _ => future::ok(())
+                }
+                _ => future::ok(()),
             }
         })
         .or_else(|res| match res {
             Ok(_) => future::ok(debug!("† Event loop future done")),
-            Err(_) => future::err(SaltyError::Crash("Something went wrong in event loop".into())),
+            Err(_) => future::err(SaltyError::Crash(
+                "Something went wrong in event loop".into(),
+            )),
         });
 
     // Main future
     let main_loop = future::join_all(vec![
-       Box::new(task_loop) as Box<dyn Future<Item=_, Error=_>>,
-       Box::new(send_loop) as Box<dyn Future<Item=_, Error=_>>,
-       Box::new(receive_loop) as Box<dyn Future<Item=_, Error=_>>,
-       Box::new(event_loop) as Box<dyn Future<Item=_, Error=_>>,
+        Box::new(task_loop) as Box<dyn Future<Item = _, Error = _>>,
+        Box::new(send_loop) as Box<dyn Future<Item = _, Error = _>>,
+        Box::new(receive_loop) as Box<dyn Future<Item = _, Error = _>>,
+        Box::new(event_loop) as Box<dyn Future<Item = _, Error = _>>,
     ])
     .map(|_| ())
     .map_err(|_| ());
@@ -511,7 +559,7 @@ fn main() {
         Err(e) => {
             println!("Main loop exited with an error: {:?}", e);
             process::exit(1);
-        },
+        }
     };
 
     // Wait for TUI thread to exit
@@ -541,11 +589,13 @@ fn setup_logging(role: Role, log_to_stdout: bool) -> Config {
 
     // Config builder
     let builder = Config::builder()
-
         // Appenders
-        .appender(Appender::builder().filter(Box::new(info_filter)).build("stdout", Box::new(stdout)))
+        .appender(
+            Appender::builder()
+                .filter(Box::new(info_filter))
+                .build("stdout", Box::new(stdout)),
+        )
         .appender(Appender::builder().build("file", Box::new(file)))
-
         // Loggers
         .logger(Logger::builder().build("saltyrtc_client", LevelFilter::Trace))
         .logger(Logger::builder().build("chat", LevelFilter::Trace));

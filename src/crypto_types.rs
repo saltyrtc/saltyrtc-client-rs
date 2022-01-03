@@ -1,6 +1,6 @@
 //! Functionality related to Libsodium key management and encryption.
 
-#![cfg_attr(feature="cargo-clippy", allow(new_without_default))]
+#![cfg_attr(feature = "cargo-clippy", allow(new_without_default))]
 
 use std::cmp;
 use std::fmt;
@@ -10,11 +10,11 @@ use std::io::Write;
 use data_encoding::{HEXLOWER, HEXLOWER_PERMISSIVE};
 use rust_sodium::crypto::{box_, secretbox};
 use rust_sodium_sys::crypto_scalarmult_base;
+use serde::de::{Deserialize, Deserializer, Error as SerdeError, Visitor};
 use serde::ser::{Serialize, Serializer};
-use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use crate::errors::{SaltyResult, SaltyError, SignalingResult, SignalingError};
-use crate::helpers::{libsodium_init_or_panic};
+use crate::errors::{SaltyError, SaltyResult, SignalingError, SignalingResult};
+use crate::helpers::libsodium_init_or_panic;
 use crate::protocol::Nonce;
 
 /// A public key used for decrypting data.
@@ -32,11 +32,11 @@ pub type PrivateKey = box_::SecretKey;
 /// Re-exported from the [`rust_sodium`](../rust_sodium/index.html) crate.
 pub type SecretKey = secretbox::Key;
 
-
 /// Create a [`PublicKey`](../type.PublicKey.html) instance from case
 /// insensitive hex bytes.
 pub fn public_key_from_hex_str(hex_str: &str) -> SaltyResult<PublicKey> {
-    let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
+    let bytes = HEXLOWER_PERMISSIVE
+        .decode(hex_str.as_bytes())
         .map_err(|_| SaltyError::Decode("Could not decode public key hex string".to_string()))?;
     PublicKey::from_slice(&bytes)
         .ok_or_else(|| SaltyError::Decode("Invalid public key hex string".to_string()))
@@ -46,12 +46,12 @@ pub fn public_key_from_hex_str(hex_str: &str) -> SaltyResult<PublicKey> {
 /// insensitive hex bytes.
 #[allow(dead_code)]
 pub fn private_key_from_hex_str(hex_str: &str) -> SaltyResult<PrivateKey> {
-    let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
+    let bytes = HEXLOWER_PERMISSIVE
+        .decode(hex_str.as_bytes())
         .map_err(|_| SaltyError::Decode("Could not decode private key hex string".to_string()))?;
     PrivateKey::from_slice(&bytes)
         .ok_or_else(|| SaltyError::Decode("Invalid private key hex string".to_string()))
 }
-
 
 /// Wrapper for holding a public/private key pair and encrypting/decrypting messages.
 #[derive(Debug, PartialEq, Eq)]
@@ -61,7 +61,6 @@ pub struct KeyPair {
 }
 
 impl KeyPair {
-
     /// Create a new key pair and wrap it in a `KeyPair`.
     ///
     /// ## Panics
@@ -94,14 +93,20 @@ impl KeyPair {
             crypto_scalarmult_base(buf.as_mut_ptr(), private_key.0.as_ptr());
             box_::PublicKey(buf)
         };
-        KeyPair { public_key, private_key }
+        KeyPair {
+            public_key,
+            private_key,
+        }
     }
 
     /// Create a new key pair from an existing public and private key.
     ///
     /// The two keys are consumed and transferred into the `KeyPair`.
     pub fn from_keypair(public_key: PublicKey, private_key: PrivateKey) -> Self {
-        KeyPair { public_key, private_key }
+        KeyPair {
+            public_key,
+            private_key,
+        }
     }
 
     /// Return a reference to the public key.
@@ -141,21 +146,23 @@ impl KeyPair {
     /// If decryption succeeds, the decrypted bytes are returned. Otherwise, a
     /// [`SignalingError::Crypto`](../enum.SignalingError.html#variant.Crypto)
     /// is returned.
-    pub(crate) fn decrypt(&self, data: &[u8], nonce: Nonce, other_key: &PublicKey) -> SignalingResult<Vec<u8>> {
+    pub(crate) fn decrypt(
+        &self,
+        data: &[u8],
+        nonce: Nonce,
+        other_key: &PublicKey,
+    ) -> SignalingResult<Vec<u8>> {
         let rust_sodium_nonce: box_::Nonce = nonce.into();
         box_::open(data, &rust_sodium_nonce, other_key, &self.private_key)
             .map_err(|_| SignalingError::Crypto("Could not decrypt data".to_string()))
     }
-
 }
-
 
 /// Wrapper for holding an auth token and encrypting / decrypting messages.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthToken(SecretKey);
 
 impl AuthToken {
-
     /// Create a new auth token.
     ///
     /// This can fail only if libsodium initialization fails.
@@ -173,8 +180,11 @@ impl AuthToken {
 
     /// Create an `AuthToken` instance from hex bytes.
     pub fn from_hex_str(hex_str: &str) -> SaltyResult<Self> {
-        let bytes = HEXLOWER_PERMISSIVE.decode(hex_str.as_bytes())
-            .map_err(|e| SaltyError::Decode(format!("Could not decode auth token hex string: {}", e)))?;
+        let bytes = HEXLOWER_PERMISSIVE
+            .decode(hex_str.as_bytes())
+            .map_err(|e| {
+                SaltyError::Decode(format!("Could not decode auth token hex string: {}", e))
+            })?;
         let key = SecretKey::from_slice(&bytes)
             .ok_or_else(|| SaltyError::Decode("Invalid auth token hex string".to_string()))?;
         Ok(AuthToken(key))
@@ -184,13 +194,12 @@ impl AuthToken {
     pub fn from_slice(hex_str: &[u8]) -> SaltyResult<Self> {
         if hex_str.len() != 32 {
             return Err(SaltyError::Decode(
-                "Invalid auth token bytes: Slice must be 32 bytes long".into()
+                "Invalid auth token bytes: Slice must be 32 bytes long".into(),
             ));
         }
-        let key = SecretKey::from_slice(hex_str)
-            .ok_or_else(|| SaltyError::Decode(
-                "Invalid auth token bytes: Could not create SecretKey".into()
-            ))?;
+        let key = SecretKey::from_slice(hex_str).ok_or_else(|| {
+            SaltyError::Decode("Invalid auth token bytes: Could not create SecretKey".into())
+        })?;
         Ok(AuthToken(key))
     }
 
@@ -220,13 +229,10 @@ impl AuthToken {
         secretbox::open(ciphertext, &rust_sodium_nonce, self.secret_key())
             .map_err(|_| SignalingError::Crypto("Could not decrypt data".to_string()))
     }
-
 }
-
 
 /// The number of bytes in the [`SignedKeys`](struct.SignedKeys.html) array.
 const SIGNED_KEYS_BYTES: usize = 2 * box_::PUBLICKEYBYTES + box_::MACBYTES;
-
 
 /// A pair of not-yet-signed keys used in the [`ServerAuth`](../messages/struct.ServerAuth.html)
 /// message.
@@ -237,8 +243,14 @@ pub struct UnsignedKeys {
 }
 
 impl UnsignedKeys {
-    pub fn new(server_public_session_key: PublicKey, client_public_permanent_key: PublicKey) -> Self {
-        Self { server_public_session_key, client_public_permanent_key }
+    pub fn new(
+        server_public_session_key: PublicKey,
+        client_public_permanent_key: PublicKey,
+    ) -> Self {
+        Self {
+            server_public_session_key,
+            client_public_permanent_key,
+        }
     }
 
     /// Sign the server public session key and the client public permanent key.
@@ -252,8 +264,12 @@ impl UnsignedKeys {
         nonce: Nonce,
     ) -> SignedKeys {
         let mut bytes = [0u8; 64];
-        (&mut bytes[0..32]).write_all(&self.server_public_session_key.0).unwrap();
-        (&mut bytes[32..64]).write_all(&self.client_public_permanent_key.0).unwrap();
+        (&mut bytes[0..32])
+            .write_all(&self.server_public_session_key.0)
+            .unwrap();
+        (&mut bytes[32..64])
+            .write_all(&self.client_public_permanent_key.0)
+            .unwrap();
         let rust_sodium_nonce: box_::Nonce = nonce.into();
         let vec = box_::seal(
             &bytes,
@@ -267,7 +283,6 @@ impl UnsignedKeys {
         SignedKeys(encrypted)
     }
 }
-
 
 /// Concatenated signed keys used in the [`ServerAuth`](../messages/struct.ServerAuth.html)
 /// message.
@@ -291,11 +306,12 @@ impl SignedKeys {
             &rust_sodium_nonce,
             server_public_permanent_key,
             permanent_key.private_key(),
-        ).map_err(|_| SignalingError::Crypto("Could not decrypt signed keys".to_string()))?;
+        )
+        .map_err(|_| SignalingError::Crypto("Could not decrypt signed keys".to_string()))?;
         assert_eq!(decrypted.len(), 32 * 2);
         Ok(UnsignedKeys::new(
-           PublicKey::from_slice(&decrypted[0..32]).unwrap(),
-           PublicKey::from_slice(&decrypted[32..64]).unwrap(),
+            PublicKey::from_slice(&decrypted[0..32]).unwrap(),
+            PublicKey::from_slice(&decrypted[32..64]).unwrap(),
         ))
     }
 }
@@ -325,7 +341,9 @@ impl cmp::PartialEq<SignedKeys> for SignedKeys {
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl Serialize for SignedKeys {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where S: Serializer {
+    where
+        S: Serializer,
+    {
         serializer.serialize_bytes(&self.0)
     }
 }
@@ -341,25 +359,28 @@ impl<'de> Visitor<'de> for SignedKeysVisitor {
         formatter.write_str("80 bytes of binary data")
     }
 
-    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E> where E: SerdeError {
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: SerdeError,
+    {
         if v.len() != SIGNED_KEYS_BYTES {
             return Err(SerdeError::invalid_length(v.len(), &self));
         }
         Ok(SignedKeys::new([
-            v[ 0], v[ 1], v[ 2], v[ 3], v[ 4], v[ 5], v[ 6], v[ 7],
-            v[ 8], v[ 9], v[10], v[11], v[12], v[13], v[14], v[15],
-            v[16], v[17], v[18], v[19], v[20], v[21], v[22], v[23],
-            v[24], v[25], v[26], v[27], v[28], v[29], v[30], v[31],
-            v[32], v[33], v[34], v[35], v[36], v[37], v[38], v[39],
-            v[40], v[41], v[42], v[43], v[44], v[45], v[46], v[47],
-            v[48], v[49], v[50], v[51], v[52], v[53], v[54], v[55],
-            v[56], v[57], v[58], v[59], v[60], v[61], v[62], v[63],
-            v[64], v[65], v[66], v[67], v[68], v[69], v[70], v[71],
-            v[72], v[73], v[74], v[75], v[76], v[77], v[78], v[79],
+            v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], v[12], v[13],
+            v[14], v[15], v[16], v[17], v[18], v[19], v[20], v[21], v[22], v[23], v[24], v[25],
+            v[26], v[27], v[28], v[29], v[30], v[31], v[32], v[33], v[34], v[35], v[36], v[37],
+            v[38], v[39], v[40], v[41], v[42], v[43], v[44], v[45], v[46], v[47], v[48], v[49],
+            v[50], v[51], v[52], v[53], v[54], v[55], v[56], v[57], v[58], v[59], v[60], v[61],
+            v[62], v[63], v[64], v[65], v[66], v[67], v[68], v[69], v[70], v[71], v[72], v[73],
+            v[74], v[75], v[76], v[77], v[78], v[79],
         ]))
     }
 
-    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> where E: SerdeError {
+    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+    where
+        E: SerdeError,
+    {
         self.visit_bytes(&v)
     }
 }
@@ -367,7 +388,9 @@ impl<'de> Visitor<'de> for SignedKeysVisitor {
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl<'de> Deserialize<'de> for SignedKeys {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         deserializer.deserialize_bytes(SignedKeysVisitor)
     }
 }
@@ -384,7 +407,6 @@ impl TestRandom for PublicKey {
         PublicKey::from_slice(&rand).unwrap()
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -500,11 +522,19 @@ mod tests {
     fn auth_token_from_hex_str() {
         let invalid_hex = "foobar";
         let res1 = AuthToken::from_hex_str(&invalid_hex);
-        assert_eq!(res1, Err(SaltyError::Decode("Could not decode auth token hex string: invalid symbol at 1".into())));
+        assert_eq!(
+            res1,
+            Err(SaltyError::Decode(
+                "Could not decode auth token hex string: invalid symbol at 1".into()
+            ))
+        );
 
         let invalid_key = "012345ab";
         let res2 = AuthToken::from_hex_str(&invalid_key);
-        assert_eq!(res2, Err(SaltyError::Decode("Invalid auth token hex string".into())));
+        assert_eq!(
+            res2,
+            Err(SaltyError::Decode("Invalid auth token hex string".into()))
+        );
 
         let valid_key = "53459fb52fdeeb74103a2932a5eff8095ea1efbaf657f2181722c4e61e6f7e79";
         let res3 = AuthToken::from_hex_str(&valid_key);
@@ -516,7 +546,12 @@ mod tests {
     fn auth_token_from_slice() {
         let too_short = [0; 31];
         let res1 = AuthToken::from_slice(&too_short);
-        assert_eq!(res1, Err(SaltyError::Decode("Invalid auth token bytes: Slice must be 32 bytes long".into())));
+        assert_eq!(
+            res1,
+            Err(SaltyError::Decode(
+                "Invalid auth token bytes: Slice must be 32 bytes long".into()
+            ))
+        );
 
         let valid_token = [1; 32];
         let res2 = AuthToken::from_slice(&valid_token);
@@ -529,7 +564,12 @@ mod tests {
         use std::borrow::Borrow;
 
         // Create auth token
-        let token = Box::new(AuthToken::from_hex_str("2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a").unwrap());
+        let token = Box::new(
+            AuthToken::from_hex_str(
+                "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+            )
+            .unwrap(),
+        );
 
         // Copy token bytes and create a zeroed array for comparison
         let token_bytes = (token.0).0;
@@ -574,11 +614,9 @@ mod tests {
             kp_server.public_key().clone(),
             kp_client.public_key().clone(),
         );
-        let signed = unsigned.clone().sign(
-            &kp_server,
-            kp_client.public_key(),
-            unsafe { nonce.clone() },
-        );
+        let signed = unsigned
+            .clone()
+            .sign(&kp_server, kp_client.public_key(), unsafe { nonce.clone() });
 
         // Decrypt directly with libsodium
         let decrypted = box_::open(
@@ -586,13 +624,16 @@ mod tests {
             &{ unsafe { nonce.clone() } }.into(),
             kp_server.public_key(),
             kp_client.private_key(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(decrypted.len(), 2 * 32);
         assert_eq!(&decrypted[0..32], &kp_server.public_key().0);
         assert_eq!(&decrypted[32..64], &kp_client.public_key().0);
 
         // Decrypt through the `decrypt` method
-        let unsigned2 = signed.decrypt(&kp_client, kp_server.public_key(), nonce).unwrap();
+        let unsigned2 = signed
+            .decrypt(&kp_client, kp_server.public_key(), nonce)
+            .unwrap();
         assert_eq!(unsigned, unsigned2);
     }
 }
