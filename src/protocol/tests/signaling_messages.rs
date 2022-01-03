@@ -777,7 +777,8 @@ mod token {
             .signaling
             .auth_token()
             .expect("Could not get auth token")
-            .encrypt(&msg_bytes, unsafe { nonce.clone() });
+            .encrypt(&msg_bytes, unsafe { nonce.clone() })
+            .unwrap();
         let bbox = ByteBox::new(encrypted, nonce);
 
         // Handle message. This should result in a decoding error
@@ -832,7 +833,8 @@ mod token {
             .signaling
             .auth_token()
             .expect("Could not get auth token")
-            .encrypt(&msg_bytes, unsafe { nonce.clone() });
+            .encrypt(&msg_bytes, unsafe { nonce.clone() })
+            .unwrap();
         let bbox = ByteBox::new(encrypted, nonce);
 
         {

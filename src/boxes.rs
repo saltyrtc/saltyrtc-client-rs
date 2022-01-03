@@ -50,7 +50,7 @@ impl OpenBox<Message> {
     }
 
     /// Encrypt token message using the `auth_token` using secret key cryptography.
-    pub(crate) fn encrypt_token(self, auth_token: &AuthToken) -> ByteBox {
+    pub(crate) fn encrypt_token(self, auth_token: &AuthToken) -> SignalingResult<ByteBox> {
         let encrypted = auth_token.encrypt(
             // The message bytes to be encrypted
             &self.message.to_msgpack(),
@@ -58,8 +58,8 @@ impl OpenBox<Message> {
             // nonce needs to be used both for encrypting, as well as being
             // sent along with the message bytes.
             unsafe { self.nonce.clone() },
-        );
-        ByteBox::new(encrypted, self.nonce)
+        )?;
+        Ok(ByteBox::new(encrypted, self.nonce))
     }
 
     /// Decode an unencrypted message into an [`OpenBox`](struct.OpenBox.html).
@@ -314,7 +314,7 @@ mod tests {
         let auth_token = AuthToken::new();
 
         // Encrypt message with that auth token directly
-        let encrypted = auth_token.encrypt(&bytes, unsafe { nonce.clone() });
+        let encrypted = auth_token.encrypt(&bytes, unsafe { nonce.clone() }).unwrap();
 
         // Construct byte box
         let bbox = ByteBox::new(encrypted, nonce);

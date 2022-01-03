@@ -139,6 +139,13 @@ impl Into<secretbox::Nonce> for Nonce {
     }
 }
 
+impl Into<xsalsa20poly1305::Nonce> for Nonce {
+    fn into(self) -> xsalsa20poly1305::Nonce {
+        let bytes: [u8; 24] = self.into_bytes();
+        bytes.into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

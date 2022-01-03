@@ -2155,7 +2155,7 @@ impl ResponderSignaling {
 
         // The message SHALL be NaCl secret key encrypted by the token the
         // initiator created and issued to the responder.
-        let bbox = obox.encrypt_token(&token);
+        let bbox = obox.encrypt_token(&token)?;
 
         debug!("<-- Enqueuing token to {}", self.initiator.identity());
         Ok(HandleAction::Reply(bbox))

@@ -1,6 +1,6 @@
 //! Functionality related to Libsodium key management and encryption.
 
-#![cfg_attr(feature = "cargo-clippy", allow(new_without_default))]
+#![cfg_attr(feature = "cargo-clippy", allow(clippy::new_without_default))]
 
 use std::cmp;
 use std::fmt;
@@ -8,14 +8,23 @@ use std::fmt;
 use std::io::Write;
 
 use data_encoding::{HEXLOWER, HEXLOWER_PERMISSIVE};
-use rust_sodium::crypto::{box_, secretbox};
+use rand_core::OsRng;
+use rust_sodium::crypto::box_;
 use rust_sodium_sys::crypto_scalarmult_base;
-use serde::de::{Deserialize, Deserializer, Error as SerdeError, Visitor};
-use serde::ser::{Serialize, Serializer};
+use serde::{
+    de::{Deserialize, Deserializer, Error as SerdeError, Visitor},
+    ser::{Serialize, Serializer},
+};
+use xsalsa20poly1305::{
+    aead::{generic_array::GenericArray, Aead, NewAead},
+    XSalsa20Poly1305,
+};
 
-use crate::errors::{SaltyError, SaltyResult, SignalingError, SignalingResult};
-use crate::helpers::libsodium_init_or_panic;
-use crate::protocol::Nonce;
+use crate::{
+    errors::{SaltyError, SaltyResult, SignalingError, SignalingResult},
+    helpers::libsodium_init_or_panic,
+    protocol::Nonce,
+};
 
 /// A public key used for decrypting data.
 ///
@@ -30,7 +39,7 @@ pub type PrivateKey = box_::SecretKey;
 /// A symmetric key used for both encrypting and decrypting data.
 ///
 /// Re-exported from the [`rust_sodium`](../rust_sodium/index.html) crate.
-pub type SecretKey = secretbox::Key;
+pub type SecretKey = xsalsa20poly1305::Key;
 
 /// Create a [`PublicKey`](../type.PublicKey.html) instance from case
 /// insensitive hex bytes.
@@ -169,11 +178,8 @@ impl AuthToken {
     pub fn new() -> Self {
         info!("Generating new auth token");
 
-        // Initialize libsodium if it hasn't been initialized already
-        libsodium_init_or_panic();
-
-        // Generate key pair
-        let key = secretbox::gen_key();
+        // Generate key
+        let key = XSalsa20Poly1305::generate_key(&mut OsRng::default());
 
         AuthToken(key)
     }
@@ -185,21 +191,17 @@ impl AuthToken {
             .map_err(|e| {
                 SaltyError::Decode(format!("Could not decode auth token hex string: {}", e))
             })?;
-        let key = SecretKey::from_slice(&bytes)
-            .ok_or_else(|| SaltyError::Decode("Invalid auth token hex string".to_string()))?;
-        Ok(AuthToken(key))
+        Self::from_slice(&bytes)
     }
 
     /// Create an `AuthToken` instance from a 32 byte slice.
-    pub fn from_slice(hex_str: &[u8]) -> SaltyResult<Self> {
-        if hex_str.len() != 32 {
+    pub fn from_slice(bytes: &[u8]) -> SaltyResult<Self> {
+        if bytes.len() != 32 {
             return Err(SaltyError::Decode(
                 "Invalid auth token bytes: Slice must be 32 bytes long".into(),
             ));
         }
-        let key = SecretKey::from_slice(hex_str).ok_or_else(|| {
-            SaltyError::Decode("Invalid auth token bytes: Could not create SecretKey".into())
-        })?;
+        let key = GenericArray::clone_from_slice(bytes);
         Ok(AuthToken(key))
     }
 
@@ -210,13 +212,22 @@ impl AuthToken {
 
     /// Return a reference to the secret key bytes.
     pub fn secret_key_bytes(&self) -> &[u8] {
-        &(self.0).0
+        self.0.as_slice()
+    }
+
+    /// Return an `XSalsa20Poly1305` (aka secretbox) cipher.
+    fn secretbox(&self) -> XSalsa20Poly1305 {
+        let key = self.secret_key();
+        XSalsa20Poly1305::new(key)
     }
 
     /// Encrypt data with the secret key.
-    pub(crate) fn encrypt(&self, plaintext: &[u8], nonce: Nonce) -> Vec<u8> {
-        let rust_sodium_nonce: secretbox::Nonce = nonce.into();
-        secretbox::seal(plaintext, &rust_sodium_nonce, self.secret_key())
+    pub(crate) fn encrypt(&self, plaintext: &[u8], nonce: Nonce) -> SignalingResult<Vec<u8>> {
+        let cipher = self.secretbox();
+        let encrypt_nonce: xsalsa20poly1305::Nonce = nonce.into();
+        cipher
+            .encrypt(&encrypt_nonce, plaintext)
+            .map_err(|_| SignalingError::Crypto("Could not encrypt data".to_string()))
     }
 
     /// Decrypt data with the secret key.
@@ -225,8 +236,9 @@ impl AuthToken {
     /// [`SignalingError::Crypto`](../enum.SignalingError.html#variant.Crypto)
     /// is returned.
     pub(crate) fn decrypt(&self, ciphertext: &[u8], nonce: Nonce) -> SignalingResult<Vec<u8>> {
-        let rust_sodium_nonce: secretbox::Nonce = nonce.into();
-        secretbox::open(ciphertext, &rust_sodium_nonce, self.secret_key())
+        let cipher = self.secretbox();
+        let decrypt_nonce: xsalsa20poly1305::Nonce = nonce.into();
+        cipher.decrypt(&decrypt_nonce, ciphertext)
             .map_err(|_| SignalingError::Crypto("Could not decrypt data".to_string()))
     }
 }
@@ -412,6 +424,8 @@ impl TestRandom for PublicKey {
 mod tests {
     use super::*;
 
+    use xsalsa20poly1305::aead::generic_array::typenum::U32;
+
     #[test]
     fn new() {
         for _ in 0..255 {
@@ -533,7 +547,7 @@ mod tests {
         let res2 = AuthToken::from_hex_str(&invalid_key);
         assert_eq!(
             res2,
-            Err(SaltyError::Decode("Invalid auth token hex string".into()))
+            Err(SaltyError::Decode("Invalid auth token bytes: Slice must be 32 bytes long".into()))
         );
 
         let valid_key = "53459fb52fdeeb74103a2932a5eff8095ea1efbaf657f2181722c4e61e6f7e79";
@@ -572,17 +586,17 @@ mod tests {
         );
 
         // Copy token bytes and create a zeroed array for comparison
-        let token_bytes = (token.0).0;
-        let zero_bytes = [0; 32];
+        let token_bytes = token.0;
+        let zero_bytes: GenericArray<u8, U32> = [0; 32].into();
 
         // Get and dereference pointer to token
         let ptr = token.borrow() as *const AuthToken;
         println!("Old data is {:?}", &token_bytes);
         println!("Pointer address is {:?}", ptr);
         let deref1: &AuthToken = unsafe { &*ptr };
-        println!("Deref1 data is {:?}", &(deref1.0).0);
-        assert_eq!((deref1.0).0, token_bytes);
-        assert_ne!((deref1.0).0, zero_bytes);
+        println!("Deref1 data is {:?}", &deref1.0);
+        assert_eq!(deref1.0, token_bytes);
+        assert_ne!(deref1.0, zero_bytes);
 
         // Drop auth token
         drop(token);
@@ -590,8 +604,8 @@ mod tests {
         // Dereference pointer to token again
         println!("Pointer address is {:?}", ptr);
         let deref2: &AuthToken = unsafe { &*ptr };
-        println!("Deref2 data is {:?}", &(deref2.0).0);
-        assert_ne!((deref2.0).0, token_bytes);
+        println!("Deref2 data is {:?}", &deref2.0);
+        assert_ne!(deref2.0, token_bytes);
         // Note: After the token bytes are zeroed, it seems that Rust already
         // puts new data at that memory address. Therefore the following call
         // fails. Disable it until we find a solution to test this.
@@ -635,5 +649,10 @@ mod tests {
             .decrypt(&kp_client, kp_server.public_key(), nonce)
             .unwrap();
         assert_eq!(unsigned, unsigned2);
+    }
+
+    #[test]
+    fn signed_key_bytes() {
+        assert_eq!(SIGNED_KEYS_BYTES, 32 * 2 + 16);
     }
 }

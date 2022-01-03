@@ -23,6 +23,7 @@ futures = "0.1.0"  # Make sure to use same version as websocket
 log = "0.4"
 mopa = "0.2"
 native-tls = "0.2"
+rand_core = "0.6"
 rmp-serde = "0.13"
 rmpv = { version = "0.4", features = ["with-serde"] }
 rust_sodium-sys = "0.10.4"
@@ -31,6 +32,7 @@ serde = { version = "1", features = ["derive"] }
 tokio-core = "0.1"
 tokio-timer = "0.1"
 websocket = { version = "0.21", default-features = false, features = ["async", "async-ssl"] }
+xsalsa20poly1305 = "0.8"
 
 [dev-dependencies]
 clap = "2"
