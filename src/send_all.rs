@@ -2,9 +2,9 @@
 //!
 //! See https://github.com/alexcrichton/futures-rs/issues/462 for discussion.
 
-use futures::{Poll, Async, Future, AsyncSink, try_ready};
-use futures::stream::{Stream, Fuse};
 use futures::sink::Sink;
+use futures::stream::{Fuse, Stream};
+use futures::{try_ready, Async, AsyncSink, Future, Poll};
 
 /// Future for the `Sink::send_all` combinator, which sends a stream of values
 /// to a sink and then waits until the sink has fully flushed those values.
@@ -17,9 +17,10 @@ pub struct SendAll<T, U: Stream> {
 }
 
 pub fn new<T, U>(sink: T, stream: U) -> SendAll<T, U>
-    where T: Sink,
-          U: Stream<Item = T::SinkItem>,
-          T::SinkError: From<U::Error>,
+where
+    T: Sink,
+    U: Stream<Item = T::SinkItem>,
+    T::SinkError: From<U::Error>,
 {
     SendAll {
         sink: Some(sink),
@@ -29,23 +30,33 @@ pub fn new<T, U>(sink: T, stream: U) -> SendAll<T, U>
 }
 
 impl<T, U> SendAll<T, U>
-    where T: Sink,
-          U: Stream<Item = T::SinkItem>,
-          T::SinkError: From<U::Error>,
+where
+    T: Sink,
+    U: Stream<Item = T::SinkItem>,
+    T::SinkError: From<U::Error>,
 {
     fn sink_mut(&mut self) -> &mut T {
-        self.sink.as_mut().take().expect("Attempted to poll SendAll after completion")
+        self.sink
+            .as_mut()
+            .take()
+            .expect("Attempted to poll SendAll after completion")
     }
 
     fn stream_mut(&mut self) -> &mut Fuse<U> {
-        self.stream.as_mut().take()
+        self.stream
+            .as_mut()
+            .take()
             .expect("Attempted to poll SendAll after completion")
     }
 
     fn take_result(&mut self) -> (T, U) {
-        let sink = self.sink.take()
+        let sink = self
+            .sink
+            .take()
             .expect("Attempted to poll Forward after completion");
-        let fuse = self.stream.take()
+        let fuse = self
+            .stream
+            .take()
             .expect("Attempted to poll Forward after completion");
         (sink, fuse.into_inner())
     }
@@ -61,9 +72,10 @@ impl<T, U> SendAll<T, U>
 }
 
 impl<T, U> Future for SendAll<T, U>
-    where T: Sink,
-          U: Stream<Item = T::SinkItem>,
-          T::SinkError: From<U::Error>,
+where
+    T: Sink,
+    U: Stream<Item = T::SinkItem>,
+    T::SinkError: From<U::Error>,
 {
     type Item = (T, U);
     type Error = T::SinkError;
@@ -79,7 +91,6 @@ impl<T, U> Future for SendAll<T, U>
             match self.stream_mut().poll()? {
                 Async::Ready(Some(item)) => try_ready!(self.try_start_send(item)),
                 Async::Ready(None) => {
-//                    try_ready!(self.sink_mut().close());
                     try_ready!(self.sink_mut().poll_complete());
                     return Ok(Async::Ready(self.take_result()));
                 }

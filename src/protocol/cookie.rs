@@ -3,11 +3,10 @@
 use std::fmt;
 
 use rust_sodium::randombytes::randombytes_into;
+use serde::de::{Deserialize, Deserializer, Error as SerdeError, Visitor};
 use serde::ser::{Serialize, Serializer};
-use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
 use crate::helpers::libsodium_init_or_panic;
-
 
 const COOKIE_BYTES: usize = 16;
 
@@ -16,7 +15,6 @@ const COOKIE_BYTES: usize = 16;
 pub(crate) struct Cookie([u8; COOKIE_BYTES]);
 
 impl Cookie {
-
     /// Create a new `Cookie` from a byte array.
     pub(crate) fn new(bytes: [u8; COOKIE_BYTES]) -> Self {
         Cookie(bytes)
@@ -46,7 +44,9 @@ impl Cookie {
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl Serialize for Cookie {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where S: Serializer {
+    where
+        S: Serializer,
+    {
         serializer.serialize_bytes(&self.0)
     }
 }
@@ -60,15 +60,23 @@ impl<'de> Visitor<'de> for CookieVisitor {
         formatter.write_str("16 bytes of binary data")
     }
 
-    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E> where E: SerdeError {
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: SerdeError,
+    {
         if v.len() != 16 {
             return Err(SerdeError::invalid_length(v.len(), &self));
         }
-        Ok(Cookie::new([v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7],
-                        v[8], v[9], v[10], v[11], v[12], v[13], v[14], v[15]]))
+        Ok(Cookie::new([
+            v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], v[12], v[13],
+            v[14], v[15],
+        ]))
     }
 
-    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E> where E: SerdeError {
+    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+    where
+        E: SerdeError,
+    {
         self.visit_bytes(&v)
     }
 }
@@ -76,11 +84,12 @@ impl<'de> Visitor<'de> for CookieVisitor {
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl<'de> Deserialize<'de> for Cookie {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         deserializer.deserialize_bytes(CookieVisitor)
     }
 }
-
 
 /// A pair of two [`Cookie`](struct.Cookie.html)s
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,7 +107,6 @@ impl CookiePair {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -126,11 +134,14 @@ mod tests {
 
         let serialized = rmps::to_vec_named(&cookie).expect("Serialization failed");
 
-        assert_eq!(serialized, [
-            0xc4, // bin 8
-            16, // 16 elements
-            1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, // bytes
-        ]);
+        assert_eq!(
+            serialized,
+            [
+                0xc4, // bin 8
+                16,   // 16 elements
+                1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, // bytes
+            ]
+        );
     }
 
     /// The cookie deserializes from raw bytes.
@@ -140,9 +151,10 @@ mod tests {
 
         let deserialized: Cookie = rmps::from_slice(&[
             0xc4, // bin 8
-            16, // 16 elements
+            16,   // 16 elements
             1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, // bytes
-        ]).unwrap();
+        ])
+        .unwrap();
 
         assert_eq!(cookie, deserialized);
     }

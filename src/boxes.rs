@@ -8,10 +8,10 @@ use rmp_serde as rmps;
 use rmpv::Value;
 use rust_sodium::crypto::box_::NONCEBYTES;
 
+use crate::crypto::{AuthToken, KeyPair, PublicKey};
 use crate::errors::{SignalingError, SignalingResult};
-use crate::crypto::{KeyPair, PublicKey, AuthToken};
-use crate::protocol::Nonce;
 use crate::protocol::messages::Message;
+use crate::protocol::Nonce;
 
 /// An open box (unencrypted message + nonce).
 #[derive(Debug, PartialEq)]
@@ -44,7 +44,7 @@ impl OpenBox<Message> {
             // sent along with the message bytes.
             unsafe { self.nonce.clone() },
             // The public key of the recipient
-            other_key
+            other_key,
         );
         ByteBox::new(encrypted, self.nonce)
     }
@@ -57,7 +57,7 @@ impl OpenBox<Message> {
             // The nonce. The unsafe call to `clone()` is required because the
             // nonce needs to be used both for encrypting, as well as being
             // sent along with the message bytes.
-            unsafe { self.nonce.clone() }
+            unsafe { self.nonce.clone() },
         );
         ByteBox::new(encrypted, self.nonce)
     }
@@ -73,17 +73,25 @@ impl OpenBox<Message> {
     }
 
     /// Decrypt an encrypted message into an [`OpenBox`](struct.OpenBox.html).
-    pub(crate) fn decrypt(bbox: ByteBox, keypair: &KeyPair, other_key: &PublicKey) -> SignalingResult<Self> {
-        let decrypted: Vec<u8> = keypair.decrypt(
-            // The message bytes to be decrypted
-            &bbox.bytes,
-            // The nonce. The unsafe call to `clone()` is required because the
-            // nonce needs to be used both for decrypting, as well as being
-            // passed along with the message bytes.
-            unsafe { bbox.nonce.clone() },
-            // The public key of the recipient
-            other_key
-        ).map_err(|e| SignalingError::Decode(format!("Cannot decrypt message payload: {}", e)))?;
+    pub(crate) fn decrypt(
+        bbox: ByteBox,
+        keypair: &KeyPair,
+        other_key: &PublicKey,
+    ) -> SignalingResult<Self> {
+        let decrypted: Vec<u8> = keypair
+            .decrypt(
+                // The message bytes to be decrypted
+                &bbox.bytes,
+                // The nonce. The unsafe call to `clone()` is required because the
+                // nonce needs to be used both for decrypting, as well as being
+                // passed along with the message bytes.
+                unsafe { bbox.nonce.clone() },
+                // The public key of the recipient
+                other_key,
+            )
+            .map_err(|e| {
+                SignalingError::Decode(format!("Cannot decrypt message payload: {}", e))
+            })?;
 
         log_decrypted_bytes(&decrypted);
 
@@ -95,7 +103,8 @@ impl OpenBox<Message> {
 
     /// Decrypt token message using the `auth_token` using secret key cryptography.
     pub(crate) fn decrypt_token(bbox: ByteBox, auth_token: &AuthToken) -> SignalingResult<Self> {
-        let decrypted = auth_token.decrypt(&bbox.bytes, unsafe { bbox.nonce.clone() })
+        let decrypted = auth_token
+            .decrypt(&bbox.bytes, unsafe { bbox.nonce.clone() })
             .map_err(|e| SignalingError::Decode(format!("Cannot decode message payload: {}", e)))?;
 
         log_decrypted_bytes(&decrypted);
@@ -122,7 +131,7 @@ impl OpenBox<Value> {
             // sent along with the message bytes.
             unsafe { self.nonce.clone() },
             // The public key of the recipient
-            other_key
+            other_key,
         );
         ByteBox::new(encrypted, self.nonce)
     }
@@ -130,17 +139,25 @@ impl OpenBox<Value> {
     /// Decrypt a task message into a dynamically typed msgpack `Value`.
     ///
     /// This should be used after the handshake has finished.
-    pub(crate) fn decrypt(bbox: ByteBox, keypair: &KeyPair, other_key: &PublicKey) -> SignalingResult<OpenBox<Value>> {
-        let decrypted: Vec<u8> = keypair.decrypt(
-            // The message bytes to be decrypted
-            &bbox.bytes,
-            // The nonce. The unsafe call to `clone()` is required because the
-            // nonce needs to be used both for decrypting, as well as being
-            // passed along with the message bytes.
-            unsafe { bbox.nonce.clone() },
-            // The public key of the recipient
-            other_key
-        ).map_err(|e| SignalingError::Decode(format!("Cannot decrypt message payload: {}", e)))?;
+    pub(crate) fn decrypt(
+        bbox: ByteBox,
+        keypair: &KeyPair,
+        other_key: &PublicKey,
+    ) -> SignalingResult<OpenBox<Value>> {
+        let decrypted: Vec<u8> = keypair
+            .decrypt(
+                // The message bytes to be decrypted
+                &bbox.bytes,
+                // The nonce. The unsafe call to `clone()` is required because the
+                // nonce needs to be used both for decrypting, as well as being
+                // passed along with the message bytes.
+                unsafe { bbox.nonce.clone() },
+                // The public key of the recipient
+                other_key,
+            )
+            .map_err(|e| {
+                SignalingError::Decode(format!("Cannot decrypt message payload: {}", e))
+            })?;
 
         log_decrypted_bytes(&decrypted);
 
@@ -149,9 +166,7 @@ impl OpenBox<Value> {
 
         Ok(Self::new(message, bbox.nonce))
     }
-
 }
-
 
 /// A byte box (message bytes + nonce). The bytes may or may not be encrypted.
 #[derive(Debug, PartialEq)]
@@ -186,13 +201,20 @@ impl ByteBox {
 #[cfg(feature = "msgpack-debugging")]
 fn log_decrypted_bytes(decrypted: &[u8]) {
     use data_encoding::BASE64;
-    let encoded = || BASE64.encode(&decrypted)
-        .replace("+", "%2B")
-        .replace("=", "%3D")
-        .replace("/", "%2F");
+    let encoded = || {
+        BASE64
+            .encode(&decrypted)
+            .replace("+", "%2B")
+            .replace("=", "%3D")
+            .replace("/", "%2F")
+    };
     match option_env!("MSGPACK_DEBUG_URL") {
         Some(url) => trace!("Decrypted bytes: {}{}", url, encoded()),
-        None => trace!("Decrypted bytes: {}{}", crate::DEFAULT_MSGPACK_DEBUG_URL, encoded()),
+        None => trace!(
+            "Decrypted bytes: {}{}",
+            crate::DEFAULT_MSGPACK_DEBUG_URL,
+            encoded()
+        ),
     }
 }
 
@@ -209,7 +231,6 @@ mod tests {
 
     use super::*;
 
-
     /// Return a test nonce.
     fn create_test_nonce() -> Nonce {
         Nonce::new(
@@ -224,41 +245,36 @@ mod tests {
     fn create_test_msg_bytes() -> Vec<u8> {
         vec![
             // Fixmap with two entries
-            0x82,
-            // Key: type
-            0xa4, 0x74, 0x79, 0x70, 0x65,
-            // Val: server-hello
+            0x82, // Key: type
+            0xa4, 0x74, 0x79, 0x70, 0x65, // Val: server-hello
             0xac, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2d, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
             // Key: key
-            0xa3, 0x6b, 0x65, 0x79,
-            // Val: Binary 32 bytes
-            0xc4, 0x20,
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
-            0x63, 0xff,
+            0xa3, 0x6b, 0x65, 0x79, // Val: Binary 32 bytes
+            0xc4, 0x20, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x01, 0x02,
+            0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+            0x07, 0x08, 0x09, 0x00, 0x63, 0xff,
         ]
     }
 
     #[test]
     fn byte_box_from_slice() {
         let bytes = [
-            1, 2, 3, 4, 5, 6, 7, 8,
-            8, 7, 6, 5, 4, 3, 2, 1,
-            1, 2, 3, 4, 5, 6, 7, 8,
-            9, 10,
+            1, 2, 3, 4, 5, 6, 7, 8, 8, 7, 6, 5, 4, 3, 2, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
         ];
         let bbox = ByteBox::from_slice(&bytes).unwrap();
         assert_eq!(bbox.nonce.csn().overflow_number(), (3 << 8) + 4);
-        assert_eq!(bbox.nonce.csn().sequence_number(), (5 << 24) + (6 << 16) + (7 << 8) + 8);
+        assert_eq!(
+            bbox.nonce.csn().sequence_number(),
+            (5 << 24) + (6 << 16) + (7 << 8) + 8
+        );
         assert_eq!(bbox.bytes, vec![9, 10]);
     }
 
     #[test]
     fn byte_box_from_slice_too_short() {
-        let bytes_only_nonce = [1, 2, 3, 4, 5, 6, 7, 8,
-                                8, 7, 6, 5, 4, 3, 2, 1,
-                                1, 2, 3, 4, 5, 6, 7, 8];
+        let bytes_only_nonce = [
+            1, 2, 3, 4, 5, 6, 7, 8, 8, 7, 6, 5, 4, 3, 2, 1, 1, 2, 3, 4, 5, 6, 7, 8,
+        ];
         let bytes_not_even_nonce = [1, 2, 3, 4, 5, 6, 7, 8];
 
         let err1 = ByteBox::from_slice(&bytes_only_nonce).unwrap_err();
@@ -281,7 +297,8 @@ mod tests {
         let bytes = create_test_msg_bytes();
         let keypair_tx = KeyPair::new();
         let keypair_rx = KeyPair::new();
-        let encrypted = keypair_tx.encrypt(&bytes, unsafe { nonce.clone() }, keypair_rx.public_key());
+        let encrypted =
+            keypair_tx.encrypt(&bytes, unsafe { nonce.clone() }, keypair_rx.public_key());
         let bbox = ByteBox::new(encrypted, nonce);
         let obox = OpenBox::<Message>::decrypt(bbox, &keypair_rx, keypair_tx.public_key()).unwrap();
         assert_eq!(obox.message.get_type(), "server-hello");
@@ -311,17 +328,22 @@ mod tests {
     fn byte_box_decrypt_value() {
         let nonce = create_test_nonce();
         let value = Value::Map(vec![
-            (Value::String("type".into()), Value::String("taskmsg".into())),
+            (
+                Value::String("type".into()),
+                Value::String("taskmsg".into()),
+            ),
             (Value::String("number".into()), Value::Integer(42.into())),
         ]);
         let bytes = rmps::to_vec_named(&value).unwrap();
         let keypair_tx = KeyPair::new();
         let keypair_rx = KeyPair::new();
-        let encrypted = keypair_tx.encrypt(&bytes, unsafe { nonce.clone() }, keypair_rx.public_key());
+        let encrypted =
+            keypair_tx.encrypt(&bytes, unsafe { nonce.clone() }, keypair_rx.public_key());
 
         // First, make sure that decrypting this as message fails.
         let bbox = ByteBox::new(encrypted.clone(), unsafe { nonce.clone() });
-        let decrypt_as_message = OpenBox::<Message>::decrypt(bbox, &keypair_rx, keypair_tx.public_key());
+        let decrypt_as_message =
+            OpenBox::<Message>::decrypt(bbox, &keypair_rx, keypair_tx.public_key());
         assert!(decrypt_as_message.is_err());
 
         // Then decrypt as value.
@@ -334,7 +356,7 @@ mod tests {
                 assert_eq!(values[0].1, Value::String("taskmsg".into()));
                 assert_eq!(values[1].0, Value::String("number".into()));
                 assert_eq!(values[1].1, Value::Integer(42.into()));
-            },
+            }
             other => panic!("Expected map, got {:?}", other),
         }
     }

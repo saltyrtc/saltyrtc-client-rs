@@ -4,11 +4,11 @@ use rust_sodium::crypto::box_;
 use crate::crypto::PrivateKey;
 use crate::test_helpers::{DummyTask, TestRandom};
 
-use super::*;
 use super::csn::CombinedSequenceSnapshot;
+use super::*;
 
-mod validate_nonce;
 mod signaling_messages;
+mod validate_nonce;
 
 #[test]
 fn test_responder_counter() {
@@ -24,11 +24,12 @@ fn test_responder_counter_overflow() {
     assert_eq!(rc.0, ::std::u32::MAX);
     assert_eq!(
         rc.increment(),
-        Err(SignalingError::Crash("Overflow when incrementing responder counter".into())),
+        Err(SignalingError::Crash(
+            "Overflow when incrementing responder counter".into()
+        )),
     );
     assert_eq!(rc.0, ::std::u32::MAX);
 }
-
 
 struct MockSignaling {
     pub common: Common,
@@ -37,11 +38,7 @@ struct MockSignaling {
 }
 
 impl MockSignaling {
-    pub fn new(
-        role: Role,
-        identity: ClientIdentity,
-        signaling_state: SignalingState,
-    ) -> Self {
+    pub fn new(role: Role, identity: ClientIdentity, signaling_state: SignalingState) -> Self {
         Self {
             common: Common {
                 signaling_state,
@@ -98,7 +95,10 @@ impl Signaling for MockSignaling {
         Err(SignalingError::Crash("Not implemented in mock".into()))
     }
 
-    fn handle_peer_message(&mut self, _obox: OpenBox<Message>) -> SignalingResult<Vec<HandleAction>> {
+    fn handle_peer_message(
+        &mut self,
+        _obox: OpenBox<Message>,
+    ) -> SignalingResult<Vec<HandleAction>> {
         Err(SignalingError::Crash("Not implemented in mock".into()))
     }
 
@@ -144,7 +144,10 @@ fn test_peer_sequence_number_with_peer() {
     // Create initiator state
     let initiator = InitiatorContext::new(PublicKey::random());
     let our_csn = {
-        let mut pair = initiator.csn_pair().write().expect("Could not acquire write lock");
+        let mut pair = initiator
+            .csn_pair()
+            .write()
+            .expect("Could not acquire write lock");
         pair.theirs = Some(CombinedSequenceSnapshot::new(3, 1234));
         pair.ours.combined_sequence_number()
     };
@@ -152,10 +155,13 @@ fn test_peer_sequence_number_with_peer() {
 
     // Ensure that the sequence numbers returned are correct
     let psns = signaling.current_peer_sequence_numbers();
-    assert_eq!(psns, Some(csn::PeerSequenceNumbers {
-        incoming: (3 << 32) | 1234,
-        outgoing: our_csn,
-    }));
+    assert_eq!(
+        psns,
+        Some(csn::PeerSequenceNumbers {
+            incoming: (3 << 32) | 1234,
+            outgoing: our_csn,
+        })
+    );
 }
 
 /// If there's no peer, raw encrypting and decrypting should fail.
@@ -201,12 +207,19 @@ fn test_encrypt_raw_with_session_keys_with_peer() {
 
     // Encrypt data
     let data = [2, 3, 4, 5];
-    let ciphertext = signaling.encrypt_raw_with_session_keys(&data, &nonce).unwrap();
+    let ciphertext = signaling
+        .encrypt_raw_with_session_keys(&data, &nonce)
+        .unwrap();
     assert_ne!(&data, ciphertext.as_slice());
 
     // Verify
     assert_eq!(
-        box_::open(&ciphertext, &nonce, peer_kp.public_key(), &our_private_key_clone),
+        box_::open(
+            &ciphertext,
+            &nonce,
+            peer_kp.public_key(),
+            &our_private_key_clone
+        ),
         Ok(vec![2, 3, 4, 5])
     );
 }
@@ -218,14 +231,20 @@ fn test_encrypt_raw_with_session_keys_with_peer() {
 #[test]
 fn test_encrypt_raw_with_session_keys_with_peer_known_result() {
     // Generate keypairs and nonce
-    let peer_kp = KeyPair::from_private_key(PrivateKey::from_slice(&[
-        1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2,
-        3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4,
-    ]).unwrap());
-    let our_kp = KeyPair::from_private_key(PrivateKey::from_slice(&[
-        4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3,
-        2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1,
-    ]).unwrap());
+    let peer_kp = KeyPair::from_private_key(
+        PrivateKey::from_slice(&[
+            1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4,
+            4, 4, 4,
+        ])
+        .unwrap(),
+    );
+    let our_kp = KeyPair::from_private_key(
+        PrivateKey::from_slice(&[
+            4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1,
+            1, 1, 1,
+        ])
+        .unwrap(),
+    );
 
     // Create signaling instance
     let mut signaling = MockSignaling::new(
@@ -241,7 +260,9 @@ fn test_encrypt_raw_with_session_keys_with_peer_known_result() {
     // Encrypt data
     let data = [];
     let nonce = box_::Nonce::from_slice(b"connectionidconnectionid").unwrap();
-    let ciphertext = signaling.encrypt_raw_with_session_keys(&data, &nonce).unwrap();
+    let ciphertext = signaling
+        .encrypt_raw_with_session_keys(&data, &nonce)
+        .unwrap();
 
     // Verify
     assert_eq!(

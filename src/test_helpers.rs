@@ -6,13 +6,12 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use failure::Error;
-use futures::sync::mpsc::{UnboundedSender, UnboundedReceiver};
+use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::sync::oneshot::Sender as OneshotSender;
 use rmpv::Value;
 
-use crate::CloseCode;
 use crate::tasks::{Task, TaskMessage};
-
+use crate::CloseCode;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) struct DummyTask {
@@ -39,7 +38,12 @@ impl Task for DummyTask {
         Ok(())
     }
 
-    fn start(&mut self, _: UnboundedSender<TaskMessage>, _: UnboundedReceiver<TaskMessage>, _: OneshotSender<Option<CloseCode>>) {
+    fn start(
+        &mut self,
+        _: UnboundedSender<TaskMessage>,
+        _: UnboundedReceiver<TaskMessage>,
+        _: OneshotSender<Option<CloseCode>>,
+    ) {
         unimplemented!()
     }
 
@@ -63,7 +67,6 @@ impl Task for DummyTask {
         unimplemented!()
     }
 }
-
 
 /// A test-only trait that allows the user to create random instances of
 /// certain types (e.g. a public key).

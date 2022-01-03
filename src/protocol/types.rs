@@ -2,14 +2,13 @@ use std::convert::From;
 use std::fmt;
 use std::result::Result as StdResult;
 
+use serde::de::{Deserialize, Deserializer, Error as SerdeError, Visitor};
 use serde::ser::{Serialize, Serializer};
-use serde::de::{Deserialize, Deserializer, Visitor, Error as SerdeError};
 
-use crate::Event;
 use crate::boxes::ByteBox;
 use crate::errors::SaltyError;
 use crate::tasks::TaskMessage;
-
+use crate::Event;
 
 /// The role of a peer.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -42,7 +41,6 @@ impl fmt::Display for Role {
         }
     }
 }
-
 
 /// A peer identity.
 ///
@@ -77,7 +75,6 @@ impl fmt::Display for Identity {
     }
 }
 
-
 /// A client identity.
 ///
 /// This is like the [`Identity`](enum.identity.html), but the `Server` value
@@ -102,7 +99,6 @@ impl fmt::Display for ClientIdentity {
         }
     }
 }
-
 
 /// An address.
 ///
@@ -158,7 +154,7 @@ impl From<ClientIdentity> for Address {
             ClientIdentity::Responder(address) => {
                 assert!(address > 0x01, "address <= 0x01");
                 address
-            },
+            }
         })
     }
 }
@@ -175,7 +171,7 @@ impl From<Identity> for Address {
             Identity::Responder(address) => {
                 assert!(address > 0x01, "address <= 0x01");
                 address
-            },
+            }
         })
     }
 }
@@ -190,7 +186,9 @@ impl From<u8> for Address {
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl Serialize for Address {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
-            where S: Serializer {
+    where
+        S: Serializer,
+    {
         serializer.serialize_u8(self.0)
     }
 }
@@ -204,7 +202,10 @@ impl<'de> Visitor<'de> for AddressVisitor {
         formatter.write_str("an address byte")
     }
 
-    fn visit_u8<E>(self, v: u8) -> StdResult<Self::Value, E> where E: SerdeError {
+    fn visit_u8<E>(self, v: u8) -> StdResult<Self::Value, E>
+    where
+        E: SerdeError,
+    {
         Ok(Address(v))
     }
 }
@@ -212,11 +213,12 @@ impl<'de> Visitor<'de> for AddressVisitor {
 /// Waiting for https://github.com/3Hren/msgpack-rust/issues/129
 impl<'de> Deserialize<'de> for Address {
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
-            where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         deserializer.deserialize_u8(AddressVisitor)
     }
 }
-
 
 /// An enum returned when an incoming message is handled.
 ///
@@ -238,7 +240,6 @@ pub(crate) enum HandleAction {
     /// A task message was received and decoded.
     TaskMessage(TaskMessage),
 }
-
 
 #[cfg(test)]
 mod tests {
