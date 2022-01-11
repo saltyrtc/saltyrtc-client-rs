@@ -83,14 +83,10 @@ impl fmt::Debug for KeyPair {
 
 impl KeyPair {
     /// Create a new key pair and wrap it in a `KeyPair`.
-    ///
-    /// ## Panics
-    ///
-    /// This may panic if libsodium initialization fails.
     pub fn new() -> Self {
         info!("Generating new key pair");
 
-        // Generate key pair
+        // Generate random key pair
         let mut rng = OsRng;
         let private_key = PrivateKey::generate(&mut rng);
         let public_key = private_key.public_key();
@@ -183,8 +179,6 @@ pub struct AuthToken(SecretKey);
 
 impl AuthToken {
     /// Create a new auth token.
-    ///
-    /// This can fail only if libsodium initialization fails.
     pub fn new() -> Self {
         info!("Generating new auth token");
 

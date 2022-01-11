@@ -2,11 +2,11 @@
 
 use std::fmt;
 
-use rust_sodium::randombytes::randombytes_into;
-use serde::de::{Deserialize, Deserializer, Error as SerdeError, Visitor};
-use serde::ser::{Serialize, Serializer};
-
-use crate::helpers::libsodium_init_or_panic;
+use crypto_box::rand_core::{OsRng, RngCore};
+use serde::{
+    de::{Deserialize, Deserializer, Error as SerdeError, Visitor},
+    ser::{Serialize, Serializer},
+};
 
 const COOKIE_BYTES: usize = 16;
 
@@ -22,12 +22,9 @@ impl Cookie {
 
     /// Create a new random `Cookie`.
     pub(crate) fn random() -> Self {
-        // Make sure that libsodium is initialized
-        libsodium_init_or_panic();
-
         // Create 16 bytes of cryptographically secure random data
         let mut rand = [0; 16];
-        randombytes_into(&mut rand);
+        OsRng.fill_bytes(&mut rand);
 
         // Make sure that random data was actually generated
         assert!(!rand.iter().all(|&x| x == 0));

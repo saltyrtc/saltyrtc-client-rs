@@ -1,5 +1,5 @@
 //! Protocol tests.
-use crypto_box::{aead::rand_core::OsRng, generate_nonce};
+use crypto_box::{generate_nonce, rand_core::OsRng};
 
 use crate::{
     crypto::PrivateKey,

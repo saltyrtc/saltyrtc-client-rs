@@ -140,9 +140,9 @@ impl ClientHello {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        crate::helpers::libsodium_init_or_panic();
+        use crypto_box::rand_core::{OsRng, RngCore};
         let mut bytes = [0u8; 32];
-        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         Self {
             key: PublicKey::from(bytes),
         }
@@ -164,9 +164,9 @@ impl ServerHello {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        crate::helpers::libsodium_init_or_panic();
+        use crypto_box::rand_core::{OsRng, RngCore};
         let mut bytes = [0u8; 32];
-        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         Self {
             key: PublicKey::from(bytes),
         }
@@ -304,9 +304,9 @@ impl Token {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        crate::helpers::libsodium_init_or_panic();
+        use crypto_box::rand_core::{OsRng, RngCore};
         let mut bytes = [0u8; 32];
-        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         Self {
             key: PublicKey::from(bytes),
         }
@@ -325,9 +325,9 @@ impl Key {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        crate::helpers::libsodium_init_or_panic();
+        use crypto_box::rand_core::{OsRng, RngCore};
         let mut bytes = [0u8; 32];
-        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         Self {
             key: PublicKey::from(bytes),
         }

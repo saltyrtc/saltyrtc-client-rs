@@ -17,7 +17,7 @@ pub type Error = ::failure::Error;
 /// Errors that are exposed to the user of the library.
 #[derive(Fail, Debug, PartialEq)]
 pub enum SaltyError {
-    /// A problem with Libsodium or with encrypting or decrypting data.
+    /// A problem with encrypting or decrypting data.
     #[fail(display = "Crypto error: {}", _0)]
     Crypto(String),
 
@@ -105,7 +105,7 @@ pub(crate) enum SignalingError {
     #[fail(display = "Invalid nonce: {}", _0)]
     InvalidNonce(String),
 
-    /// A problem with Libsodium or with encrypting or decrypting data.
+    /// A problem with encrypting or decrypting data.
     #[fail(display = "Crypto error: {}", _0)]
     Crypto(String),
 

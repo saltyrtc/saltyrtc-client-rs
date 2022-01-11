@@ -6,7 +6,6 @@
 
 use rmp_serde as rmps;
 use rmpv::Value;
-use rust_sodium::crypto::box_::NONCEBYTES;
 
 use crate::{
     crypto::{AuthToken, KeyPair, PublicKey},
@@ -190,7 +189,7 @@ impl ByteBox {
     }
 
     pub(crate) fn from_slice(bytes: &[u8]) -> SignalingResult<Self> {
-        if bytes.len() <= NONCEBYTES {
+        if bytes.len() <= 24 {
             return Err(SignalingError::Decode("Message is too short".into()));
         }
         let nonce = Nonce::from_bytes(&bytes[..24])
@@ -200,7 +199,7 @@ impl ByteBox {
     }
 
     pub(crate) fn into_bytes(self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(NONCEBYTES + self.bytes.len());
+        let mut bytes = Vec::with_capacity(24 + self.bytes.len());
         bytes.extend(self.nonce.into_bytes().iter());
         bytes.extend(self.bytes.iter());
         bytes

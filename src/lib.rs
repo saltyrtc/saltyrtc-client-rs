@@ -54,7 +54,6 @@ mod boxes;
 mod close_code;
 mod crypto_types;
 pub mod errors;
-mod helpers;
 mod protocol;
 mod send_all;
 pub mod tasks;
@@ -100,12 +99,13 @@ pub mod crypto {
 }
 
 // Internal imports
-use crate::boxes::ByteBox;
-use crate::crypto_types::{AuthToken, KeyPair, PublicKey};
-use crate::errors::{BuilderError, SaltyError, SaltyResult, SignalingError, SignalingResult};
-use crate::helpers::libsodium_init;
-use crate::protocol::{HandleAction, InitiatorSignaling, ResponderSignaling, Signaling};
-use crate::tasks::{BoxedTask, TaskMessage, Tasks};
+use crate::{
+    boxes::ByteBox,
+    crypto_types::{AuthToken, KeyPair, PublicKey},
+    errors::{BuilderError, SaltyError, SaltyResult, SignalingError, SignalingResult},
+    protocol::{HandleAction, InitiatorSignaling, ResponderSignaling, Signaling},
+    tasks::{BoxedTask, TaskMessage, Tasks},
+};
 
 // Constants
 const SUBPROTOCOL: &str = "v1.saltyrtc.org";
@@ -422,9 +422,6 @@ pub fn connect(
     impl Future<Item = WsClient, Error = SaltyError>,
     UnboundedChannel<Event>,
 )> {
-    // Initialize libsodium
-    libsodium_init()?;
-
     // Parse URL
     let path = salty
         .read()
