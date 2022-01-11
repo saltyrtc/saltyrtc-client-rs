@@ -202,7 +202,7 @@ mod tests {
             let t1 = Box::new(DummyTask::new(1));
             let t2 = Box::new(DummyTask::new(2));
             Tasks::from_vec(vec![t1, t2]).unwrap()
-        };
+        }
 
         // Parameters as static string references
         let chosen = make_tasks()

@@ -17,13 +17,13 @@ maintenance = { status = "passively-maintained" }
 
 [dependencies]
 byteorder = "1.1"
+crypto_box = { git = "https://github.com/RustCrypto/nacl-compat", features = ["serde"] }
 data-encoding = "2.1"
 failure = "0.1"
 futures = "0.1.0"  # Make sure to use same version as websocket
 log = "0.4"
 mopa = "0.2"
 native-tls = "0.2"
-rand_core = "0.6"
 rmp-serde = "0.13"
 rmpv = { version = "0.4", features = ["with-serde"] }
 rust_sodium-sys = "0.10.4"
