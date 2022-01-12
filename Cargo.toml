@@ -24,6 +24,7 @@ futures = "0.1.0"  # Make sure to use same version as websocket
 log = "0.4"
 mopa = "0.2"
 native-tls = "0.2"
+rand_core = { version = "0.6", features = ["getrandom"] }
 rmp-serde = "0.13"
 rmpv = { version = "0.4", features = ["with-serde"] }
 serde = { version = "1", features = ["derive"] }
