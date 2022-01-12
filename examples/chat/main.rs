@@ -15,10 +15,10 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{App, Arg, SubCommand};
-use cursive::traits::{Identifiable, Scrollable};
+use cursive::traits::{Nameable, Scrollable};
 use cursive::view::ScrollStrategy;
 use cursive::views::{EditView, LinearLayout, ResizedView, TextView};
-use cursive::{CbSink, Cursive, CursiveExt};
+use cursive::{CbSink, Cursive};
 use data_encoding::HEXLOWER;
 use futures::future::Future;
 use futures::sync::mpsc as futures_mpsc;
@@ -335,7 +335,7 @@ fn main() {
     let remote = core.remote();
     let tui_thread = thread::spawn(move || {
         // Launch TUI
-        let mut tui = Cursive::ncurses().expect("Could not initialize ncurses backend");
+        let mut tui = cursive::ncurses();
         tui.set_autorefresh(true);
 
         // Create text view (for displaying messages)
