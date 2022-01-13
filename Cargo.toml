@@ -17,7 +17,7 @@ maintenance = { status = "passively-maintained" }
 
 [dependencies]
 byteorder = "1.1"
-crypto_box = { git = "https://github.com/RustCrypto/nacl-compat", features = ["serde"] }
+crypto_box = { version = "0.7.1", features = ["serde"] }
 data-encoding = "2.1"
 failure = "0.1"
 futures = "0.1.0"  # Make sure to use same version as websocket
