@@ -140,11 +140,11 @@ impl ClientHello {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        crate::helpers::libsodium_init_or_panic();
+        use crypto_box::rand_core::{OsRng, RngCore};
         let mut bytes = [0u8; 32];
-        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         Self {
-            key: PublicKey::from_slice(&bytes).unwrap(),
+            key: PublicKey::from(bytes),
         }
     }
 }
@@ -164,11 +164,11 @@ impl ServerHello {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        crate::helpers::libsodium_init_or_panic();
+        use crypto_box::rand_core::{OsRng, RngCore};
         let mut bytes = [0u8; 32];
-        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         Self {
-            key: PublicKey::from_slice(&bytes).unwrap(),
+            key: PublicKey::from(bytes),
         }
     }
 }
@@ -304,11 +304,11 @@ impl Token {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        crate::helpers::libsodium_init_or_panic();
+        use crypto_box::rand_core::{OsRng, RngCore};
         let mut bytes = [0u8; 32];
-        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         Self {
-            key: PublicKey::from_slice(&bytes).unwrap(),
+            key: PublicKey::from(bytes),
         }
     }
 }
@@ -325,11 +325,11 @@ impl Key {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        crate::helpers::libsodium_init_or_panic();
+        use crypto_box::rand_core::{OsRng, RngCore};
         let mut bytes = [0u8; 32];
-        ::rust_sodium::randombytes::randombytes_into(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         Self {
-            key: PublicKey::from_slice(&bytes).unwrap(),
+            key: PublicKey::from(bytes),
         }
     }
 }
@@ -498,29 +498,28 @@ mod tests {
     #[test]
     /// Verify that a message is correctly serialized, internally tagged.
     fn test_encode_message() {
-        let key = PublicKey::from_slice(&[
+        let key = PublicKey::from([
             1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
             0, 99, 255,
-        ])
-        .unwrap();
-        let msg = Message::ServerHello(ServerHello { key: key });
+        ]);
+        let msg = Message::ServerHello(ServerHello { key });
         let bytes: Vec<u8> = rmps::to_vec_named(&msg).expect("Serialization failed");
         #[rustfmt::skip]
         assert_eq!(bytes, vec![
-            // Fixmap with two entries
-            0x82,
-            // Key: type
-            0xa4, 0x74, 0x79, 0x70, 0x65,
-            // Val: server-hello
-            0xac, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2d, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
-            // Key: key
-            0xa3, 0x6b, 0x65, 0x79,
-            // Val: Binary 32 bytes
-            0xc4, 0x20,
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
-            0x63, 0xff,
+           // Fixmap with two entries
+           0x82,
+           // Key: type
+           0xa4, 0x74, 0x79, 0x70, 0x65,
+           // Val: server-hello
+           0xac, 0x73, 0x65, 0x72, 0x76, 0x65, 0x72, 0x2d, 0x68, 0x65, 0x6c, 0x6c, 0x6f,
+           // Key: key
+           0xa3, 0x6b, 0x65, 0x79,
+           // Val: Binary 32 bytes
+           0xc4, 0x20,
+           0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
+           0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
+           0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00,
+           0x63, 0xff,
         ]);
     }
 
@@ -528,12 +527,11 @@ mod tests {
     /// Verify that a message is correctly deserialized, depending on the type.
     fn test_decode_message() {
         // Create the ServerHello message we'll compare against
-        let key = PublicKey::from_slice(&[
+        let key = PublicKey::from([
             1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
             0, 99, 255,
-        ])
-        .unwrap();
-        let server_hello = ServerHello { key: key };
+        ]);
+        let server_hello = ServerHello { key };
 
         // The bytes to deserialize
         #[rustfmt::skip]
@@ -672,14 +670,14 @@ mod tests {
                 0xa2, 0x69, 0x64,
                 // Val: binary data
                 0xc4, 0x08,
-                    // Source address
-                    0x02,
-                    // Destination address
-                    0x01,
-                    // Overflow number
-                    0x00, 0x00,
-                    // Sequence number
-                    0x8a, 0xe3, 0xbe, 0xb5,
+                // Source address
+                0x02,
+                // Destination address
+                0x01,
+                // Overflow number
+                0x00, 0x00,
+                // Sequence number
+                0x8a, 0xe3, 0xbe, 0xb5,
             ];
 
             let msg: Message = rmps::from_slice(&bytes).unwrap();

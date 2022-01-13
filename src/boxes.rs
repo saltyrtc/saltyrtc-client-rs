@@ -1,4 +1,4 @@
-//! Functionality related to libsodium crypto boxes.
+//! Functionality related to nacl crypto boxes.
 //!
 //! An open box consists of an unencrypted message and a nonce.
 //!
@@ -6,12 +6,12 @@
 
 use rmp_serde as rmps;
 use rmpv::Value;
-use rust_sodium::crypto::box_::NONCEBYTES;
 
-use crate::crypto::{AuthToken, KeyPair, PublicKey};
-use crate::errors::{SignalingError, SignalingResult};
-use crate::protocol::messages::Message;
-use crate::protocol::Nonce;
+use crate::{
+    crypto::{AuthToken, KeyPair, PublicKey},
+    errors::{SignalingError, SignalingResult},
+    protocol::{messages::Message, Nonce},
+};
 
 /// An open box (unencrypted message + nonce).
 #[derive(Debug, PartialEq)]
@@ -35,7 +35,11 @@ impl OpenBox<Message> {
     }
 
     /// Encrypt message for the `other_key` using public key cryptography.
-    pub(crate) fn encrypt(self, keypair: &KeyPair, other_key: &PublicKey) -> ByteBox {
+    pub(crate) fn encrypt(
+        self,
+        keypair: &KeyPair,
+        other_key: &PublicKey,
+    ) -> SignalingResult<ByteBox> {
         let encrypted = keypair.encrypt(
             // The message bytes to be encrypted
             &self.message.to_msgpack(),
@@ -45,12 +49,12 @@ impl OpenBox<Message> {
             unsafe { self.nonce.clone() },
             // The public key of the recipient
             other_key,
-        );
-        ByteBox::new(encrypted, self.nonce)
+        )?;
+        Ok(ByteBox::new(encrypted, self.nonce))
     }
 
     /// Encrypt token message using the `auth_token` using secret key cryptography.
-    pub(crate) fn encrypt_token(self, auth_token: &AuthToken) -> ByteBox {
+    pub(crate) fn encrypt_token(self, auth_token: &AuthToken) -> SignalingResult<ByteBox> {
         let encrypted = auth_token.encrypt(
             // The message bytes to be encrypted
             &self.message.to_msgpack(),
@@ -58,8 +62,8 @@ impl OpenBox<Message> {
             // nonce needs to be used both for encrypting, as well as being
             // sent along with the message bytes.
             unsafe { self.nonce.clone() },
-        );
-        ByteBox::new(encrypted, self.nonce)
+        )?;
+        Ok(ByteBox::new(encrypted, self.nonce))
     }
 
     /// Decode an unencrypted message into an [`OpenBox`](struct.OpenBox.html).
@@ -122,7 +126,11 @@ impl OpenBox<Value> {
     }
 
     /// Encrypt message for the `other_key` using public key cryptography.
-    pub(crate) fn encrypt(self, keypair: &KeyPair, other_key: &PublicKey) -> ByteBox {
+    pub(crate) fn encrypt(
+        self,
+        keypair: &KeyPair,
+        other_key: &PublicKey,
+    ) -> SignalingResult<ByteBox> {
         let encrypted = keypair.encrypt(
             // The message bytes to be encrypted
             &rmps::to_vec_named(&self.message).expect("Failed to serialize value"),
@@ -132,8 +140,8 @@ impl OpenBox<Value> {
             unsafe { self.nonce.clone() },
             // The public key of the recipient
             other_key,
-        );
-        ByteBox::new(encrypted, self.nonce)
+        )?;
+        Ok(ByteBox::new(encrypted, self.nonce))
     }
 
     /// Decrypt a task message into a dynamically typed msgpack `Value`.
@@ -181,7 +189,7 @@ impl ByteBox {
     }
 
     pub(crate) fn from_slice(bytes: &[u8]) -> SignalingResult<Self> {
-        if bytes.len() <= NONCEBYTES {
+        if bytes.len() <= 24 {
             return Err(SignalingError::Decode("Message is too short".into()));
         }
         let nonce = Nonce::from_bytes(&bytes[..24])
@@ -191,7 +199,7 @@ impl ByteBox {
     }
 
     pub(crate) fn into_bytes(self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(NONCEBYTES + self.bytes.len());
+        let mut bytes = Vec::with_capacity(24 + self.bytes.len());
         bytes.extend(self.nonce.into_bytes().iter());
         bytes.extend(self.bytes.iter());
         bytes
@@ -297,8 +305,9 @@ mod tests {
         let bytes = create_test_msg_bytes();
         let keypair_tx = KeyPair::new();
         let keypair_rx = KeyPair::new();
-        let encrypted =
-            keypair_tx.encrypt(&bytes, unsafe { nonce.clone() }, keypair_rx.public_key());
+        let encrypted = keypair_tx
+            .encrypt(&bytes, unsafe { nonce.clone() }, keypair_rx.public_key())
+            .unwrap();
         let bbox = ByteBox::new(encrypted, nonce);
         let obox = OpenBox::<Message>::decrypt(bbox, &keypair_rx, keypair_tx.public_key()).unwrap();
         assert_eq!(obox.message.get_type(), "server-hello");
@@ -314,7 +323,9 @@ mod tests {
         let auth_token = AuthToken::new();
 
         // Encrypt message with that auth token directly
-        let encrypted = auth_token.encrypt(&bytes, unsafe { nonce.clone() });
+        let encrypted = auth_token
+            .encrypt(&bytes, unsafe { nonce.clone() })
+            .unwrap();
 
         // Construct byte box
         let bbox = ByteBox::new(encrypted, nonce);
@@ -337,8 +348,9 @@ mod tests {
         let bytes = rmps::to_vec_named(&value).unwrap();
         let keypair_tx = KeyPair::new();
         let keypair_rx = KeyPair::new();
-        let encrypted =
-            keypair_tx.encrypt(&bytes, unsafe { nonce.clone() }, keypair_rx.public_key());
+        let encrypted = keypair_tx
+            .encrypt(&bytes, unsafe { nonce.clone() }, keypair_rx.public_key())
+            .unwrap();
 
         // First, make sure that decrypting this as message fails.
         let bbox = ByteBox::new(encrypted.clone(), unsafe { nonce.clone() });

@@ -6,7 +6,6 @@ use std::convert::Into;
 use std::io::Write;
 
 use byteorder::{BigEndian, ByteOrder};
-use rust_sodium::crypto::{box_, secretbox};
 
 use crate::errors::{SignalingError, SignalingResult};
 
@@ -125,17 +124,10 @@ impl Nonce {
     }
 }
 
-impl Into<box_::Nonce> for Nonce {
-    fn into(self) -> box_::Nonce {
-        let bytes = self.into_bytes();
-        box_::Nonce(bytes)
-    }
-}
-
-impl Into<secretbox::Nonce> for Nonce {
-    fn into(self) -> secretbox::Nonce {
-        let bytes = self.into_bytes();
-        secretbox::Nonce(bytes)
+impl Into<xsalsa20poly1305::Nonce> for Nonce {
+    fn into(self) -> xsalsa20poly1305::Nonce {
+        let bytes: [u8; 24] = self.into_bytes();
+        bytes.into()
     }
 }
 
@@ -188,12 +180,12 @@ mod tests {
         assert_eq!(nonce.into_bytes(), create_test_nonce_bytes());
     }
 
-    /// Test conversion from a saltyrtc `Nonce` to a rust sodium `Nonce`.
+    /// Test conversion from a saltyrtc `Nonce` to a xsalsa20poly1305 `Nonce`.
     #[test]
     fn nonce_into_nonce() {
         let nonce: Nonce = create_test_nonce();
         let nonce_bytes: [u8; 24] = create_test_nonce_bytes();
-        let rust_sodium_nonce: box_::Nonce = nonce.into();
-        assert_eq!(rust_sodium_nonce.0, nonce_bytes);
+        let crypto_box_nonce: xsalsa20poly1305::Nonce = nonce.into();
+        assert_eq!(crypto_box_nonce.as_slice(), &nonce_bytes);
     }
 }

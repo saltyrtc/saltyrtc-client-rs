@@ -8,16 +8,24 @@
 //! All peer related state is contained in the [context
 //! structs](context/index.html), depending on the role.
 
-use std::collections::{HashMap, HashSet};
-use std::mem;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{
+    collections::{HashMap, HashSet},
+    mem,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
-use crate::boxes::{ByteBox, OpenBox};
-use crate::crypto::{AuthToken, KeyPair, PublicKey};
-use crate::errors::{SaltyError, SignalingError, SignalingResult, ValidationError};
+use crypto_box::aead::{
+    generic_array::{typenum::U24, GenericArray},
+    Aead,
+};
 use rmpv::Value;
-use rust_sodium::crypto::box_;
+
+use crate::{
+    boxes::{ByteBox, OpenBox},
+    crypto::{AuthToken, KeyPair, PublicKey},
+    errors::{SaltyError, SignalingError, SignalingResult, ValidationError},
+};
 
 pub(crate) mod context;
 pub(crate) mod cookie;
@@ -573,7 +581,7 @@ pub(crate) trait Signaling {
                 .ok_or_else(|| SignalingError::Crash("Session keypair not available".into()))?,
             peer.session_key()
                 .ok_or_else(|| SignalingError::Crash("Peer session key not set".into()))?,
-        );
+        )?;
 
         Ok(bbox)
     }
@@ -622,7 +630,7 @@ pub(crate) trait Signaling {
                 .ok_or_else(|| SignalingError::Crash("Session keypair not available".into()))?,
             peer.session_key()
                 .ok_or_else(|| SignalingError::Crash("Peer session key not set".into()))?,
-        );
+        )?;
 
         Ok(bbox)
     }
@@ -701,8 +709,8 @@ pub(crate) trait Signaling {
         // Reply with client-hello message if we're a responder
         if self.role() == Role::Responder {
             let client_hello = {
-                let key = self.common().permanent_keypair.public_key();
-                ClientHello::new(*key).into_message()
+                let key = self.common().permanent_keypair.public_key().clone();
+                ClientHello::new(key).into_message()
             };
             let client_hello_nonce = Nonce::new(
                 // Cookie
@@ -758,7 +766,7 @@ pub(crate) trait Signaling {
             Some(ref pubkey) => {
                 debug!("<-- Enqueuing client-auth to server");
                 actions.push(HandleAction::Reply(
-                    reply.encrypt(&self.common().permanent_keypair, pubkey),
+                    reply.encrypt(&self.common().permanent_keypair, pubkey)?,
                 ));
             }
             None => return Err(SignalingError::Crash("Missing server permanent key".into())),
@@ -909,22 +917,14 @@ pub(crate) trait Signaling {
             self.server()
                 .session_key()
                 .ok_or_else(|| SignalingError::Crash("Server session key not set".into()))?,
-        );
+        )?;
 
         Ok(HandleAction::Reply(bbox))
     }
 
     // Raw encryption / decryption
 
-    /// Encrypt raw bytes for the peer using the session keys.
-    ///
-    /// If this function is called before the peer has been established,
-    /// it will return a `SignalingError::NoPeer`.
-    fn encrypt_raw_with_session_keys(
-        &self,
-        data: &[u8],
-        nonce: &box_::Nonce,
-    ) -> SignalingResult<Vec<u8>> {
+    fn get_crypto_box(&self) -> SignalingResult<crypto_box::Box> {
         let peer = self.get_peer().ok_or_else(|| SignalingError::NoPeer)?;
         let peer_session_public_key = peer
             .session_key()
@@ -933,12 +933,24 @@ pub(crate) trait Signaling {
             .keypair()
             .map(|keypair: &KeyPair| keypair.private_key())
             .ok_or_else(|| SignalingError::Crash("Our session private key not set".into()))?;
-        Ok(box_::seal(
-            data,
-            nonce,
+        Ok(crypto_box::Box::new(
             peer_session_public_key,
             our_session_private_key,
         ))
+    }
+
+    /// Encrypt raw bytes for the peer using the session keys.
+    ///
+    /// If this function is called before the peer has been established,
+    /// it will return a `SignalingError::NoPeer`.
+    fn encrypt_raw_with_session_keys(
+        &self,
+        data: &[u8],
+        nonce: &GenericArray<u8, U24>,
+    ) -> SignalingResult<Vec<u8>> {
+        self.get_crypto_box()?
+            .encrypt(nonce, data)
+            .map_err(|_| SignalingError::Crypto("Could not encrypt bytes".to_string()))
     }
 
     /// Decrypt raw bytes for the peer using the session keys.
@@ -948,23 +960,11 @@ pub(crate) trait Signaling {
     fn decrypt_raw_with_session_keys(
         &self,
         data: &[u8],
-        nonce: &box_::Nonce,
+        nonce: &GenericArray<u8, U24>,
     ) -> SignalingResult<Vec<u8>> {
-        let peer = self.get_peer().ok_or_else(|| SignalingError::NoPeer)?;
-        let peer_session_public_key = peer
-            .session_key()
-            .ok_or_else(|| SignalingError::Crash("Peer session public key not set".into()))?;
-        let our_session_private_key = peer
-            .keypair()
-            .map(|keypair: &KeyPair| keypair.private_key())
-            .ok_or_else(|| SignalingError::Crash("Our session private key not set".into()))?;
-        box_::open(
-            data,
-            nonce,
-            peer_session_public_key,
-            our_session_private_key,
-        )
-        .map_err(|_| SignalingError::Crypto("Could not decrypt bytes".into()))
+        self.get_crypto_box()?
+            .decrypt(nonce, data)
+            .map_err(|_| SignalingError::Crypto("Could not decrypt bytes".into()))
     }
 }
 
@@ -1521,8 +1521,8 @@ impl InitiatorSignaling {
         }
 
         // Ensure that session key != permanent key
-        match responder.permanent_key {
-            Some(pk) if pk == msg.key => {
+        match &responder.permanent_key {
+            Some(pk) if pk == &msg.key => {
                 return Err(SignalingError::Protocol(
                     "Responder session key and permanent key are equal".into(),
                 ));
@@ -1543,7 +1543,7 @@ impl InitiatorSignaling {
 
         // Reply with our own key msg
         let key: Message = Key {
-            key: *responder.keypair.public_key(),
+            key: responder.keypair.public_key().clone(),
         }
         .into_message();
         let key_nonce = Nonce::new(
@@ -1559,7 +1559,7 @@ impl InitiatorSignaling {
                 .permanent_key
                 .as_ref()
                 .ok_or_else(|| SignalingError::Crash("Responder permanent key not set".into()))?,
-        );
+        )?;
 
         // State transition
         responder.set_handshake_state(ResponderHandshakeState::KeySent);
@@ -1718,7 +1718,7 @@ impl InitiatorSignaling {
                 .session_key
                 .as_ref()
                 .ok_or_else(|| SignalingError::Crash("Responder session key not set".into()))?,
-        );
+        )?;
         debug!("<-- Enqueuing auth to {}", &responder.identity());
         actions.push(HandleAction::Reply(bbox));
 
@@ -1751,7 +1751,7 @@ impl InitiatorSignaling {
         let mut responder = ResponderContext::new(address, self.responder_counter.increment()?);
 
         // If we trust the responder…
-        if let Some(AuthProvider::TrustedKey(key)) = self.common.auth_provider {
+        if let Some(AuthProvider::TrustedKey(key)) = &self.common.auth_provider {
             // …set the public permanent key
             if responder.permanent_key.is_some() {
                 // Sanity check
@@ -1759,7 +1759,7 @@ impl InitiatorSignaling {
                     "Responder already has a permanent key set!".into(),
                 ));
             }
-            responder.permanent_key = Some(key);
+            responder.permanent_key = Some(key.clone());
 
             // …don't expect a token message
             responder.set_handshake_state(ResponderHandshakeState::TokenReceived);
@@ -2048,7 +2048,7 @@ impl Signaling for ResponderSignaling {
         // A responder who receives a 'new-initiator' message MUST proceed by
         // deleting all currently cached information about and for the previous
         // initiator (such as cookies and the sequence numbers)...
-        self.initiator = InitiatorContext::new(self.initiator.permanent_key);
+        self.initiator = InitiatorContext::new(self.initiator.permanent_key.clone());
 
         // ...and continue by sending a 'token' or 'key' client-to-client
         // message described in the Client-to-Client Messages section.
@@ -2118,7 +2118,7 @@ impl ResponderSignaling {
                 permanent_keypair,
                 auth_provider: Some(match auth_token {
                     Some(token) => AuthProvider::Token(token),
-                    None => AuthProvider::TrustedKey(initiator_pubkey),
+                    None => AuthProvider::TrustedKey(initiator_pubkey.clone()),
                 }),
                 server: {
                     let mut ctx = ServerContext::new();
@@ -2155,7 +2155,7 @@ impl ResponderSignaling {
 
         // The message SHALL be NaCl secret key encrypted by the token the
         // initiator created and issued to the responder.
-        let bbox = obox.encrypt_token(&token);
+        let bbox = obox.encrypt_token(&token)?;
 
         debug!("<-- Enqueuing token to {}", self.initiator.identity());
         Ok(HandleAction::Reply(bbox))
@@ -2181,7 +2181,7 @@ impl ResponderSignaling {
         let bbox = obox.encrypt(
             &self.common().permanent_keypair,
             &self.initiator.permanent_key,
-        );
+        )?;
 
         debug!("<-- Enqueuing key to {}", self.initiator.identity());
         Ok(HandleAction::Reply(bbox))
@@ -2236,7 +2236,7 @@ impl ResponderSignaling {
                 .session_key
                 .as_ref()
                 .ok_or_else(|| SignalingError::Crash("Initiator session key not set".into()))?,
-        );
+        )?;
 
         // State transition
         self.initiator

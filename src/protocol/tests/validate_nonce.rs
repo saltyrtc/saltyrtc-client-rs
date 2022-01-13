@@ -1,6 +1,4 @@
-use self::cookie::Cookie;
-use self::csn::CombinedSequenceSnapshot;
-use self::messages::*;
+use self::{cookie::Cookie, csn::CombinedSequenceSnapshot, messages::*};
 
 use super::*;
 
@@ -75,7 +73,7 @@ fn wrong_source_initiator() {
 #[test]
 fn wrong_source_responder() {
     let ks = KeyPair::new();
-    let initiator_pubkey = PublicKey::from_slice(&[0u8; 32]).unwrap();
+    let initiator_pubkey = PublicKey::from([0u8; 32]);
     let mut s = ResponderSignaling::new(ks, initiator_pubkey, None, None, Tasks(vec![]), None);
 
     let make_msg = |src: u8, dest: u8| {
@@ -275,10 +273,12 @@ fn cookie_did_not_change() {
         Address(1),
         CombinedSequenceSnapshot::new(0, 124),
     );
-    let bbox = OpenBox::<Message>::new(msg, nonce).encrypt(
-        &s.common().permanent_keypair,
-        &s.server().session_key.unwrap(),
-    );
+    let bbox = OpenBox::<Message>::new(msg, nonce)
+        .encrypt(
+            &s.common().permanent_keypair,
+            s.server().session_key.as_ref().unwrap(),
+        )
+        .unwrap();
 
     // Handle 'server-auth' message
     assert_eq!(

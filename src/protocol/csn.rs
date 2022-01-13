@@ -6,10 +6,9 @@
 
 use std::cmp;
 
-use rust_sodium::randombytes::randombytes;
+use crypto_box::rand_core::{OsRng, RngCore};
 
 use crate::errors::{SignalingError, SignalingResult};
-use crate::helpers::libsodium_init_or_panic;
 
 /// This type handles the overflow checking of the 48 bit combined sequence
 /// number (CSN) consisting of the sequence number and the overflow number.
@@ -34,20 +33,13 @@ impl CombinedSequence {
     /// The overflow number will be initialized to 0, while a cryptographically
     /// secure random value will be generated for the sequence number.
     pub(crate) fn random() -> Self {
-        // Make sure that libsodium is initialized
-        libsodium_init_or_panic();
+        // Generate 32 bytes of cryptographically secure random data
+        let sequence = OsRng.next_u32();
 
-        // Create 32 bits of cryptographically secure random data
-        let rand = randombytes(4);
-
-        // Create combined sequence from that data
-        let overflow = 0u16;
-        let sequence = (u32::from(rand[0]) << 24)
-            + (u32::from(rand[1]) << 16)
-            + (u32::from(rand[2]) << 8)
-            + u32::from(rand[3]);
-
-        CombinedSequence { overflow, sequence }
+        CombinedSequence {
+            overflow: 0,
+            sequence,
+        }
     }
 
     /// Return a snapshot of the current 48 bit combined sequence number.

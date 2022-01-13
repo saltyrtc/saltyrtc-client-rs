@@ -1,8 +1,10 @@
 //! Protocol tests.
-use rust_sodium::crypto::box_;
+use crypto_box::{generate_nonce, rand_core::OsRng};
 
-use crate::crypto::PrivateKey;
-use crate::test_helpers::{DummyTask, TestRandom};
+use crate::{
+    crypto::PrivateKey,
+    test_helpers::{DummyTask, TestRandom},
+};
 
 use super::csn::CombinedSequenceSnapshot;
 use super::*;
@@ -174,7 +176,7 @@ fn test_encrypt_decrypt_raw_with_session_keys_no_peer() {
         None,
         None,
     );
-    let nonce = box_::gen_nonce();
+    let nonce = generate_nonce(&mut OsRng);
     assert_eq!(
         signaling.encrypt_raw_with_session_keys(&[1, 2, 3], &nonce),
         Err(SignalingError::NoPeer)
@@ -192,7 +194,7 @@ fn test_encrypt_raw_with_session_keys_with_peer() {
     let peer_kp = KeyPair::new();
     let our_kp = KeyPair::new();
     let our_private_key_clone = our_kp.private_key().clone();
-    let nonce = box_::gen_nonce();
+    let nonce = generate_nonce(&mut OsRng);
 
     // Create signaling instance
     let mut signaling = MockSignaling::new(
@@ -213,15 +215,8 @@ fn test_encrypt_raw_with_session_keys_with_peer() {
     assert_ne!(&data, ciphertext.as_slice());
 
     // Verify
-    assert_eq!(
-        box_::open(
-            &ciphertext,
-            &nonce,
-            peer_kp.public_key(),
-            &our_private_key_clone
-        ),
-        Ok(vec![2, 3, 4, 5])
-    );
+    let cbox = crypto_box::Box::new(peer_kp.public_key(), &our_private_key_clone);
+    assert_eq!(cbox.decrypt(&nonce, &*ciphertext), Ok(vec![2, 3, 4, 5]));
 }
 
 /// Test decrypting raw bytes with a known test vector.
@@ -231,20 +226,14 @@ fn test_encrypt_raw_with_session_keys_with_peer() {
 #[test]
 fn test_encrypt_raw_with_session_keys_with_peer_known_result() {
     // Generate keypairs and nonce
-    let peer_kp = KeyPair::from_private_key(
-        PrivateKey::from_slice(&[
-            1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4,
-            4, 4, 4,
-        ])
-        .unwrap(),
-    );
-    let our_kp = KeyPair::from_private_key(
-        PrivateKey::from_slice(&[
-            4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1,
-            1, 1, 1,
-        ])
-        .unwrap(),
-    );
+    let peer_kp = KeyPair::from_private_key(PrivateKey::from([
+        1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4,
+        4, 4,
+    ]));
+    let our_kp = KeyPair::from_private_key(PrivateKey::from([
+        4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1,
+        1, 1,
+    ]));
 
     // Create signaling instance
     let mut signaling = MockSignaling::new(
@@ -259,9 +248,9 @@ fn test_encrypt_raw_with_session_keys_with_peer_known_result() {
 
     // Encrypt data
     let data = [];
-    let nonce = box_::Nonce::from_slice(b"connectionidconnectionid").unwrap();
+    let nonce = *b"connectionidconnectionid";
     let ciphertext = signaling
-        .encrypt_raw_with_session_keys(&data, &nonce)
+        .encrypt_raw_with_session_keys(&data, &nonce.into())
         .unwrap();
 
     // Verify
@@ -277,11 +266,13 @@ fn test_decrypt_raw_with_session_keys_with_peer() {
     // Generate keypairs and nonce
     let peer_kp = KeyPair::new();
     let our_kp = KeyPair::new();
-    let nonce = box_::gen_nonce();
+    let nonce = generate_nonce(&mut OsRng);
 
     // Encrypt data
     let data = [1, 2, 3, 4];
-    let ciphertext = box_::seal(&data, &nonce, peer_kp.public_key(), our_kp.private_key());
+
+    let cbox = crypto_box::Box::new(peer_kp.public_key(), our_kp.private_key());
+    let ciphertext = cbox.encrypt(&nonce, &data[..]).unwrap();
 
     // Create signaling instance
     let mut signaling = MockSignaling::new(
@@ -296,7 +287,7 @@ fn test_decrypt_raw_with_session_keys_with_peer() {
 
     // Decrypt with wrong nonce
     assert_eq!(
-        signaling.decrypt_raw_with_session_keys(&ciphertext, &box_::gen_nonce()),
+        signaling.decrypt_raw_with_session_keys(&ciphertext, &generate_nonce(&mut OsRng)),
         Err(SignalingError::Crypto("Could not decrypt bytes".into()))
     );
 

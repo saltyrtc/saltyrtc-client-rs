@@ -54,7 +54,6 @@ mod boxes;
 mod close_code;
 mod crypto_types;
 pub mod errors;
-mod helpers;
 mod protocol;
 mod send_all;
 pub mod tasks;
@@ -62,9 +61,12 @@ pub mod tasks;
 mod test_helpers;
 
 // Rust imports
-use std::error::Error;
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
+use std::{
+    convert::TryInto,
+    error::Error,
+    sync::{Arc, Mutex, RwLock},
+    time::Duration,
+};
 
 // Third party imports
 use data_encoding::HEXLOWER;
@@ -74,7 +76,6 @@ use futures::sync::oneshot;
 use futures::{stream, Future, Sink, Stream};
 use native_tls::TlsConnector;
 use rmpv::Value;
-use rust_sodium::crypto::box_;
 use tokio_core::net::TcpStream;
 use tokio_core::reactor::Handle;
 use tokio_timer::Timer;
@@ -98,12 +99,13 @@ pub mod crypto {
 }
 
 // Internal imports
-use crate::boxes::ByteBox;
-use crate::crypto_types::{AuthToken, KeyPair, PublicKey};
-use crate::errors::{BuilderError, SaltyError, SaltyResult, SignalingError, SignalingResult};
-use crate::helpers::libsodium_init;
-use crate::protocol::{HandleAction, InitiatorSignaling, ResponderSignaling, Signaling};
-use crate::tasks::{BoxedTask, TaskMessage, Tasks};
+use crate::{
+    boxes::ByteBox,
+    crypto_types::{AuthToken, KeyPair, PublicKey},
+    errors::{BuilderError, SaltyError, SaltyResult, SignalingError, SignalingResult},
+    protocol::{HandleAction, InitiatorSignaling, ResponderSignaling, Signaling},
+    tasks::{BoxedTask, TaskMessage, Tasks},
+};
 
 // Constants
 const SUBPROTOCOL: &str = "v1.saltyrtc.org";
@@ -329,20 +331,22 @@ impl SaltyClient {
 
     /// Encrypt raw bytes using the session keys after the handshake has been finished.
     pub fn encrypt_raw_with_session_keys(&self, data: &[u8], nonce: &[u8]) -> SaltyResult<Vec<u8>> {
-        let sodium_nonce = box_::Nonce::from_slice(nonce)
-            .ok_or(SaltyError::Crypto("Invalid nonce bytes".into()))?;
+        let nonce_bytes: [u8; 24] = nonce
+            .try_into()
+            .map_err(|_| SaltyError::Crypto("Invalid nonce bytes".into()))?;
         Ok(self
             .signaling
-            .encrypt_raw_with_session_keys(data, &sodium_nonce)?)
+            .encrypt_raw_with_session_keys(data, &nonce_bytes.into())?)
     }
 
     /// Decrypt raw bytes using the session keys after the handshake has been finished.
     pub fn decrypt_raw_with_session_keys(&self, data: &[u8], nonce: &[u8]) -> SaltyResult<Vec<u8>> {
-        let sodium_nonce = box_::Nonce::from_slice(nonce)
-            .ok_or(SaltyError::Crypto("Invalid nonce bytes".into()))?;
+        let nonce_bytes: [u8; 24] = nonce
+            .try_into()
+            .map_err(|_| SaltyError::Crypto("Invalid nonce bytes".into()))?;
         Ok(self
             .signaling
-            .decrypt_raw_with_session_keys(data, &sodium_nonce)?)
+            .decrypt_raw_with_session_keys(data, &nonce_bytes.into())?)
     }
 }
 
@@ -418,13 +422,10 @@ pub fn connect(
     impl Future<Item = WsClient, Error = SaltyError>,
     UnboundedChannel<Event>,
 )> {
-    // Initialize libsodium
-    libsodium_init()?;
-
     // Parse URL
     let path = salty
         .read()
-        .map(|client| HEXLOWER.encode(&client.initiator_pubkey().0))
+        .map(|client| HEXLOWER.encode(client.initiator_pubkey().as_bytes()))
         .map_err(|_| SaltyError::Crash("connect: Could not read-lock SaltyClient".into()))?;
     let url = format!("wss://{}:{}/{}", host, port, path);
     let ws_url = match Url::parse(&url) {

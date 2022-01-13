@@ -70,7 +70,7 @@ impl TestContext<ResponderSignaling> {
         let mut signaling = {
             let pk = match initiator_pubkey {
                 Some(pk) => pk,
-                None => PublicKey::from_slice(&[0u8; 32]).unwrap(),
+                None => PublicKey::from([0u8; 32]),
             };
             let ks = KeyPair::from_private_key(our_ks.private_key().clone());
             let mut tasks = Tasks::new(Box::new(DummyTask::new(23)));
@@ -144,7 +144,7 @@ impl TestMsgBuilder {
             csn,
         );
         let obox = OpenBox::<Message>::new(self.msg, nonce);
-        obox.encrypt(kp, pubkey)
+        obox.encrypt(kp, pubkey).expect("Failed to encrypt")
     }
 
     /// Helper method to make a message coming from the server,
@@ -571,7 +571,7 @@ mod server_auth {
             if correct_content {
                 ctx.our_ks.public_key().clone()
             } else {
-                PublicKey::from_slice(&[1; 32]).unwrap()
+                PublicKey::from([1; 32])
             },
         );
         let signed_keys =
@@ -583,11 +583,14 @@ mod server_auth {
         let msg = ServerAuth::for_initiator(ctx.our_cookie.clone(), Some(signed_keys), vec![])
             .into_message();
         let msg_bytes = msg.to_msgpack();
-        let encrypted = ctx.our_ks.encrypt(
-            &msg_bytes,
-            unsafe { nonce.clone() },
-            ctx.server_ks.public_key(),
-        );
+        let encrypted = ctx
+            .our_ks
+            .encrypt(
+                &msg_bytes,
+                unsafe { nonce.clone() },
+                ctx.server_ks.public_key(),
+            )
+            .unwrap();
         let bbox = ByteBox::new(encrypted, nonce);
 
         (ctx, bbox)
@@ -777,7 +780,8 @@ mod token {
             .signaling
             .auth_token()
             .expect("Could not get auth token")
-            .encrypt(&msg_bytes, unsafe { nonce.clone() });
+            .encrypt(&msg_bytes, unsafe { nonce.clone() })
+            .unwrap();
         let bbox = ByteBox::new(encrypted, nonce);
 
         // Handle message. This should result in a decoding error
@@ -816,7 +820,7 @@ mod token {
         let pk = PublicKey::random();
 
         // Prepare a token message
-        let msg: Message = Token { key: pk }.into_message();
+        let msg: Message = Token { key: pk.clone() }.into_message();
         let msg_bytes = msg.to_msgpack();
 
         // The token message is encrypted with the auth token,
@@ -832,7 +836,8 @@ mod token {
             .signaling
             .auth_token()
             .expect("Could not get auth token")
-            .encrypt(&msg_bytes, unsafe { nonce.clone() });
+            .encrypt(&msg_bytes, unsafe { nonce.clone() })
+            .unwrap();
         let bbox = ByteBox::new(encrypted, nonce);
 
         {
@@ -938,10 +943,13 @@ mod key {
             ClientIdentity::Responder(6),
             SignalingState::PeerHandshake,
             ServerHandshakeState::Done,
-            Some(peer_permanent_pk),
+            Some(peer_permanent_pk.clone()),
             None,
         );
-        assert_eq!(ctx.signaling.initiator.permanent_key, peer_permanent_pk);
+        assert_eq!(
+            ctx.signaling.initiator.permanent_key,
+            peer_permanent_pk.clone()
+        );
         ctx.signaling
             .initiator
             .set_handshake_state(InitiatorHandshakeState::KeySent);
