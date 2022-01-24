@@ -12,6 +12,12 @@ Possible log types:
 - `[security]` to invite users to upgrade in case of vulnerabilities.
 
 
+### v0.8.0-rc.1 (2022-01-24)
+
+- [changed] Replace deprecated `rust_sodium` library with pure-Rust libraries
+  from the RustCrypto project (#74)
+- [changed] Example: Update to cursive 0.17 (#76)
+
 ### v0.7.0 (2021-02-15)
 
 - [fix] Handle connection closing by server (#70)
