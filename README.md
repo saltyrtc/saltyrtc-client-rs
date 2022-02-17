@@ -5,6 +5,13 @@
 
 Asynchronous [SaltyRTC][saltyrtc] client implementation for Rust.
 
+> :warning: **Note:** The SaltyRTC client libraries are in maintenance mode.
+> They will still receive bugfixes and regular maintenance, but if you want to
+> start using these libraries, be prepared that you will need to take over
+> maintenance at some point in time. (If you are interested in maintaining the
+> libraries, please let us know, our e-mails are in the README, section
+> "Security".)
+
 SaltyRTC is an end-to-end encrypted signalling protocol. It offers to freely
 choose from a range of signalling tasks, such as setting up a WebRTC or ORTC
 peer-to-peer connection, or using the WebSocket based signaling server as a
