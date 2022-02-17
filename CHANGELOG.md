@@ -12,7 +12,7 @@ Possible log types:
 - `[security]` to invite users to upgrade in case of vulnerabilities.
 
 
-### v0.8.0-rc.1 (2022-01-24)
+### v0.8.0-rc.2 (2022-02-17)
 
 - [changed] Replace deprecated `rust_sodium` library with pure-Rust libraries
   from the RustCrypto project (#74)
