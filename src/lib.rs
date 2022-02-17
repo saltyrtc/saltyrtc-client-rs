@@ -806,20 +806,25 @@ pub fn task_loop(
                         let mut in_messages: Vec<TaskMessage> = vec![];
                         let mut close_stream = false;
                         for action in handle_actions {
-                            info!("Action: {:?}", action);
                             match action {
                                 HandleAction::Reply(bbox) => {
+                                    info!("Action: Reply");
                                     out_messages.push(OwnedMessage::Binary(bbox.into_bytes()))
                                 }
                                 HandleAction::TaskMessage(msg) => {
                                     if let TaskMessage::Close(_) = msg {
+                                        info!("Action: TaskMessage::Close");
                                         close_stream = true;
+                                    } else {
+                                        info!("Action: TaskMessage");
                                     }
 
                                     // Forward message to user
                                     in_messages.push(msg);
                                 }
                                 HandleAction::Event(e) => {
+                                    info!("Action: Event");
+
                                     // Notify the user about event
                                     match event_tx.unbounded_send(e) {
                                         Ok(_) => {}
@@ -831,11 +836,13 @@ pub fn task_loop(
                                     }
                                 }
                                 HandleAction::HandshakeDone => {
+                                    info!("Action: HandshakeDone");
                                     return boxed!(future::err(Err(SaltyError::Crash(
                                         "Got HandleAction::HandshakeDone in task loop".into()
                                     ))))
                                 }
                                 HandleAction::HandshakeError(_) => {
+                                    info!("Action: HandshakeError");
                                     return boxed!(future::err(Err(SaltyError::Crash(
                                         "Got HandleAction::HandshakeError in task loop".into()
                                     ))))
