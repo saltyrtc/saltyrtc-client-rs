@@ -35,7 +35,7 @@ xsalsa20poly1305 = "0.8"
 
 [dev-dependencies]
 clap = "2"
-cursive = "0.17"
+cursive = "0.20"
 log4rs = "0.8"
 
 [features]
