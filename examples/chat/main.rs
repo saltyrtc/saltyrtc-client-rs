@@ -279,14 +279,9 @@ fn main() {
     let salty_arc = Arc::new(RwLock::new(salty));
 
     // Connect to server
-    let (connect_future, event_channel) = saltyrtc_client::connect(
-        "localhost",
-        8765,
-        Some(tls_connector),
-        &core.handle(),
-        salty_arc.clone(),
-    )
-    .unwrap();
+    let (connect_future, event_channel) =
+        saltyrtc_client::connect("localhost", 8765, Some(tls_connector), salty_arc.clone())
+            .unwrap();
 
     // Do handshake
     let event_tx = event_channel.clone_tx();
