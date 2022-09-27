@@ -12,6 +12,15 @@ Possible log types:
 - `[security]` to invite users to upgrade in case of vulnerabilities.
 
 
+### v0.9.0 (2022-09-27)
+
+- [security] Dependency updates (#80)
+- [changed] The `connect` function no longer needs a `handle` argument (#80)
+
+Note: If you depend on `saltyrtc-client-rs`, it is recommended to add a
+dependency patch to your `Cargo.toml`:
+https://github.com/saltyrtc/saltyrtc-client-rs#dependency-patching
+
 ### v0.8.0 (2022-09-26)
 
 No changes compared to v0.8.0-rc.2.
