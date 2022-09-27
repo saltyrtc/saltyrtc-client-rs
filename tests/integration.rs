@@ -5,7 +5,6 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::error::Error as StdError;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -46,7 +45,7 @@ impl CapturedConsoleAppender {
 }
 
 impl Append for CapturedConsoleAppender {
-    fn append(&self, record: &Record) -> Result<(), Box<dyn StdError + Sync + Send>> {
+    fn append(&self, record: &Record) -> anyhow::Result<()> {
         let mut writer = SimpleWriter(Vec::<u8>::new());
         self.encoder.encode(&mut writer, record)?;
         let line = str::from_utf8(&writer.0).unwrap();
@@ -106,12 +105,11 @@ fn connect_to(
 
     // Reactor
     let mut core = Core::new().unwrap();
-    let handle = core.handle();
 
     // Connect
     let timeout = Duration::from_millis(1000);
     let (connect_future, event_channel) =
-        saltyrtc_client::connect(host, port, tls_connector, &handle, salty.clone()).unwrap();
+        saltyrtc_client::connect(host, port, tls_connector, salty.clone()).unwrap();
     let future = connect_future.and_then(|client| {
         saltyrtc_client::do_handshake(client, salty, event_channel.clone_tx(), Some(timeout))
     });

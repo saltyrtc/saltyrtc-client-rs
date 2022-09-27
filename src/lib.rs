@@ -76,9 +76,8 @@ use futures::sync::oneshot;
 use futures::{stream, Future, Sink, Stream};
 use native_tls::TlsConnector;
 use rmpv::Value;
-use tokio_core::net::TcpStream;
-use tokio_core::reactor::Handle;
 use tokio_timer::Timer;
+use websocket::r#async::TcpStream;
 use websocket::client::builder::Url;
 use websocket::client::r#async::{Client, TlsStream};
 use websocket::client::ClientBuilder;
@@ -416,7 +415,6 @@ pub fn connect(
     host: &str,
     port: u16,
     tls_config: Option<TlsConnector>,
-    handle: &Handle,
     salty: Arc<RwLock<SaltyClient>>,
 ) -> SaltyResult<(
     impl Future<Item = WsClient, Error = SaltyError>,
@@ -437,7 +435,7 @@ pub fn connect(
     let server = format!("{}:{}", host, port);
     let future = ClientBuilder::from_url(&ws_url)
         .add_protocol(SUBPROTOCOL)
-        .async_connect_secure(tls_config, handle)
+        .async_connect_secure(tls_config)
         .map_err(move |e: WebSocketError| {
             SaltyError::Network(match e.cause() {
                 Some(cause) => {

@@ -147,6 +147,17 @@ You can find C FFI bindings in the `ffi` subdirectory of this source repository.
 [rust-lang/rust#36342](https://github.com/rust-lang/rust/issues/36342).
 
 
+## Dependency Patching
+
+The following patches in `Cargo.toml` are recommended to solve problems in
+transitive dependencies:
+
+```toml
+[patch.crates-io]
+traitobject = { git = "https://github.com/philip-peterson/destructure_traitobject", rev = "d49b0af9087b3b7848d19d5baae43948ebc7fb9d" }
+```
+
+
 ## License
 
 Licensed under either of
