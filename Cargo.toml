@@ -34,9 +34,10 @@ websocket = { version = "0.26", default-features = false, features = ["async", "
 xsalsa20poly1305 = "0.8"
 
 [dev-dependencies]
+anyhow = "1"
 clap = { version = "3", features = ["std", "derive"], default-features = false }
 cursive = "0.20"
-log4rs = "0.8"
+log4rs = "1.1"
 
 [features]
 default = []
