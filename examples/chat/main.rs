@@ -40,20 +40,20 @@ use tokio_core::reactor::Core;
 
 use crate::chat_task::{ChatMessage, ChatTask};
 
-pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-const VIEW_TEXT_ID: &'static str = "text";
-const VIEW_INPUT_ID: &'static str = "input";
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+const VIEW_TEXT_ID: &str = "text";
+const VIEW_INPUT_ID: &str = "input";
 
 fn main() {
-    const ARG_PATH: &'static str = "path";
-    const ARG_RESPONDER_KEY: &'static str = "responder_key";
-    const ARG_PRIVATE_KEY: &'static str = "private_key";
-    const ARG_AUTHTOKEN: &'static str = "authtoken";
-    const ARG_PING_INTERVAL: &'static str = "ping_interval";
+    const ARG_PATH: &str = "path";
+    const ARG_RESPONDER_KEY: &str = "responder_key";
+    const ARG_PRIVATE_KEY: &str = "private_key";
+    const ARG_AUTHTOKEN: &str = "authtoken";
+    const ARG_PING_INTERVAL: &str = "ping_interval";
 
     // Set up CLI arguments
     let arg_ping_interval = Arg::with_name(ARG_PING_INTERVAL)
-        .short("i")
+        .short('i')
         .takes_value(true)
         .value_name("SECONDS")
         .required(false)
@@ -135,15 +135,15 @@ fn main() {
         );
 
     // Parse arguments
-    let subcommand = app.get_matches().subcommand.unwrap_or_else(|| {
+    let matches = app.get_matches();
+    let (subcommand, args) = matches.subcommand().unwrap_or_else(|| {
         println!("Missing subcommand.");
         println!("Use -h or --help to see usage.");
         process::exit(1);
     });
-    let args = &subcommand.matches;
 
     // Determine role
-    let (role, is_trusted) = match &*subcommand.name {
+    let (role, is_trusted) = match subcommand {
         "initiator" => (Role::Initiator, false),
         "initiator_trusted" => (Role::Initiator, true),
         "responder" => (Role::Responder, false),
