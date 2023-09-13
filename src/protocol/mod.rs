@@ -15,9 +15,12 @@ use std::{
     time::Duration,
 };
 
-use crypto_box::aead::{
-    generic_array::{typenum::U24, GenericArray},
-    Aead,
+use crypto_box::{
+    aead::{
+        generic_array::{typenum::U24, GenericArray},
+        Aead,
+    },
+    SalsaBox,
 };
 use rmpv::Value;
 
@@ -924,7 +927,7 @@ pub(crate) trait Signaling {
 
     // Raw encryption / decryption
 
-    fn get_crypto_box(&self) -> SignalingResult<crypto_box::Box> {
+    fn get_crypto_box(&self) -> SignalingResult<SalsaBox> {
         let peer = self.get_peer().ok_or_else(|| SignalingError::NoPeer)?;
         let peer_session_public_key = peer
             .session_key()
@@ -933,7 +936,7 @@ pub(crate) trait Signaling {
             .keypair()
             .map(|keypair: &KeyPair| keypair.private_key())
             .ok_or_else(|| SignalingError::Crash("Our session private key not set".into()))?;
-        Ok(crypto_box::Box::new(
+        Ok(SalsaBox::new(
             peer_session_public_key,
             our_session_private_key,
         ))

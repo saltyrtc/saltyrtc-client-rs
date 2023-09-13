@@ -140,7 +140,7 @@ impl ClientHello {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        use crypto_box::rand_core::{OsRng, RngCore};
+        use crypto_box::aead::{OsRng, rand_core::RngCore};
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
         Self {
@@ -164,7 +164,7 @@ impl ServerHello {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        use crypto_box::rand_core::{OsRng, RngCore};
+        use crypto_box::aead::{OsRng, rand_core::RngCore};
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
         Self {
@@ -304,7 +304,7 @@ impl Token {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        use crypto_box::rand_core::{OsRng, RngCore};
+        use crypto_box::aead::{OsRng, rand_core::RngCore};
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
         Self {
@@ -325,7 +325,7 @@ impl Key {
     /// Create a new instance with dummy data. Used in testing.
     #[cfg(test)]
     pub(crate) fn random() -> Self {
-        use crypto_box::rand_core::{OsRng, RngCore};
+        use crypto_box::aead::{OsRng, rand_core::RngCore};
         let mut bytes = [0u8; 32];
         OsRng.fill_bytes(&mut bytes);
         Self {

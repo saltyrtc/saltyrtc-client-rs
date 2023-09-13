@@ -8,8 +8,8 @@ use std::io::Write;
 use std::{cmp, convert::TryInto, fmt};
 
 use crypto_box::{
-    aead::{generic_array::GenericArray, Aead, NewAead},
-    rand_core::OsRng,
+    aead::{generic_array::GenericArray, Aead, KeyInit, OsRng},
+    SalsaBox,
 };
 use data_encoding::{HEXLOWER, HEXLOWER_PERMISSIVE};
 use serde::{
@@ -141,7 +141,7 @@ impl KeyPair {
     /// Warning: Be careful with this! The only reason to access the private
     /// key is probably to be able to restore it when working with trusted keys.
     pub fn private_key_hex(&self) -> String {
-        HEXLOWER.encode(self.private_key.as_bytes())
+        HEXLOWER.encode(&self.private_key.to_bytes())
     }
 
     /// Encrypt data for the specified public key with the private key.
@@ -151,7 +151,7 @@ impl KeyPair {
         nonce: Nonce,
         other_key: &PublicKey,
     ) -> SignalingResult<Vec<u8>> {
-        let cbox = crypto_box::Box::new(other_key, &self.private_key);
+        let cbox = SalsaBox::new(other_key, &self.private_key);
         cbox.encrypt(&nonce.into(), data)
             .map_err(|_| SignalingError::Crypto("Could not encrypt data".to_string()))
     }
@@ -167,7 +167,7 @@ impl KeyPair {
         nonce: Nonce,
         other_key: &PublicKey,
     ) -> SignalingResult<Vec<u8>> {
-        let cbox = crypto_box::Box::new(other_key, &self.private_key);
+        let cbox = SalsaBox::new(other_key, &self.private_key);
         cbox.decrypt(&nonce.into(), data)
             .map_err(|_| SignalingError::Crypto("Could not decrypt data".to_string()))
     }
@@ -287,7 +287,7 @@ impl UnsignedKeys {
         (&mut bytes[32..64])
             .write_all(self.client_public_permanent_key.as_bytes())
             .unwrap();
-        let cbox = crypto_box::Box::new(
+        let cbox = SalsaBox::new(
             client_public_permanent_key,
             server_session_keypair.private_key(),
         );
@@ -315,7 +315,7 @@ impl SignedKeys {
         nonce: Nonce,
     ) -> SignalingResult<UnsignedKeys> {
         // Decrypt bytes
-        let cbox = crypto_box::Box::new(server_public_permanent_key, permanent_key.private_key());
+        let cbox = SalsaBox::new(server_public_permanent_key, permanent_key.private_key());
         let decrypted = cbox
             .decrypt(&nonce.into(), &self.0[..])
             .map_err(|_| SignalingError::Crypto("Could not decrypt signed keys".to_string()))?;
@@ -413,7 +413,7 @@ use crate::test_helpers::TestRandom;
 #[cfg(test)]
 impl TestRandom for PublicKey {
     fn random() -> PublicKey {
-        let mut rng = crypto_box::rand_core::OsRng;
+        let mut rng = crypto_box::aead::OsRng;
         let private_key = PrivateKey::generate(&mut rng);
         private_key.public_key()
     }
@@ -431,7 +431,7 @@ mod tests {
             let ks1 = KeyPair::new();
             let ks2 = KeyPair::new();
             assert_ne!(ks1.public_key(), ks2.public_key());
-            assert_ne!(ks1.private_key().as_bytes(), ks2.private_key().as_bytes());
+            assert_ne!(ks1.private_key().to_bytes(), ks2.private_key().to_bytes());
         }
     }
 
@@ -633,7 +633,7 @@ mod tests {
             .sign(&kp_server, kp_client.public_key(), unsafe { nonce.clone() });
 
         // Decrypt directly
-        let cbox = crypto_box::Box::new(kp_server.public_key(), kp_client.private_key());
+        let cbox = SalsaBox::new(kp_server.public_key(), kp_client.private_key());
         let decrypted = cbox
             .decrypt(&unsafe { nonce.clone() }.into(), &signed.0[..])
             .unwrap();

@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crypto_box::rand_core::{OsRng, RngCore};
+use crypto_box::aead::{OsRng, rand_core::RngCore};
 use serde::{
     de::{Deserialize, Deserializer, Error as SerdeError, Visitor},
     ser::{Serialize, Serializer},
