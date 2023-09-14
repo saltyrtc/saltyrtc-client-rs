@@ -6,7 +6,7 @@
 
 use std::cmp;
 
-use crypto_box::rand_core::{OsRng, RngCore};
+use crypto_box::aead::{OsRng, rand_core::RngCore};
 
 use crate::errors::{SignalingError, SignalingResult};
 

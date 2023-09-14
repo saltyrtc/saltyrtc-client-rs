@@ -17,7 +17,7 @@ maintenance = { status = "passively-maintained" }
 
 [dependencies]
 byteorder = "1.1"
-crypto_box = { version = "0.7.1", features = ["serde"] }
+crypto_box = { version = "0.9.1", features = ["serde"] }
 data-encoding = "2.1"
 failure = "0.1"
 futures = "0.1.0"  # Make sure to use same version as websocket
@@ -31,7 +31,7 @@ serde = { version = "1", features = ["derive"] }
 tokio-core = "0.1"
 tokio-timer = "0.1"
 websocket = { version = "0.26", default-features = false, features = ["async", "async-ssl"] }
-xsalsa20poly1305 = "0.8"
+xsalsa20poly1305 = "0.9"
 
 [dev-dependencies]
 anyhow = "1"

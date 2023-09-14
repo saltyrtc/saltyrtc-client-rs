@@ -1,5 +1,6 @@
 //! Protocol tests.
-use crypto_box::{generate_nonce, rand_core::OsRng};
+use crypto_box::{aead::OsRng, SalsaBox};
+use xsalsa20poly1305::XSalsa20Poly1305;
 
 use crate::{
     crypto::PrivateKey,
@@ -176,7 +177,7 @@ fn test_encrypt_decrypt_raw_with_session_keys_no_peer() {
         None,
         None,
     );
-    let nonce = generate_nonce(&mut OsRng);
+    let nonce = XSalsa20Poly1305::generate_nonce(&mut OsRng);
     assert_eq!(
         signaling.encrypt_raw_with_session_keys(&[1, 2, 3], &nonce),
         Err(SignalingError::NoPeer)
@@ -194,7 +195,7 @@ fn test_encrypt_raw_with_session_keys_with_peer() {
     let peer_kp = KeyPair::new();
     let our_kp = KeyPair::new();
     let our_private_key_clone = our_kp.private_key().clone();
-    let nonce = generate_nonce(&mut OsRng);
+    let nonce = XSalsa20Poly1305::generate_nonce(&mut OsRng);
 
     // Create signaling instance
     let mut signaling = MockSignaling::new(
@@ -215,7 +216,7 @@ fn test_encrypt_raw_with_session_keys_with_peer() {
     assert_ne!(&data, ciphertext.as_slice());
 
     // Verify
-    let cbox = crypto_box::Box::new(peer_kp.public_key(), &our_private_key_clone);
+    let cbox = SalsaBox::new(peer_kp.public_key(), &our_private_key_clone);
     assert_eq!(cbox.decrypt(&nonce, &*ciphertext), Ok(vec![2, 3, 4, 5]));
 }
 
@@ -266,12 +267,12 @@ fn test_decrypt_raw_with_session_keys_with_peer() {
     // Generate keypairs and nonce
     let peer_kp = KeyPair::new();
     let our_kp = KeyPair::new();
-    let nonce = generate_nonce(&mut OsRng);
+    let nonce = XSalsa20Poly1305::generate_nonce(&mut OsRng);
 
     // Encrypt data
     let data = [1, 2, 3, 4];
 
-    let cbox = crypto_box::Box::new(peer_kp.public_key(), our_kp.private_key());
+    let cbox = SalsaBox::new(peer_kp.public_key(), our_kp.private_key());
     let ciphertext = cbox.encrypt(&nonce, &data[..]).unwrap();
 
     // Create signaling instance
@@ -287,7 +288,10 @@ fn test_decrypt_raw_with_session_keys_with_peer() {
 
     // Decrypt with wrong nonce
     assert_eq!(
-        signaling.decrypt_raw_with_session_keys(&ciphertext, &generate_nonce(&mut OsRng)),
+        signaling.decrypt_raw_with_session_keys(
+            &ciphertext,
+            &XSalsa20Poly1305::generate_nonce(&mut OsRng)
+        ),
         Err(SignalingError::Crypto("Could not decrypt bytes".into()))
     );
 
